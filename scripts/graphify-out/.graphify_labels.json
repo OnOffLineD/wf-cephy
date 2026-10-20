@@ -1,0 +1,17 @@
+{
+  "0": "LocalPipelineRunner",
+  "1": "app_server.py",
+  "2": "OptimizerEngine",
+  "3": "desktop_companion.py",
+  "4": "os",
+  "5": "advanced_mechanics_optimizer.py",
+  "6": "optimizer_engine.py",
+  "7": "LLMOrchestrator",
+  "8": "DesktopPet",
+  "9": "SurvivalEvaluator",
+  "10": "sqlite3",
+  "11": "DataIngestor",
+  "12": "RivenOCRAnalyzer",
+  "13": "WikiIngestor",
+  "14": "__init__.py"
+}

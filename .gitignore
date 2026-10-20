@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Python Virtual Environments & Embedded
+python_embed/
+venv/
+.env/
+env/
+
+# Large Model Weights and Binaries (> 50MB)
+models/*.gguf
+bin/
+weights/*.pt
+yolov8n.pt
+runs/
+warframe_bot_runs/
+labeling/
+
+# Chroma DB and Cache
+data/chroma_db/
+
+# Temporary captures and debug crops
+*.png
+crops/
+debug_crops/
+
+# IDE / Local files
+.vscode/
+.idea/
+.antigravity/local/

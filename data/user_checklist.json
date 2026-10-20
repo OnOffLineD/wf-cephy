@@ -1,0 +1,50 @@
+[
+  {
+    "id": "daily_sortie",
+    "type": "daily",
+    "text": "일일 출격 (Sortie) 3단계 클리어",
+    "done": false
+  },
+  {
+    "id": "daily_sp_incursion",
+    "type": "daily",
+    "text": "강철의 길 일일 침공 (에센스 5개)",
+    "done": false
+  },
+  {
+    "id": "daily_simaris",
+    "type": "daily",
+    "text": "세팔론 시마리스 일일 연구 평판",
+    "done": false
+  },
+  {
+    "id": "weekly_archon",
+    "type": "weekly",
+    "text": "주간 집정관 토벌전 (아콘 샤드)",
+    "done": false
+  },
+  {
+    "id": "weekly_netracell",
+    "type": "weekly",
+    "text": "카비아 네트라셀 5회 클리어",
+    "done": false
+  },
+  {
+    "id": "weekly_eda",
+    "type": "weekly",
+    "text": "심층 아키메디아 (EDA) 3연전",
+    "done": false
+  },
+  {
+    "id": "weekly_iron_wake",
+    "type": "weekly",
+    "text": "아이언 웨이크 리벤 조각 교환",
+    "done": false
+  },
+  {
+    "id": "custom_8",
+    "type": "custom",
+    "text": "월육 파밍 하기",
+    "done": true
+  }
+]
