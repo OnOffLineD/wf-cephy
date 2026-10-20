@@ -24,6 +24,7 @@ labeling/
 
 # Chroma DB and Cache
 data/chroma_db/
+graphify-out/cache/
 
 # Temporary captures and debug crops
 *.png

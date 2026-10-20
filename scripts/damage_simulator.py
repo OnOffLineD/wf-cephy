@@ -36,70 +36,86 @@ class ModConfig:
 
 class DamageSimulator:
     def calculate_damage_metrics(self, weapon: WeaponStats, mods: List[ModConfig], combat_state: CombatState = CombatState.SUSTAINED, active_status_types: int = 0) -> Dict[str, float]:
-        # Base damage calculation
-        base_damage = weapon.base_damage
-        for mod in mods:
-            base_damage *= (1 + mod.base_damage_pct)
+            # Mod base percentage calculation
+            mod_base_pct = sum(m.base_damage_pct for m in mods)
+            if active_status_types > 0:
+                mod_base_pct += sum(m.gunco_per_proc for m in mods) * active_status_types
+            base_dmg = weapon.base_damage * (1.0 + mod_base_pct)
 
-        # Additive base damage from mods
-        additive_base = sum(mod.base_damage_pct for mod in mods)
+            # Mod elemental percentage calculation
+            mod_elem_pct = sum(sum(m.elements.values()) for m in mods)
+            total_modded_base = base_dmg * (1.0 + mod_elem_pct)
 
-        # Sum of elemental modifiers
-        sum_elements = sum(mod.elements.get(elem, 0) for elem in weapon.elements)
+            # Multishot calculation
+            ms = max(0.1, weapon.multishot * (1.0 + sum(m.multishot_pct for m in mods)))
 
-        # Faction damage modifier
-        faction_damage = sum(mod.faction_damage_pct for mod in mods)
+            # Faction damage calculation
+            faction = 1.0 + sum(m.faction_damage_pct for m in mods)
 
-        # Crit multiplier
-        crit_multiplier = weapon.crit_mult * (1 + sum(mod.crit_mult_pct for mod in mods))
+            # Crit chance and crit multiplier calculation
+            cc = max(0.0, weapon.crit_chance * (1.0 + sum(m.crit_chance_pct for m in mods)))
+            cd = max(1.0, weapon.crit_mult * (1.0 + sum(m.crit_mult_pct for m in mods)))
+            exp_crit_mult = 1.0 + cc * (cd - 1.0) if cc > 0 else 1.0
+            min_crit_mult = 1.0 + int(cc) * (cd - 1.0) if cc > 0 else 1.0
 
-        # Multishot
-        multishot = weapon.multishot * (1 + sum(mod.multishot_pct for mod in mods))
+            # Expected hit calculation
+            expected_hit = total_modded_base * ms * faction * exp_crit_mult
 
-        # Calculate expected hit
-        expected_hit = base_damage * (1 + additive_base) * (1 + sum_elements) * (1 + faction_damage) * crit_multiplier * multishot
+            # Min guaranteed hit calculation
+            min_guaranteed_hit = total_modded_base * max(1.0, float(int(ms))) * faction * min_crit_mult
 
-        # Min guaranteed hit (assuming no crit)
-        min_guaranteed_hit = base_damage * (1 + additive_base) * (1 + sum_elements) * (1 + faction_damage) * multishot
+            # Fire rate calculation
+            fr = max(0.1, weapon.fire_rate * (1.0 + sum(m.fire_rate_pct for m in mods)))
 
-        # Burst DPS
-        burst_dps = expected_hit * weapon.fire_rate * weapon.magazine_size / (weapon.reload_time + weapon.magazine_size / weapon.fire_rate)
+            # Burst DPS calculation
+            burst_dps = expected_hit * fr
 
-        # Sustained DPS
-        sustained_dps = expected_hit * weapon.fire_rate
+            # Magazine size and reload time
+            mag = float(weapon.magazine_size)
+            reload = float(weapon.reload_time)
 
-        # Apply typical full-stack bonuses in SUSTAINED state
-        if combat_state == CombatState.SUSTAINED:
-            sustained_dps *= 4.96  # Example multiplier for full-stack bonuses
+            # Sustained DPS calculation
+            if mag > 0 and reload > 0 and fr > 0:
+                sustained_dps = burst_dps * (mag / fr) / ((mag / fr) + reload)
+            else:
+                sustained_dps = burst_dps
 
-        return {
-            "expected_hit": expected_hit,
-            "min_guaranteed_hit": min_guaranteed_hit,
-            "burst_dps": burst_dps,
-            "sustained_dps": sustained_dps
-        }
+            return {
+                "expected_hit": expected_hit,
+                "min_guaranteed_hit": min_guaranteed_hit,
+                "burst_dps": burst_dps,
+                "sustained_dps": sustained_dps,
+                "crit_chance": cc,
+                "crit_mult": cd,
+                "multishot": ms,
+                "fire_rate": fr
+            }
 
     def simulate_ttk(self, weapon: WeaponStats, mods: List[ModConfig], enemy_health: float = 500000.0, enemy_armor: float = 2700.0, archetype: str = "STANDARD_MOB", max_seconds: float = 10.0) -> float:
-        # Calculate damage metrics
-        damage_metrics = self.calculate_damage_metrics(weapon, mods)
+            # Calculate damage metrics
+            damage_metrics = self.calculate_damage_metrics(weapon, mods)
 
-        # Armor Damage Reduction (DR)
-        armor_dr = enemy_armor / (enemy_armor + 300)
+            # Check for Armor Strip mod
+            for m in mods:
+                if m.name == 'Armor Strip' or 'Armor Strip' in m.elements:
+                    enemy_armor = 0.0
+                    break
 
-        # Effective damage
-        effective_damage = damage_metrics["expected_hit"] * (1 - armor_dr)
+            # Effective armor calculation
+            effective_armor = min(2700.0, max(0.0, float(enemy_armor)))
+            armor_dr = effective_armor / (effective_armor + 300.0) if effective_armor > 0 else 0.0
 
-        # Viral status health multiplier (up to 4.25x)
-        viral_multiplier = 1.0  # Placeholder for actual viral multiplier logic
+            # Viral status health multiplier
+            viral_multiplier = 4.25 if any('Viral' in m.name or 'Viral' in m.elements for m in mods) else 1.0
 
-        # Total damage per second
-        dps = effective_damage * viral_multiplier
+            # Effective damage per second
+            effective_dps = max(1.0, damage_metrics.get('sustained_dps', 1.0) * (1.0 - armor_dr) * viral_multiplier)
 
-        # Time to Kill (TTK)
-        ttk = enemy_health / dps
+            # Time to Kill (TTK)
+            ttk = float(enemy_health) / effective_dps
 
-        # Cap TTK at max_seconds
-        return min(ttk, max_seconds)
+            # Cap TTK at max_seconds
+            return min(ttk, max_seconds)
 
     def compare_rivens(self, weapon: WeaponStats, base_7_mods: List[ModConfig], riven_a: ModConfig, riven_b: ModConfig) -> Dict[str, Any]:
         # Calculate metrics for base build

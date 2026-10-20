@@ -925,411 +925,167 @@ class ScreenModAnalyzer:
         }
 
     def extract_left_panel_stats(self, img, full_text: Optional[str] = None) -> Dict[str, float]:
-        if isinstance(img, str):
-            img = Image.open(img)
-        w, h = img.size
-        left_crop = img.crop((0, int(h * 0.05), int(w * 0.38), h))
-        left_crop = left_crop.resize((left_crop.width * 2, left_crop.height * 2), Image.LANCZOS)
+            if isinstance(img, str):
+                img = Image.open(img)
+            w, h = img.size
+            left_crop = img.crop((0, int(h * 0.05), int(w * 0.38), h))
+            left_crop = left_crop.resize((left_crop.width * 2, left_crop.height * 2), Image.LANCZOS)
         
-        cw, ch = left_crop.size
-        labels = []
-        values = []
-        ocr_text = ""
+            cw, ch = left_crop.size
+            labels = []
+            values = []
+            ocr_text = ""
 
-        if winocr is not None and self.preferred_ocr == "winocr":
-            try:
+            if winocr is not None and self.preferred_ocr == "winocr":
                 try:
-                    loop = asyncio.get_event_loop()
-                    if loop.is_closed():
+                    try:
+                        loop = asyncio.get_event_loop()
+                        if loop.is_closed():
+                            loop = asyncio.new_event_loop()
+                            asyncio.set_event_loop(loop)
+                    except RuntimeError:
                         loop = asyncio.new_event_loop()
                         asyncio.set_event_loop(loop)
-                except RuntimeError:
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
 
-                res = loop.run_until_complete(winocr.recognize_pil(left_crop, lang="ko"))
+                    res = loop.run_until_complete(winocr.recognize_pil(left_crop, lang="ko"))
 
-                for line in res.lines:
-                    txt = " ".join(w.text for w in line.words).strip()
-                    if not txt: continue
-                    w0 = line.words[0]
-                    ry = w0.bounding_rect.y / ch
-                    rx = w0.bounding_rect.x / cw
-                    if ry > 0.55:  # Below search box / inventory
-                        continue
-                    if rx < 0.38:
-                        labels.append((ry, txt))
-                    elif 0.38 <= rx <= 0.85:
-                        values.append((ry, txt))
-                ocr_text = "\n".join([l[1] for l in labels] + [v[1] for v in values])
-            except Exception:
+                    for line in res.lines:
+                        txt = " ".join(w.text for w in line.words).strip()
+                        if not txt: continue
+                        w0 = line.words[0]
+                        ry = w0.bounding_rect.y / ch
+                        rx = w0.bounding_rect.x / cw
+                        if ry > 0.55:  # Below search box / inventory
+                            continue
+                        if rx < 0.38:
+                            labels.append((ry, txt))
+                        elif 0.38 <= rx <= 0.85:
+                            values.append((ry, txt))
+                    ocr_text = "\n".join([l[1] for l in labels] + [v[1] for v in values])
+                except Exception:
+                    ocr_text = self.ocr_image(left_crop)
+            else:
                 ocr_text = self.ocr_image(left_crop)
-        else:
-            ocr_text = self.ocr_image(left_crop)
 
-        stats: Dict[str, float] = {}
+            stats: Dict[str, float] = {}
 
-        # 1. Coordinate-aligned pairing if labels & values extracted
-        if labels and values:
-            for l_ry, l_txt in labels:
-                best_v = None
-                min_d = 0.025
+            # 1. Coordinate-aligned pairing if labels & values extracted
+            if labels and values:
+                for l_ry, l_txt in labels:
+                    best_v = None
+                    min_d = 0.025
+                    for v_ry, v_txt in values:
+                        d = abs(l_ry - v_ry)
+                        if d < min_d:
+                            min_d = d
+                            best_v = (v_ry, v_txt)
+                    if best_v:
+                        v_str = best_v[1].replace(',', '')
+                        m_num = re.search(r'(\d+(?:\.\d+)?)', v_str)
+                        val = float(m_num.group(1)) if m_num else None
+                        if val is not None:
+                            if re.search(r'멀[티터E]|일[티터E]|밀[티터E]|multishot', l_txt, re.I):
+                                stats['multishot'] = val
+                            elif re.search(r'연사|인시|공격\s*속도|공속|fire\s*rate', l_txt, re.I):
+                                stats['fire_rate'] = val
+                            elif re.search(r'치.*확|지.*확|crit.*chance', l_txt, re.I):
+                                stats['crit_chance'] = val / 100.0 if val > 1.0 else val
+                            elif re.search(r'치.*피|지.*피|crit.*dam', l_txt, re.I):
+                                stats['crit_mult'] = val
+                            elif re.search(r'상.*이상|상해|상확|status', l_txt, re.I):
+                                stats['status_chance'] = val / 100.0 if val > 1.0 else val
+                            elif re.search(r'총계|총\s*피해|총합|출계|\*계', l_txt, re.I):
+                                stats['total_damage'] = val
+                            elif re.search(r'지면\s*강|지면', l_txt, re.I):
+                                stats['slam_damage'] = val
+                            elif re.search(r'슬라이드', l_txt, re.I):
+                                stats['slide_damage'] = val
+                            elif re.search(r'강\s*공격', l_txt, re.I):
+                                stats['heavy_damage'] = val
+
+                # Positional heuristic for fire_rate and multishot under basic attack section
+                if 'multishot' not in stats or 'fire_rate' not in stats:
+                    num_cands = []
+                    for v_ry, v_txt in values:
+                        if 0.10 <= v_ry <= 0.32 and '%' not in v_txt and not re.search(r'[xX배mMsS]', v_txt):
+                            for s in re.findall(r'[\d,]+(?:\.\d+)?', v_txt):
+                                try:
+                                    v = float(s.replace(',', ''))
+                                    if 0 < v < 100: num_cands.append(v)
+                                except Exception: pass
+                    if 'fire_rate' not in stats and len(num_cands) >= 1:
+                        stats['fire_rate'] = num_cands[0]
+                    if 'multishot' not in stats and len(num_cands) >= 2:
+                        stats['multishot'] = num_cands[1]
+
+            # 2. Total damage extraction: explicit label or last valid damage number before search box
+            if 'total_damage' not in stats and values:
+                dmg_cands = []
                 for v_ry, v_txt in values:
-                    d = abs(l_ry - v_ry)
-                    if d < min_d:
-                        min_d = d
-                        best_v = (v_ry, v_txt)
-                if best_v:
-                    v_str = best_v[1].replace(',', '')
-                    m_num = re.search(r'(\d+(?:\.\d+)?)', v_str)
-                    val = float(m_num.group(1)) if m_num else None
-                    if val is not None:
-                        if re.search(r'멀[티터E]|일[티터E]|밀[티터E]|multishot', l_txt, re.I):
-                            stats['multishot'] = val
-                        elif re.search(r'연사|인시|공격\s*속도|공속|fire\s*rate', l_txt, re.I):
-                            stats['fire_rate'] = val
-                        elif re.search(r'치.*확|지.*확|crit.*chance', l_txt, re.I):
-                            stats['crit_chance'] = val / 100.0 if val > 1.0 else val
-                        elif re.search(r'치.*피|지.*피|crit.*dam', l_txt, re.I):
-                            stats['crit_mult'] = val
-                        elif re.search(r'상.*이상|상해|상확|status', l_txt, re.I):
-                            stats['status_chance'] = val / 100.0 if val > 1.0 else val
-                        elif re.search(r'총계|총\s*피해|총합|출계|\*계', l_txt, re.I):
-                            stats['total_damage'] = val
-                        elif re.search(r'지면\s*강|지면', l_txt, re.I):
-                            stats['slam_damage'] = val
-                        elif re.search(r'슬라이드', l_txt, re.I):
-                            stats['slide_damage'] = val
-                        elif re.search(r'강\s*공격', l_txt, re.I):
-                            stats['heavy_damage'] = val
-
-            # Positional heuristic for fire_rate and multishot under basic attack section
-            if 'multishot' not in stats or 'fire_rate' not in stats:
-                num_cands = []
-                for v_ry, v_txt in values:
-                    if 0.10 <= v_ry <= 0.32 and '%' not in v_txt and not re.search(r'[xX배mMsS]', v_txt):
+                    if v_ry >= 0.38 and '%' not in v_txt and not re.search(r'[xX배mMsS]', v_txt):
                         for s in re.findall(r'[\d,]+(?:\.\d+)?', v_txt):
                             try:
                                 v = float(s.replace(',', ''))
-                                if 0 < v < 100: num_cands.append(v)
+                                if v > 0: dmg_cands.append(v)
                             except Exception: pass
-                if 'fire_rate' not in stats and len(num_cands) >= 1:
-                    stats['fire_rate'] = num_cands[0]
-                if 'multishot' not in stats and len(num_cands) >= 2:
-                    stats['multishot'] = num_cands[1]
+                if dmg_cands:
+                    stats['total_damage'] = dmg_cands[-1]
 
-        # 2. Total damage extraction: explicit label or last valid damage number before search box
-        if 'total_damage' not in stats and values:
-            dmg_cands = []
-            for v_ry, v_txt in values:
-                if v_ry >= 0.38 and '%' not in v_txt and not re.search(r'[xX배mMsS]', v_txt):
-                    for s in re.findall(r'[\d,]+(?:\.\d+)?', v_txt):
-                        try:
-                            v = float(s.replace(',', ''))
-                            if v > 0: dmg_cands.append(v)
-                        except Exception: pass
-            if dmg_cands:
-                stats['total_damage'] = dmg_cands[-1]
-
-        # 3. Supplemental text parsing fallbacks
-        combined_text = ocr_text + "\n" + (full_text or "")
+            # 3. Supplemental text parsing fallbacks
+            combined_text = ocr_text + "\n" + (full_text or "")
         
-        if 'crit_mult' not in stats:
-            m_cd = re.search(r'(\d+(?:\.\d+)?)\s*[xX배]', combined_text)
-            if m_cd:
-                stats['crit_mult'] = float(m_cd.group(1))
+            if 'crit_mult' not in stats:
+                m_cd = re.search(r'(\d+(?:\.\d+)?)\s*[xX배]', combined_text)
+                if m_cd:
+                    stats['crit_mult'] = float(m_cd.group(1))
 
-        if 'crit_chance' not in stats or 'status_chance' not in stats:
-            pcts = [float(p) / 100.0 for p in re.findall(r'(\d+(?:\.\d+)?)\s*%', combined_text)]
-            if pcts:
-                if len(pcts) >= 3 and pcts[0] <= 0.60:
-                    stats.setdefault('valence_bonus', pcts[0])
-                    stats.setdefault('crit_chance', pcts[1])
-                    stats.setdefault('status_chance', pcts[2])
-                elif len(pcts) >= 2:
-                    stats.setdefault('crit_chance', pcts[0])
-                    stats.setdefault('status_chance', pcts[1])
-                elif len(pcts) == 1:
-                    stats.setdefault('crit_chance', pcts[0])
+            if 'crit_chance' not in stats or 'status_chance' not in stats:
+                pcts = [float(p) / 100.0 for p in re.findall(r'(\d+(?:\.\d+)?)\s*%', combined_text)]
+                if pcts:
+                    if len(pcts) >= 3 and pcts[0] <= 0.60:
+                        stats.setdefault('valence_bonus', pcts[0])
+                        stats.setdefault('crit_chance', pcts[1])
+                        stats.setdefault('status_chance', pcts[2])
+                    elif len(pcts) >= 2:
+                        stats.setdefault('crit_chance', pcts[0])
+                        stats.setdefault('status_chance', pcts[1])
+                    elif len(pcts) == 1:
+                        stats.setdefault('crit_chance', pcts[0])
 
-        if 'multishot' not in stats:
-            m_ms = re.search(r'(?:멀[티터E]|일[티터E]|밀[티터E]|multishot)\s*샷?[\s\S]*?(\d+(?:\.\d+)?)', combined_text, re.I)
-            if m_ms:
-                stats['multishot'] = float(m_ms.group(1))
+            if 'multishot' not in stats:
+                m_ms = re.search(r'(?:멀[티터E]|일[티터E]|밀[티터E]|multishot)\s*샷?[\s\S]*?(\d+(?:\.\d+)?)', combined_text, re.I)
+                if m_ms:
+                    stats['multishot'] = float(m_ms.group(1))
 
-        if 'fire_rate' not in stats:
-            m_fr = re.search(r'(?:연사력|공격\s*속도|공속|fire\s*rate)[\s\S]*?(\d+(?:\.\d+)?)', combined_text, re.I) or re.search(r'(\d+\.\d+)\s*(?:자동|반자동|점사)', combined_text)
-            if m_fr:
-                stats['fire_rate'] = float(m_fr.group(1))
+            if 'fire_rate' not in stats:
+                m_fr = re.search(r'(?:연사력|공격\s*속도|공속|fire\s*rate)[\s\S]*?(\d+(?:\.\d+)?)', combined_text, re.I) or re.search(r'(\d+\.\d+)\s*(?:자동|반자동|점사)', combined_text)
+                if m_fr:
+                    stats['fire_rate'] = float(m_fr.group(1))
 
-        if 'total_damage' not in stats:
-            m_tot = re.search(r'(?:총계|총\s*피해|총\s*데미지|total\s*damage|총합|출계|\*계|奢기l)[\s\S]*?([\d,]+(?:\.\d+)?)', combined_text)
-            if m_tot:
-                stats['total_damage'] = float(m_tot.group(1).replace(',', ''))
+            if 'total_damage' not in stats:
+                m_tot = re.search(r'(?:총계|총\s*피해|총\s*데미지|total\s*damage|총합|출계|\*계|奢기l)[\s\S]*?([\d,]+(?:\.\d+)?)', combined_text)
+                if m_tot:
+                    stats['total_damage'] = float(m_tot.group(1).replace(',', ''))
 
-        for line in combined_text.splitlines():
-            l = line.strip()
-            if re.search(r'(지면\s*강타|slam)', l, re.I) and 'slam_damage' not in stats:
-                m = re.search(r'([\d,]+(?:\.\d+)?)', l)
-                if m: stats['slam_damage'] = float(m.group(1).replace(',', ''))
-            elif re.search(r'(슬라이드|slide)', l, re.I) and 'slide_damage' not in stats:
-                m = re.search(r'([\d,]+(?:\.\d+)?)', l)
-                if m: stats['slide_damage'] = float(m.group(1).replace(',', ''))
-            elif re.search(r'(강\s*공격|heavy)', l, re.I) and 'heavy_damage' not in stats:
-                m = re.search(r'([\d,]+(?:\.\d+)?)', l)
-                if m: stats['heavy_damage'] = float(m.group(1).replace(',', ''))
+            for line in combined_text.splitlines():
+                l = line.strip()
+                if re.search(r'(지면\s*강타|slam)', l, re.I) and 'slam_damage' not in stats:
+                    m = re.search(r'([\d,]+(?:\.\d+)?)', l)
+                    if m: stats['slam_damage'] = float(m.group(1).replace(',', ''))
+                elif re.search(r'(슬라이드|slide)', l, re.I) and 'slide_damage' not in stats:
+                    m = re.search(r'([\d,]+(?:\.\d+)?)', l)
+                    if m: stats['slide_damage'] = float(m.group(1).replace(',', ''))
+                elif re.search(r'(강\s*공격|heavy)', l, re.I) and 'heavy_damage' not in stats:
+                    m = re.search(r'([\d,]+(?:\.\d+)?)', l)
+                    if m: stats['heavy_damage'] = float(m.group(1).replace(',', ''))
 
-        return stats
+            return stats
 
     def calculate_comprehensive_metrics(self, w_meta: Dict[str, Any], left_stats: Optional[Dict[str, float]] = None, mod_objs: Optional[List[Dict[str, Any]]] = None, riven_stats: Optional[Dict[str, float]] = None) -> Dict[str, Any]:
-            # Default values if None
-            left_stats = left_stats or {}
-            mod_objs = mod_objs or []
-
-            # Initialize mod stats
-            mod_dmg = 0.0
-            mod_ms = 0.0
-            mod_cc = 0.0
-            mod_cd = 0.0
-            mod_fr = 0.0
-            mod_elem = 0.0
-
-            # Sum mod stats
-            for mod in mod_objs:
-                if mod.get('name') != 'Riven Mod':  # Skip 'Riven Mod' dummy entry without stats
-                    mod_dmg += mod.get('damage', 0.0)
-                    mod_ms += mod.get('multishot', 0.0)
-                    mod_cc += mod.get('crit_chance', 0.0)
-                    mod_cd += mod.get('crit_damage', 0.0)
-                    mod_fr += mod.get('fire_rate', 0.0)
-                    mod_elem += mod.get('elemental_damage', 0.0)
-
-            # Sum riven stats if provided
-            r_dmg = 0.0
-            r_ms = 0.0
-            r_cc = 0.0
-            r_cd = 0.0
-            r_fr = 0.0
-            r_elem = 0.0
-            r_faction_dmg = 0.0
-            r_slash = 0.0
-            r_impact = 0.0
-            r_puncture = 0.0
-            r_mag_capacity = 0.0
-            r_reload_speed = 0.0
-            r_initial_combo = 0.0
-
-            if riven_stats:
-                r_dmg = riven_stats.get('base_damage', 0.0) or riven_stats.get('damage', 0.0)
-                r_ms = riven_stats.get('multishot', 0.0)
-                r_cc = riven_stats.get('crit_chance', 0.0)
-                r_cd = riven_stats.get('crit_damage', 0.0)
-                r_fr = riven_stats.get('fire_rate', 0.0)
-                r_elem = riven_stats.get('elemental_damage', 0.0)
-                r_faction_dmg = riven_stats.get('faction_damage', 0.0)
-                r_slash = riven_stats.get('slash', 0.0)
-                r_impact = riven_stats.get('impact', 0.0)
-                r_puncture = riven_stats.get('puncture', 0.0)
-                r_mag_capacity = riven_stats.get('magazine_capacity', 0.0)
-                r_reload_speed = riven_stats.get('reload_speed', 0.0)
-                r_initial_combo = riven_stats.get('initial_combo', 0.0)
-
-                mod_dmg += r_dmg
-                mod_ms += r_ms
-                mod_cc += r_cc
-                mod_cd += r_cd
-                mod_fr += r_fr
-                mod_elem += r_elem
-
-            base_ms = float(w_meta.get('base_multishot', 1.0) or w_meta.get('multishot', 1.0) or 1.0)
-            base_dmg = float(w_meta.get('total_damage', 0.0))
-            if base_dmg <= 0:
-                base_dmg = float(left_stats.get('total_damage', 100.0))
-
-            # Check if left_stats has ground truth values from in-game UI
-            has_left_total = bool(left_stats.get('total_damage') and left_stats['total_damage'] > 0)
-            has_left_ms = bool(left_stats.get('multishot') and left_stats['multishot'] > 0)
-
-            if has_left_ms:
-                final_ms = float(left_stats['multishot'])
-                if riven_stats and r_ms > 0:
-                    final_ms = final_ms * (1.0 + r_ms)
-            else:
-                final_ms = base_ms * (1.0 + mod_ms)
-
-            if has_left_total:
-                final_dmg = float(left_stats['total_damage'])
-                if riven_stats:
-                    final_dmg = final_dmg * (1.0 + r_dmg) * (1.0 + r_ms) * (1.0 + r_elem)
-            else:
-                final_dmg = base_dmg * (1.0 + mod_dmg) * (1.0 + mod_ms) * (1.0 + mod_elem)
-
-            if left_stats.get('crit_chance') and left_stats['crit_chance'] > 0:
-                final_cc = float(left_stats['crit_chance'])
-                if riven_stats and r_cc > 0:
-                    final_cc += float(w_meta.get('crit_chance', 0.1)) * r_cc
-            else:
-                final_cc = float(w_meta.get('crit_chance', 0.1)) * (1.0 + mod_cc)
-
-            if left_stats.get('crit_mult') and left_stats['crit_mult'] > 0:
-                final_cd = float(left_stats['crit_mult'])
-                if riven_stats and r_cd > 0:
-                    final_cd += float(w_meta.get('crit_mult', 1.5)) * r_cd
-            else:
-                final_cd = float(w_meta.get('crit_mult', 1.5)) * (1.0 + mod_cd)
-
-            if left_stats.get('fire_rate') and left_stats['fire_rate'] > 0:
-                final_fr = float(left_stats['fire_rate'])
-                if riven_stats and r_fr > 0:
-                    final_fr = final_fr * (1.0 + r_fr)
-            else:
-                final_fr = float(w_meta.get('fire_rate', 1.0)) * (1.0 + mod_fr)
-
-            # Ensure final stats are within valid ranges
-            final_cc = max(0.0, final_cc)
-            final_ms = max(0.1, final_ms)
-            final_fr = max(0.1, final_fr)
-
-            import math
-            per_pellet_dmg = final_dmg / final_ms if final_ms > 0 else final_dmg
-            is_melee = w_meta.get('category') == 'Melee'
-
-            if not is_melee and final_ms > 1.0:
-                ms_min_pellets = max(1, math.floor(final_ms))
-                ms_max_pellets = max(1, math.ceil(final_ms))
-                ms_extra_pct = round((final_ms - math.floor(final_ms)) * 100.0, 1)
-
-                # Guaranteed minimum non-crit hit when minimum pellets connect
-                min_hit = per_pellet_dmg * ms_min_pellets
-                # Maximum non-crit hit when maximum pellets connect
-                max_non_crit = per_pellet_dmg * ms_max_pellets
-                # Max crit hit when maximum pellets all crit
-                max_crit_hit = max_non_crit * final_cd
-            else:
-                ms_min_pellets = 1
-                ms_max_pellets = 1
-                ms_extra_pct = 0.0
-                min_hit = final_dmg
-                max_non_crit = final_dmg
-                max_crit_hit = final_dmg * final_cd
-
-            # Average non-crit trigger pull (Total damage on mod screen)
-            avg_trigger_dmg = final_dmg
-            expected_hit = avg_trigger_dmg * (1.0 + final_cc * (final_cd - 1.0))
-            burst_dps = expected_hit * final_fr
-
-            # Adjust for faction damage
-            if r_faction_dmg > 0:
-                final_dmg *= (1.0 + r_faction_dmg)
-                expected_hit *= (1.0 + r_faction_dmg)
-                burst_dps *= (1.0 + r_faction_dmg)
-
-            # Adjust for physical damage types
-            if r_slash > 0:
-                final_dmg += r_slash * (1.0 + mod_dmg)
-            if r_impact > 0:
-                final_dmg += r_impact * (1.0 + mod_dmg)
-            if r_puncture > 0:
-                final_dmg += r_puncture * (1.0 + mod_dmg)
-
-            # Adjust for magazine and reload speed
-            if r_mag_capacity > 0 and r_reload_speed > 0:
-                final_mag = r_mag_capacity
-                final_reload = r_reload_speed
-                duty_cycle = final_mag / (final_mag + final_reload)
-                sustained_dps = burst_dps * duty_cycle
-            else:
-                sustained_dps = burst_dps * 0.78
-
-            # Adjust for initial combo
-            if r_initial_combo >= 20:
-                # Boost melee combo multiplier
-                combo_multiplier = 1.6 if is_melee else 1.0
-                expected_hit *= combo_multiplier
-                burst_dps *= combo_multiplier
-
-            result = {
-                'full_stack': {
-                    'burst_dps': burst_dps,
-                    'full_stack_hit': expected_hit
-                }
-            }
-
-            # Populate radial and heavy/energy_disk logic from w_meta
-            if 'slam_damage' in left_stats:
-                result['radial'] = {'base_damage': left_stats['slam_damage']}
-            elif 'radial_attack' in w_meta:
-                rad_atk = w_meta['radial_attack']
-                rad_base = sum(rad_atk.get('damage', {}).values()) if isinstance(rad_atk.get('damage'), dict) else float(rad_atk.get('damage', 0))
-                if w_meta.get('category') == 'Melee' and 'total_damage' in w_meta and float(w_meta['total_damage']) > 0:
-                    scale = final_dmg / float(w_meta['total_damage'])
-                    rad_base = rad_base * scale
-                result['radial'] = {'base_damage': rad_base}
-
-            if 'heavy_damage' in left_stats:
-                result['heavy'] = {'heavy_hit': left_stats['heavy_damage']}
-            elif w_meta.get('category') == 'Melee':
-                result['heavy'] = {'heavy_hit': final_dmg * 1.5}
-                for atk in w_meta.get('attacks', []):
-                    if atk.get('name') == 'Energy Disk':
-                        d_base = sum(atk.get('damage', {}).values()) if isinstance(atk.get('damage'), dict) else float(atk.get('damage', 0))
-                        scale = (final_dmg / float(w_meta['total_damage'])) if ('total_damage' in w_meta and float(w_meta['total_damage']) > 0) else 1.0
-                        result['energy_disk'] = {'damage': d_base * scale}
-
-            # Populate 'incarnon' dict if applicable
-            incarnon_desc = self.get_incarnon_trait_description(w_meta.get('name', ''))
-            inc_atk = w_meta.get('incarnon_attack')
-            if incarnon_desc or inc_atk:
-                if inc_atk:
-                    inc_b_dmg = sum(inc_atk.get('damage', {}).values()) if isinstance(inc_atk.get('damage'), dict) else float(inc_atk.get('damage', base_dmg * 2.2))
-                    inc_cc_b = float(inc_atk.get('crit_chance', 0))
-                    inc_cc_b = (inc_cc_b / 100.0) if inc_cc_b > 1.0 else (inc_cc_b or float(w_meta.get('crit_chance', 0.2)))
-                    inc_cd_b = float(inc_atk.get('crit_mult', w_meta.get('crit_mult', 2.0)))
-                    inc_fr_b = float(inc_atk.get('speed', w_meta.get('fire_rate', 5.0)))
-                    inc_f_dmg = inc_b_dmg * (1.0 + mod_dmg) * (1.0 + mod_ms) * (1.0 + mod_elem)
-                    inc_f_cc = inc_cc_b * (1.0 + mod_cc)
-                    inc_f_cd = inc_cd_b * (1.0 + mod_cd)
-                    inc_f_fr = inc_fr_b * (1.0 + mod_fr)
-                    inc_exp = inc_f_dmg * (1.0 + inc_f_cc * (inc_f_cd - 1.0))
-                    inc_burst = inc_exp * inc_f_fr
-                else:
-                    inc_exp = expected_hit * 2.4
-                    inc_burst = burst_dps * 2.4
-                result['incarnon'] = {
-                    'burst_dps': inc_burst,
-                    'expected_hit': inc_exp,
-                    'attack_meta': inc_atk,
-                    'description': incarnon_desc
-                }
-
-            # Populate 'hunter_munitions' dict if applicable
-            if any('Hunter Munitions' in m.get('name', '') or 'Internal Bleeding' in m.get('name', '') for m in mod_objs):
-                bleed_tick = 0.35 * base_dmg * (1.0 + mod_dmg) * (1.0 + mod_ms) * (1.0 + final_cc * (final_cd - 1.0))
-                if r_faction_dmg > 0:
-                    bleed_tick *= (1.0 + r_faction_dmg)**2
-                result['hunter_munitions'] = {
-                    'equipped': True,
-                    'bleed_tick': bleed_tick
-                }
-
-            return {
-                'final_dmg': final_dmg,
-                'final_cc': final_cc,
-                'final_cd': final_cd,
-                'final_fr': final_fr,
-                'final_ms': final_ms,
-                'per_pellet_dmg': per_pellet_dmg,
-                'ms_min_pellets': ms_min_pellets,
-                'ms_max_pellets': ms_max_pellets,
-                'ms_extra_pct': ms_extra_pct,
-                'min_hit': min_hit,
-                'max_non_crit': max_non_crit,
-                'max_crit_hit': max_crit_hit,
-                'expected_hit': expected_hit,
-                'burst_dps': burst_dps,
-                'sustained_dps': sustained_dps,
-                **result
-            }
+            from scripts.warframe_damage_engine import WarframeDamageEngine
+            if not hasattr(self, 'damage_engine') or not self.damage_engine:
+                self.damage_engine = WarframeDamageEngine()
+            return self.damage_engine.compute_metrics(w_meta, left_stats=left_stats, mod_objs=mod_objs, riven_stats=riven_stats)
 
     def has_pending_diagnosis(self) -> bool:
         return hasattr(self, 'pending_screenshot') and self.pending_screenshot is not None

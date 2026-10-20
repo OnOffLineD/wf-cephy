@@ -65,5 +65,7 @@
   "damage_breakdown_dialog": "scripts/damage_breakdown_dialog.py",
   "RivenQuickInputDialog": "scripts/riven_quick_dialog.py",
   "riven_quick_dialog": "scripts/riven_quick_dialog.py",
-  "test_riven_diagnosis_workflow": "tests/test_riven_diagnosis_workflow.py"
+  "test_riven_diagnosis_workflow": "tests/test_riven_diagnosis_workflow.py",
+  "WarframeDamageEngine": "scripts/warframe_damage_engine.py",
+  "warframe_damage_engine": "scripts/warframe_damage_engine.py"
 }
