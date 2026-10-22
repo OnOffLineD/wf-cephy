@@ -111,3 +111,41 @@ Before committing a milestone, execute the verification commands configured in `
    - Always-on side checklist with real-time world events (Cetus Day/Night, Duviri, Sortie).
    - Smart todo intent detection with inline confirmation buttons and task deletion (`[X]`).
    - UTF-8 encoding must be strictly enforced on all JSON/text operations.
+
+
+---
+
+## 7. Harness² Multi-Agent RBAC & Communication Protocol
+
+### 7.1 Multi-Agent Roles (Strict RBAC)
+
+| Agent ID | Primary Responsibility | Permission | Allowed Scope |
+| :--- | :--- | :--- | :--- |
+| **`AGENT_ARCH`** | 지식 그래프 인덱싱, 아키텍처/결합도 점검, 리팩토링 지시 | **READ-ONLY** | 전체 디렉토리 조회 및 `graphify-out/` 분석 (수정 불가) |
+| **`AGENT_CORE`** | DB 스키마, 핵심 비즈니스 로직, 엔진 및 파이프라인 | **READ / WRITE** | `scripts/warframe_damage_engine.py`, `scripts/screen_mod_analyzer.py`, `scripts/damage_simulator.py` 등 |
+| **`AGENT_UI`** | 디자인 시스템, 사용자 인터페이스, 데스크톱 컴패니언 | **READ / WRITE** | `scripts/desktop_companion.py`, `scripts/companion_views.py`, `assets/` |
+| **`AGENT_QA`** | 단위/통합/회귀 테스트 작성 및 실행, 프로브 검증 | **READ / WRITE (Tests)** | `tests/` 전용 쓰기, 그 외 소스 코드는 읽기 전용 |
+| **`AGENT_SCRIBE`** | 진행 현황 기록, 변경 이력 추적, 원자적 Git 커밋 | **READ / WRITE (Docs/Git)** | `PROGRESS.md`, `EXPERIENCE.md`, `.git/` 단독 제어 |
+
+### 7.2 Inter-Agent Communication Protocol (`@[AGENT_PACKET]`)
+에이전트 간 핸드오프 및 상태 보고는 아래 정형 블록만 사용하며, 블록 외부의 자유 텍스트는 배제합니다:
+
+```yaml
+@[AGENT_PACKET]
+from: <AGENT_ID>
+to: <AGENT_ID>
+phase: <PHASE_ID>
+status: <DISPATCHED | IN_PROGRESS | PASSED | FAILED | REFACTOR_REQUIRED>
+graphify_nodes: [<queried_symbols>]
+touched_files: [<modified_files>]
+git_commit_ref: "<commit_hash_or_pending>"
+payload:
+  task: "<imperative_task_summary>"
+  verification: "<probe_or_test_result>"
+  issue: "<none_or_traceback>"
+@[/AGENT_PACKET]
+```
+
+### 7.3 Propose-Probe-Compose Lifecycle
+1. 코드 수정 후 반드시 `python scripts/probe.py` 3대 게이트(테스트, 도메인 정합성, 그래프)를 통과한 최적안만 채택합니다.
+2. 예외 및 아키텍처 트러블슈팅 경험은 `scripts/record_experience.py`를 통해 `EXPERIENCE.md`에 지속 축적합니다.
