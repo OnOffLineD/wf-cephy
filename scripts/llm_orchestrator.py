@@ -1,3 +1,4 @@
+import time
 import json
 import re
 import requests
@@ -37,56 +38,42 @@ class LLMOrchestrator:
         self._rag_retriever = val
 
     def _call_llm(self, system_prompt: str, user_prompt: str, temperature: float = 0.5) -> Optional[str]:
-            # Convert system_prompt to string if it's a dict
-            if isinstance(system_prompt, dict):
-                system_prompt = json.dumps(system_prompt)
+        # Convert system_prompt to string if it's a dict
+        if isinstance(system_prompt, dict):
+            system_prompt = system_prompt.get("prompt") or str(system_prompt)
 
-            # Wait up to 3 seconds for health if self.runner is starting
-            if self.runner and not self.runner.is_ready():
-                self.runner.wait_for_ready(timeout=3)
+        # Wait up to 5 seconds for health if self.runner is starting
+        if self.runner and hasattr(self.runner, "is_healthy"):
+            if not self.runner.is_healthy():
+                if hasattr(self.runner, "wait_for_ready"):
+                    self.runner.wait_for_ready(timeout=5)
+                else:
+                    start_t = time.time()
+                    while time.time() - start_t < 5.0:
+                        if self.runner.is_healthy():
+                            break
+                        time.sleep(0.5)
 
-            # 1. Try local portable llama-server
-            try:
-                payload = {
-                    "messages": [
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_prompt}
-                    ],
-                    "temperature": temperature,
-                    "stream": False
-                }
-                res = requests.post(self.llama_server_url, json=payload, timeout=30)
-                if res.status_code == 200:
-                    data = res.json()
-                    choices = data.get("choices", [])
-                    if choices:
-                        return choices[0].get("message", {}).get("content", "").strip()
-            except Exception:
-                pass
+        # 1. Try local portable llama-server (ONLY - no Ollama)
+        try:
+            payload = {
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                "temperature": temperature,
+                "stream": False
+            }
+            res = requests.post(self.llama_server_url, json=payload, timeout=35)
+            if res.status_code == 200:
+                data = res.json()
+                choices = data.get("choices", [])
+                if choices:
+                    return choices[0].get("message", {}).get("content", "").strip()
+        except Exception:
+            pass
 
-            # 2. Try Ollama with available models in order
-            ollama_models = ["gemma4-v2:q6", "qwen2.5-coder-16k:latest", "gemma4:e2b"]
-            for model in ollama_models:
-                try:
-                    ollama_payload = {
-                        "model": model,
-                        "prompt": f"{system_prompt}\n\n{user_prompt}",
-                        "options": {
-                            "num_ctx": self.context_size,
-                            "temperature": temperature
-                        },
-                        "stream": False
-                    }
-                    res = requests.post("http://localhost:11434/api/generate", json=ollama_payload, timeout=30)
-                    if res.status_code == 200:
-                        data = res.json()
-                        resp = data.get("response", "").strip()
-                        if resp:
-                            return resp
-                except Exception:
-                    pass
-
-            return None
+        return None
 
     def chat_smalltalk(self, user_text: str) -> str:
             # 1. Status check keywords

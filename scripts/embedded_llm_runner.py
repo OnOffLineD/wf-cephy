@@ -127,6 +127,17 @@ class EmbeddedLLMRunner:
         except requests.RequestException:
             return False
 
+    def is_ready(self) -> bool:
+        return self.is_healthy()
+
+    def wait_for_ready(self, timeout=10) -> bool:
+        start_t = time.time()
+        while time.time() - start_t < timeout:
+            if self.is_healthy():
+                return True
+            time.sleep(0.5)
+        return False
+
 # Example usage:
 # runner = EmbeddedLLMRunner()
 # runner.start_server()

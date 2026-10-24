@@ -105,3 +105,20 @@ def test_persona_dialog_headless():
 
         assert pm.get_mode() == "custom"
         assert pm.get_custom_prompt() == "테스트 커스텀 프롬프트"
+
+def test_runner_compatibility_and_llama_only():
+    from scripts.embedded_llm_runner import EmbeddedLLMRunner
+    runner = EmbeddedLLMRunner()
+    # Must have both is_healthy and is_ready without raising AttributeError
+    assert hasattr(runner, "is_ready")
+    assert hasattr(runner, "is_healthy")
+    assert hasattr(runner, "wait_for_ready")
+    assert runner.is_ready() == runner.is_healthy()
+
+    orch = LLMOrchestrator()
+    orch.runner = runner
+    # Should not raise AttributeError when calling chat
+    res = orch.chat("야 빵사외")
+    assert isinstance(res, dict)
+    assert "report" in res
+    assert "mood" in res
