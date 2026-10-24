@@ -46,6 +46,7 @@ from scripts.damage_breakdown_dialog import DamageBreakdownDialog
 from scripts.riven_quick_dialog import RivenQuickInputDialog
 from scripts.morphing_tab_bar import MorphingTabBar
 from scripts.persona_dialog import OrdisPersonaDialog
+from scripts.layered_pet_renderer import LayeredPetRenderer
 
 # -------------------------------------------------------------------------
 # 1. Desktop Pet Floating Widget
@@ -70,8 +71,8 @@ class DesktopPet(QWidget):
 
         layout = QVBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
-        self.avatar = QLabel()
-        self.set_mood("idle")
+        self.avatar = LayeredPetRenderer(asset_dir=self.asset_dir, parent=self)
+        self.avatar.set_mood("idle")
         layout.addWidget(self.avatar)
         self.setLayout(layout)
 
@@ -79,11 +80,17 @@ class DesktopPet(QWidget):
         screen = QApplication.primaryScreen().geometry()
         self.move(screen.width() - 180, screen.height() - 220)
 
-    def set_mood(self, mood="idle"):
-        fpath = os.path.join(self.asset_dir, f"{mood}.png")
-        if os.path.exists(fpath):
-            pix = QPixmap(fpath).scaled(130, 130, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
-            self.avatar.setPixmap(pix)
+    def set_mood(self, mood="idle", intensity=1, vfx=None, secondary_mood=None):
+        if hasattr(self.avatar, 'set_mood'):
+            self.avatar.set_mood(mood, intensity=intensity, vfx=vfx, secondary_mood=secondary_mood)
+
+    def start_talking(self, duration_ms: int = 0):
+        if hasattr(self.avatar, 'start_talking'):
+            self.avatar.start_talking(duration_ms=duration_ms)
+
+    def stop_talking(self):
+        if hasattr(self.avatar, 'stop_talking'):
+            self.avatar.stop_talking()
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
@@ -538,6 +545,10 @@ class OrdisCompanionApp(QWidget):
         # Check smart todo detection
         detected_todo = self.tracker.detect_todo_intent(text) if self.auto_todo_enabled else None
 
+        # Trigger thinking animation on pet
+        if hasattr(self, 'pet') and self.pet and hasattr(self.pet, 'set_mood'):
+            self.pet.set_mood('thinking')
+
         # Show animated thinking bubble
         self.add_chat_bubble('세팔론 오디스', '💭 세팔론 오디스가 생각 중입니다', is_user=False, action_todo={'is_thinking': True})
         QApplication.processEvents()
@@ -547,6 +558,18 @@ class OrdisCompanionApp(QWidget):
             try:
                 res = self.orchestrator.chat(text)
                 reply_text = res.get("report", "응답을 생성하지 못했습니다.")
+                mood = res.get("mood", "idle")
+                intensity = res.get("intensity", 1)
+                vfx = res.get("vfx")
+                sec_mood = res.get("secondary_mood")
+
+                if hasattr(self, 'pet') and self.pet:
+                    if hasattr(self.pet, 'set_mood'):
+                        self.pet.set_mood(mood, intensity=intensity, vfx=vfx, secondary_mood=sec_mood)
+                    if hasattr(self.pet, 'start_talking'):
+                        duration = min(4500, max(1500, len(reply_text) * 45))
+                        self.pet.start_talking(duration_ms=duration)
+
                 action_obj = detected_todo
                 if res.get('type') == 'RIVEN_CLARIFIED':
                     self._pending_mod_review = None

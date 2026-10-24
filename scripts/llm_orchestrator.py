@@ -9,6 +9,7 @@ from scripts.chroma_rag_retriever import ChromaRAGRetriever
 from scripts.path_config import get_path
 from scripts.short_term_memory import ShortTermMemory
 from scripts.persona_manager import PersonaManager
+from scripts.emotion_parser import EmotionParser
 
 class LLMOrchestrator:
     def __init__(self, 
@@ -23,6 +24,7 @@ class LLMOrchestrator:
         self.context_size = 4096
         self.memory = ShortTermMemory(mode='4k')
         self.persona_manager = PersonaManager()
+        self.emotion_parser = EmotionParser()
 
     @property
     def rag_retriever(self):
@@ -148,7 +150,7 @@ class LLMOrchestrator:
             # Construct system_prompt based on active persona
             system_prompt = (
                 f"당신은 세팔론 오디스입니다. 성격 및 어조 지침: {persona_prompt}. "
-                "오퍼레이터의 질문에 대해 [참고 데이터]에서 추출된 사실을 2~4줄의 간결한 한국어로 요약하세요. "
+                "오퍼레이터의 질문에 대해 답변 맨 첫머리에 반드시 현재 감정을 [MOOD:tactical|proud|worried|happy|glitch] 태그로 포함하고, [참고 데이터]에서 추출된 사실을 2~4줄의 간결한 한국어로 요약하세요. "
                 "동일한 문장이나 불릿을 절대로 반복하지 마십시오. 8-mod 빌드는 요청받지 않는 한 생성하지 마십시오."
             )
 
@@ -260,9 +262,20 @@ class LLMOrchestrator:
                 report = self.chat_smalltalk(user_query)
                 res_type = 'SMALLTALK'
 
-            # 6. Store user_query and result report into self.memory
-            self.memory.add_turn(user_query, report)
-            return {'type': res_type, 'report': report}
+            # 6. Parse emotion tags and store clean text in memory
+            parsed = self.emotion_parser.parse(report)
+            clean_text = parsed.get('clean_text', report)
+            self.memory.add_turn(user_query, clean_text)
+
+            return {
+                'type': res_type,
+                'report': clean_text,
+                'mood': parsed.get('mood', 'idle'),
+                'secondary_mood': parsed.get('secondary_mood'),
+                'intensity': parsed.get('intensity', 1),
+                'vfx': parsed.get('vfx'),
+                'raw_report': report
+            }
 
     def set_context_mode(self, mode: str) -> str:
         mode_to_size = {'2k': 2048, '4k': 4096, '8k': 8192}
