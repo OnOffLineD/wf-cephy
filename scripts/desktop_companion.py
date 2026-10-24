@@ -45,12 +45,14 @@ from scripts.embedded_llm_runner import EmbeddedLLMRunner
 from scripts.damage_breakdown_dialog import DamageBreakdownDialog
 from scripts.riven_quick_dialog import RivenQuickInputDialog
 from scripts.morphing_tab_bar import MorphingTabBar
+from scripts.persona_dialog import OrdisPersonaDialog
 
 # -------------------------------------------------------------------------
 # 1. Desktop Pet Floating Widget
 # -------------------------------------------------------------------------
 class DesktopPet(QWidget):
     clicked = pyqtSignal()
+    open_persona_requested = pyqtSignal()
 
     def __init__(self, asset_dir=None):
         super().__init__()
@@ -100,12 +102,15 @@ class DesktopPet(QWidget):
         menu = QMenu(self)
         menu.setStyleSheet("QMenu { background: #121622; color: #fff; border: 1px solid #00d2ff; padding: 5px; } QMenu::item:selected { background: #0088cc; }")
         open_act = menu.addAction("💬 오디스 메신저 열기")
+        persona_act = menu.addAction("🎭 오디스 성격 설정...")
         reset_act = menu.addAction("📍 위치 초기화")
         exit_act = menu.addAction("❌ 종료")
 
         act = menu.exec(pos)
         if act == open_act:
             self.clicked.emit()
+        elif act == persona_act:
+            self.open_persona_requested.emit()
         elif act == reset_act:
             screen = QApplication.primaryScreen().geometry()
             self.move(screen.width() - 180, screen.height() - 220)
@@ -303,6 +308,14 @@ class OrdisCompanionApp(QWidget):
             self.tab_bar.tab_changed.connect(self.switch_tab)
             h_layout.addWidget(self.tab_bar)
             h_layout.addStretch()
+
+            # Persona Button
+            persona_btn = QPushButton("🎭")
+            persona_btn.setFixedSize(30, 30)
+            persona_btn.setToolTip("오디스 성격 및 페르소나 설정")
+            persona_btn.setStyleSheet("background: #111722; color: #38bdf8; border: 1px solid #1e293b; font-size: 13px; border-radius: 15px;")
+            persona_btn.clicked.connect(self.open_persona_dialog)
+            h_layout.addWidget(persona_btn)
 
             # Close Button
             close_btn = QPushButton("X")
@@ -505,6 +518,10 @@ class OrdisCompanionApp(QWidget):
         self.input_edit.clear()
         self.add_chat_bubble("오퍼레이터", text, is_user=True)
         QApplication.processEvents()
+
+        if text in ('/성격', '/페르소나', '/persona', '성격 설정', '페르소나 설정'):
+            self.open_persona_dialog()
+            return
 
         # Process chat todo command
         cmd_res = self.tracker.process_chat_todo_command(text)
@@ -937,6 +954,16 @@ class OrdisCompanionApp(QWidget):
         self.hide()
         self.setGeometry(curr_geo)
         self.setWindowOpacity(0.94)
+
+    def open_persona_dialog(self):
+        dlg = OrdisPersonaDialog(self.orchestrator.persona_manager, parent=self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            persona = self.orchestrator.persona_manager.get_active_persona()
+            self.add_chat_bubble(
+                "세팔론 오디스",
+                f"오퍼레이터님! 오디스의 성격 모드가 [{persona.get('name', '설정 완료')}] 모드로 변경되었습니다!",
+                is_user=False
+            )
 
     def open_riven_quick_dialog(self):
         dlg = RivenQuickInputDialog(self)

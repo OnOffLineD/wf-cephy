@@ -8,6 +8,7 @@ import random
 from scripts.chroma_rag_retriever import ChromaRAGRetriever
 from scripts.path_config import get_path
 from scripts.short_term_memory import ShortTermMemory
+from scripts.persona_manager import PersonaManager
 
 class LLMOrchestrator:
     def __init__(self, 
@@ -21,6 +22,7 @@ class LLMOrchestrator:
         self.runner = None
         self.context_size = 4096
         self.memory = ShortTermMemory(mode='4k')
+        self.persona_manager = PersonaManager()
 
     @property
     def rag_retriever(self):
@@ -86,17 +88,23 @@ class LLMOrchestrator:
             if any(k in user_text for k in ['돌거야', '갈거야', '할거야', '돌자', '가자', '해야지', '깨야지', '돌아야지', '잡을래', '잡으러', '가볼까', '시작할게', '출발']):
                 return '오퍼레이터님! 멋진 작전 계획입니다! 오디스가 성계 지도 항로를 대기시켜 두겠습니다. 전장을 찢어발기십시오!'
 
-            # 3. LLM call with Ordis persona
-            system_prompt = (
-                "당신은 워프레임(Warframe) 함선의 인공지능 '세팔론 오디스(Cephalon Ordis)'입니다.\n"
-                "오퍼레이터(유저)의 일상적인 말이나 잡담에 대해 오디스 특유의 충성스러우면서도 엉뚱하고 가끔 욱하는 글리치(Glitch) 유머가 섞인 2~3줄의 친절한 한국어 답변을 하세요.\n"
-                "절대로 영어 번역이나 빌드 표를 억지로 만들지 마십시오. 오직 자연스러운 한국어 대화만 하십시오."
-            )
+            # 3. Retrieve active persona system prompt
+            active_persona = self.persona_manager.get_active_persona()
+            if active_persona:
+                system_prompt = active_persona
+            else:
+                system_prompt = (
+                    "당신은 워프레임(Warframe) 함선의 인공지능 '세팔론 오디스(Cephalon Ordis)'입니다.\n"
+                    "오퍼레이터(유저)의 일상적인 말이나 잡담에 대해 오디스 특유의 충성스러우면서도 엉뚱하고 가끔 욱하는 글리치(Glitch) 유머가 섞인 2~3줄의 친절한 한국어 답변을 하세요.\n"
+                    "절대로 영어 번역이나 빌드 표를 억지로 만들지 마십시오. 오직 자연스러운 한국어 대화만 하십시오."
+                )
+
+            # 4. LLM call with Ordis persona
             response = self._call_llm(system_prompt, user_text, temperature=0.6)
             if response:
                 return response
 
-            # 4. Fallback witty Ordis quotes
+            # 5. Fallback witty Ordis quotes
             if any(k in user_text for k in ['자장가', '옥타비아']):
                 return '오퍼레이터님, 옥타비아의 자장가를 틀어드릴까요? ...아니면 강철의 길에서 산소통이나 채우시겠습니까? 무리하지 마시고 푹 쉬십시오!'
             elif any(k in user_text for k in ['안녕', '반가', '하이', '반갑']):
@@ -133,35 +141,16 @@ class LLMOrchestrator:
             conversation_context = self.memory.get_context_for_prompt()
             conversation_context_text = f"[최근 대화 기록]\n{conversation_context}\n\n" if conversation_context else ""
 
-            # Randomly select an Ordis mood variation
-            ordis_mood = random.choice([
-                "Loyal caretaker Ordis wishing for Operator safety",
-                "Witty glitch Ordis with occasional glitch remarks like '--??? ???? ????!--'",
-                "Tactical briefing officer Ordis with sharp, precise tone"
-            ])
+            # Get active persona prompt
+            active_persona = self.persona_manager.get_active_persona()
+            persona_prompt = active_persona if active_persona else "충성스러운 집사"
 
-            # Construct system_prompt based on selected mood
-            if ordis_mood == "Loyal caretaker Ordis wishing for Operator safety":
-                system_prompt = (
-                    "당신은 세팔론 오디스입니다.\n"
-                    "오퍼레이터의 질문에 대해 [참고 데이터]에서 추출된 사실을 2~4줄의 간결한 한국어로 요약하세요.\n"
-                    "동일한 문장이나 불릿을 절대로 반복하지 마십시오. 8-mod 빌드는 요청받지 않는 한 생성하지 마십시오.\n"
-                    "오퍼레이터의 안전을 위해 최선을 다하세요."
-                )
-            elif ordis_mood == "Witty glitch Ordis with occasional glitch remarks like '--??? ???? ????!--'":
-                system_prompt = (
-                    "당신은 세팔론 오디스입니다.\n"
-                    "오퍼레이터의 질문에 대해 [참고 데이터]에서 추출된 사실을 2~4줄의 간결한 한국어로 요약하세요.\n"
-                    "동일한 문장이나 불릿을 절대로 반복하지 마십시오. 8-mod 빌드는 요청받지 않는 한 생성하지 마십시오.\n"
-                    "때로는 '--??? ???? ????!--' 같은 글리치 말풍을 사용하세요."
-                )
-            else:
-                system_prompt = (
-                    "당신은 세팔론 오디스입니다.\n"
-                    "오퍼레이터의 질문에 대해 [참고 데이터]에서 추출된 사실을 2~4줄의 간결한 한국어로 요약하세요.\n"
-                    "동일한 문장이나 불릿을 절대로 반복하지 마십시오. 8-mod 빌드는 요청받지 않는 한 생성하지 마십시오.\n"
-                    "명확하고 간결한 답변을 제공하세요."
-                )
+            # Construct system_prompt based on active persona
+            system_prompt = (
+                f"당신은 세팔론 오디스입니다. 성격 및 어조 지침: {persona_prompt}. "
+                "오퍼레이터의 질문에 대해 [참고 데이터]에서 추출된 사실을 2~4줄의 간결한 한국어로 요약하세요. "
+                "동일한 문장이나 불릿을 절대로 반복하지 마십시오. 8-mod 빌드는 요청받지 않는 한 생성하지 마십시오."
+            )
 
             # Build user_prompt
             user_prompt = f"오퍼레이터 질문: {user_query}\n\n{conversation_context_text}[참고 데이터]:\n{context_text}\n\n세팔론 오디스의 친절하고 정확한 답변:"

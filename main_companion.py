@@ -40,6 +40,7 @@ def main():
             panel.animate_show(pet.geometry())
 
     pet.clicked.connect(toggle_panel)
+    pet.open_persona_requested.connect(lambda: (panel.show(), panel.open_persona_dialog()))
     pet.show()
 
     sys.exit(app.exec())
