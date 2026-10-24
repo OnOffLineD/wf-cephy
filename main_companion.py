@@ -31,6 +31,7 @@ def main():
 
     # Floating pet widget (shown by default)
     pet = DesktopPet(asset_dir=os.path.join(ROOT_DIR, "assets", "character"))
+    panel.pet = pet
 
     def toggle_panel():
         if panel.isVisible() and panel.windowOpacity() > 0.05:

@@ -44,6 +44,7 @@ from scripts.screen_mod_analyzer import ScreenModAnalyzer
 from scripts.embedded_llm_runner import EmbeddedLLMRunner
 from scripts.damage_breakdown_dialog import DamageBreakdownDialog
 from scripts.riven_quick_dialog import RivenQuickInputDialog
+from scripts.morphing_tab_bar import MorphingTabBar
 
 # -------------------------------------------------------------------------
 # 1. Desktop Pet Floating Widget
@@ -294,17 +295,13 @@ class OrdisCompanionApp(QWidget):
             h_layout.setContentsMargins(0, 0, 0, 0)
             h_layout.setSpacing(0)
 
-            # Segmented Tab Bar
-            self.tab_index = 0
-            tabs = ["💬 채팅", "📋 숙제", "🌐 현황"]
-            self.tab_buttons = []
-            for i, tab in enumerate(tabs):
-                btn = QPushButton(tab)
-                btn.setFixedSize(100, 30)
-                btn.setStyleSheet("background: #111722; color: #e2e8f0; border: none; font-size: 12px; border-radius: 15px;")
-                btn.clicked.connect(lambda _, i=i: self.switch_tab(i))
-                self.tab_buttons.append(btn)
-                h_layout.addWidget(btn)
+            # Morphing Tab Bar
+            self.tab_bar = MorphingTabBar(self)
+            self.tab_bar.add_tab("💬 채팅")
+            self.tab_bar.add_tab("📋 숙제")
+            self.tab_bar.add_tab("🌍 현황")
+            self.tab_bar.tab_changed.connect(self.switch_tab)
+            h_layout.addWidget(self.tab_bar)
             h_layout.addStretch()
 
             # Close Button
@@ -405,45 +402,60 @@ class OrdisCompanionApp(QWidget):
             # Game Status Page (Tab 2)
             status_page = QWidget()
             status_layout = QVBoxLayout(status_page)
-            status_layout.setContentsMargins(0, 0, 0, 0)
-            status_layout.setSpacing(0)
+            status_layout.setContentsMargins(4, 4, 4, 4)
+            status_layout.setSpacing(6)
+            status_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
-            # Header
-            status_header = QFrame()
-            status_header.setStyleSheet("background: transparent; border-bottom: 1px solid rgba(255, 255, 255, 0.08); padding: 8px;")
+            # Top bar header with title and refresh button
+            status_header = QWidget()
             sh_layout = QHBoxLayout(status_header)
-            sh_layout.setContentsMargins(0, 0, 0, 0)
-            sh_layout.setSpacing(0)
-
-            refresh_btn = QPushButton("🔄")
-            refresh_btn.setFixedSize(30, 30)
-            refresh_btn.setStyleSheet("background: #111722; color: #e2e8f0; border: none; font-size: 12px; border-radius: 15px;")
+            sh_layout.setContentsMargins(4, 4, 4, 4)
+            title_lbl = QLabel("🌍 성계 실시간 현황")
+            title_lbl.setStyleSheet("color: #00e5ff; font-weight: bold; font-size: 13px;")
+            refresh_btn = QPushButton("🔄 새로고침")
+            refresh_btn.setFixedHeight(28)
+            refresh_btn.setStyleSheet("""
+                QPushButton {
+                    background: #1e293b; color: #38bdf8; border: 1px solid #334155;
+                    border-radius: 6px; padding: 4px 10px; font-size: 11px; font-weight: bold;
+                }
+                QPushButton:hover { background: #334155; color: #ffffff; }
+            """)
             refresh_btn.clicked.connect(self.refresh_world_events)
-            sh_layout.addWidget(refresh_btn)
+            sh_layout.addWidget(title_lbl)
             sh_layout.addStretch()
-
+            sh_layout.addWidget(refresh_btn)
             status_layout.addWidget(status_header)
 
-            # Scroll Area with Events
+            # Scroll Area with Events aligned to top
+            status_scroll = QScrollArea()
+            status_scroll.setWidgetResizable(True)
+            status_scroll.setStyleSheet("background: transparent; border: none;")
+            status_content = QWidget()
+            sc_layout = QVBoxLayout(status_content)
+            sc_layout.setContentsMargins(4, 4, 4, 4)
+            sc_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+
             self.lbl_events = QLabel("실시간 이벤트 로딩 중...")
             self.lbl_events.setStyleSheet("""
-                background: #161e2e;
-                border: 1px solid #24324d;
-                border-radius: 6px;
-                padding: 8px;
+                background: #111722;
+                border: 1px solid #1e293b;
+                border-radius: 8px;
+                padding: 10px;
                 font-size: 11px;
-                color: #00e5ff;
+                color: #e2e8f0;
                 line-height: 1.4;
             """)
             self.lbl_events.setWordWrap(True)
-            status_layout.addWidget(self.lbl_events)
+            sc_layout.addWidget(self.lbl_events)
+            sc_layout.addStretch()
+            status_scroll.setWidget(status_content)
+            status_layout.addWidget(status_scroll)
 
             self.tab_stack.addWidget(status_page)
 
             # Set initial tab
             self.switch_tab(0)
-
-            main_layout.addWidget(self.tab_stack)
             self.setLayout(root_layout)
             root_layout.addWidget(main_frame)
 
@@ -584,21 +596,35 @@ class OrdisCompanionApp(QWidget):
             user32 = ctypes.windll.user32
             VK_MENU = 0x12  # Alt
             VK_W = 0x57     # W
+            VK_Q = 0x51     # Q
             VK_F9 = 0x78    # F9
             VK_SNAPSHOT = 0x2C  # PrintScreen
 
+            self._alt_w_down = False
+            self._alt_q_down = False
             self._f9_down = False
             self._prt_down = False
 
             def check_hotkeys():
                 try:
                     alt_down = (user32.GetAsyncKeyState(VK_MENU) & 0x8000) != 0
+                    w_down = (user32.GetAsyncKeyState(VK_W) & 0x8000) != 0
+                    q_down = (user32.GetAsyncKeyState(VK_Q) & 0x8000) != 0
                     f9_down = (user32.GetAsyncKeyState(VK_F9) & 0x8000) != 0
                     prt_down = (user32.GetAsyncKeyState(VK_SNAPSHOT) & 0x8000) != 0
 
                     if alt_down:
-                        if (user32.GetAsyncKeyState(VK_W) & 0x8000) != 0:
+                        if w_down and not self._alt_w_down:
+                            self._alt_w_down = True
                             self.setVisible(not self.isVisible())
+                        elif not w_down:
+                            self._alt_w_down = False
+
+                        if q_down and not self._alt_q_down:
+                            self._alt_q_down = True
+                            self.capture_fullscreen_and_analyze()
+                        elif not q_down:
+                            self._alt_q_down = False
 
                     if f9_down and not self._f9_down:
                         self._f9_down = True
@@ -616,7 +642,7 @@ class OrdisCompanionApp(QWidget):
 
             self.hotkey_timer = QTimer(self)
             self.hotkey_timer.timeout.connect(check_hotkeys)
-            self.hotkey_timer.start(150)
+            self.hotkey_timer.start(100)
 
     def refresh_world_events(self):
             def fetch_and_update():
@@ -690,33 +716,41 @@ class OrdisCompanionApp(QWidget):
             threading.Thread(target=fetch_and_update, daemon=True).start()
 
     def refresh_checklist_ui(self):
-        while self.todo_layout.count():
-            item = self.todo_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+            while self.todo_layout.count():
+                item = self.todo_layout.takeAt(0)
+                if item.widget():
+                    item.widget().deleteLater()
 
-        items = self.tracker.load_checklist()
-        for it in items:
-            row = QHBoxLayout()
-            cb = QCheckBox(it["text"])
-            cb.setChecked(it.get("done", False))
-            cb.stateChanged.connect(lambda state, i_id=it["id"]: self.tracker.toggle_item(i_id))
+            self.todo_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
-            btn_del = QPushButton("×")
-            btn_del.setFixedSize(20, 20)
-            btn_del.setStyleSheet("""
-                QPushButton { background: transparent; color: #ef4444; font-size: 14px; font-weight: bold; border: none; padding: 0; }
-                QPushButton:hover { color: #f87171; background: #26161c; border-radius: 4px; }
-            """)
-            btn_del.clicked.connect(lambda _, i_id=it["id"]: self.delete_task(i_id))
+            items = self.tracker.load_checklist()
+            for it in items:
+                row = QHBoxLayout()
+                row.setContentsMargins(6, 4, 6, 4)
+                is_done = it.get('done', False)
+                cb = QCheckBox(it['text'])
+                cb.setChecked(is_done)
+                if is_done:
+                    cb.setStyleSheet('QCheckBox { color: #64748b; font-size: 12px; text-decoration: line-through; } QCheckBox::indicator { width: 16px; height: 16px; border: 1.5px solid #00d2ff; border-radius: 4px; background: #00d2ff; }')
+                else:
+                    cb.setStyleSheet('QCheckBox { color: #e2e8f0; font-size: 12px; } QCheckBox::indicator { width: 16px; height: 16px; border: 1.5px solid #00d2ff; border-radius: 4px; background: #161e2e; } QCheckBox:hover { color: #38bdf8; }')
+                cb.stateChanged.connect(lambda _, i_id=it['id']: (self.tracker.toggle_item(i_id), self.refresh_checklist_ui()))
 
-            row.addWidget(cb)
-            row.addStretch()
-            row.addWidget(btn_del)
-            
-            row_widget = QWidget()
-            row_widget.setLayout(row)
-            self.todo_layout.addWidget(row_widget)
+                btn_del = QPushButton('×')
+                btn_del.setFixedSize(20, 20)
+                btn_del.setStyleSheet('QPushButton { background: transparent; color: #ef4444; font-size: 14px; font-weight: bold; border: none; padding: 0; } QPushButton:hover { color: #f87171; background: #26161c; border-radius: 4px; }')
+                btn_del.clicked.connect(lambda _, i_id=it['id']: self.delete_task(i_id))
+
+                row.addWidget(cb)
+                row.addStretch()
+                row.addWidget(btn_del)
+
+                row_widget = QWidget()
+                row_widget.setStyleSheet('background: rgba(22, 30, 46, 0.7); border: 1px solid #1e293b; border-radius: 8px; margin-bottom: 4px;')
+                row_widget.setLayout(row)
+                self.todo_layout.addWidget(row_widget)
+
+            self.todo_layout.addStretch()
 
     def delete_task(self, item_id):
         self.tracker.delete_item(item_id)
@@ -833,11 +867,12 @@ class OrdisCompanionApp(QWidget):
 
     def switch_tab(self, index: int):
             self.tab_stack.setCurrentIndex(index)
-            for button in getattr(self, 'tab_buttons', []):
-                if button.property('tab_index') == index:
-                    button.setStyleSheet("background-color: rgba(0, 210, 255, 0.2); color: #00d2ff; border-radius: 8px; font-weight: bold; padding: 4px 12px;")
-                else:
-                    button.setStyleSheet("background-color: transparent; color: #94a3b8; border-radius: 8px; padding: 4px 12px;")
+            if hasattr(self, 'tab_bar') and self.tab_bar.active_index != index:
+                self.tab_bar.switch_tab(index)
+            if index == 1:
+                self.refresh_checklist_ui()
+            if index == 2:
+                self.refresh_world_events()
 
     def animate_show(self, pet_rect=None):
         if hasattr(self, '_anim_group') and self._anim_group:
@@ -904,7 +939,6 @@ class OrdisCompanionApp(QWidget):
         self.setWindowOpacity(0.94)
 
     def open_riven_quick_dialog(self):
-        from scripts.riven_quick_dialog import RivenQuickInputDialog
         dlg = RivenQuickInputDialog(self)
         if dlg.exec() == QDialog.DialogCode.Accepted:
             stats = dlg.get_stats()

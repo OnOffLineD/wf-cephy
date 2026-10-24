@@ -42,6 +42,10 @@ if "%PY_EXE%"=="" (
 
 if "%PY_EXE%"=="" (
     echo [ERROR] Neither PyQt6 nor PySide6 was found in portable or system Python.
+    echo.
+    echo [GUIDE] Please install the required dependencies by running:
+    echo     pip install -r requirements.txt
+    echo.
     pause
     exit /b 1
 )
