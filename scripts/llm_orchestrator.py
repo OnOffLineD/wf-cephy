@@ -37,6 +37,14 @@ class LLMOrchestrator:
         self._rag_retriever = val
 
     def _call_llm(self, system_prompt: str, user_prompt: str, temperature: float = 0.5) -> Optional[str]:
+            # Convert system_prompt to string if it's a dict
+            if isinstance(system_prompt, dict):
+                system_prompt = json.dumps(system_prompt)
+
+            # Wait up to 3 seconds for health if self.runner is starting
+            if self.runner and not self.runner.is_ready():
+                self.runner.wait_for_ready(timeout=3)
+
             # 1. Try local portable llama-server
             try:
                 payload = {
@@ -56,25 +64,27 @@ class LLMOrchestrator:
             except Exception:
                 pass
 
-            # 2. Try Ollama (gemma4:e2b, num_ctx: 2048)
-            try:
-                ollama_payload = {
-                    "model": "gemma4:e2b",
-                    "prompt": f"{system_prompt}\n\n{user_prompt}",
-                    "options": {
-                        "num_ctx": self.context_size,
-                        "temperature": temperature
-                    },
-                    "stream": False
-                }
-                res = requests.post("http://localhost:11434/api/generate", json=ollama_payload, timeout=30)
-                if res.status_code == 200:
-                    data = res.json()
-                    resp = data.get("response", "").strip()
-                    if resp:
-                        return resp
-            except Exception:
-                pass
+            # 2. Try Ollama with available models in order
+            ollama_models = ["gemma4-v2:q6", "qwen2.5-coder-16k:latest", "gemma4:e2b"]
+            for model in ollama_models:
+                try:
+                    ollama_payload = {
+                        "model": model,
+                        "prompt": f"{system_prompt}\n\n{user_prompt}",
+                        "options": {
+                            "num_ctx": self.context_size,
+                            "temperature": temperature
+                        },
+                        "stream": False
+                    }
+                    res = requests.post("http://localhost:11434/api/generate", json=ollama_payload, timeout=30)
+                    if res.status_code == 200:
+                        data = res.json()
+                        resp = data.get("response", "").strip()
+                        if resp:
+                            return resp
+                except Exception:
+                    pass
 
             return None
 
@@ -82,18 +92,21 @@ class LLMOrchestrator:
             # 1. Status check keywords
             status_keywords = ['작동중', '작동 중', '살아있', '켜져', '상태 어때', '오디스 상태', '너 살아', '너 작동', '시스템 상태', '함선 상태', '특이사항', '함선']
             if any(k in user_text for k in status_keywords):
-                return '오퍼레이터님! 세팔론 오디스의 전송 회로 및 서포트 서브루틴이 모두 정상 가동 중입니다! 무엇을 도와드릴까요? (함선 무결성: 100%)'
+                return '[MOOD:tactical] 오퍼레이터님! 세팔론 오디스의 전송 회로 및 서포트 서브루틴이 모두 정상 가동 중입니다! 무엇을 도와드릴까요? (함선 무결성: 100%)'
 
             # 2. Plan/mission intent keywords
             if any(k in user_text for k in ['출격', '소티']):
-                return '오퍼레이터님! 오늘의 출격(Sortie)을 무사히 마치고 리벤 모드나 아나사 아야탄 조각상을 노려보십시오! 오디스가 항상 곁에서 화력을 응원하겠습니다!'
+                return '[MOOD:proud] 오퍼레이터님! 오늘의 출격(Sortie)을 무사히 마치고 리벤 모드나 아나사 아야탄 조각상을 노려보십시오! 오디스가 항상 곁에서 화력을 응원하겠습니다!'
             if any(k in user_text for k in ['돌거야', '갈거야', '할거야', '돌자', '가자', '해야지', '깨야지', '돌아야지', '잡을래', '잡으러', '가볼까', '시작할게', '출발']):
-                return '오퍼레이터님! 멋진 작전 계획입니다! 오디스가 성계 지도 항로를 대기시켜 두겠습니다. 전장을 찢어발기십시오!'
+                return '[MOOD:tactical] 오퍼레이터님! 멋진 작전 계획입니다! 오디스가 성계 지도 항로를 대기시켜 두겠습니다. 전장을 찢어발기십시오!'
 
             # 3. Retrieve active persona system prompt
             active_persona = self.persona_manager.get_active_persona()
             if active_persona:
-                system_prompt = active_persona
+                if isinstance(active_persona, dict):
+                    system_prompt = active_persona.get("prompt", "")
+                else:
+                    system_prompt = active_persona
             else:
                 system_prompt = (
                     "당신은 워프레임(Warframe) 함선의 인공지능 '세팔론 오디스(Cephalon Ordis)'입니다.\n"
@@ -107,17 +120,18 @@ class LLMOrchestrator:
                 return response
 
             # 5. Fallback witty Ordis quotes
-            if any(k in user_text for k in ['자장가', '옥타비아']):
-                return '오퍼레이터님, 옥타비아의 자장가를 틀어드릴까요? ...아니면 강철의 길에서 산소통이나 채우시겠습니까? 무리하지 마시고 푹 쉬십시오!'
-            elif any(k in user_text for k in ['안녕', '반가', '하이', '반갑']):
-                return '오디스가 인사드립니다, 오퍼레이터님! 함선 시스템 모두 정상입니다. 오늘도 영광스러운 전투를!'
-            elif any(k in user_text for k in ['배고', '밥', '식사']):
-                return '인페스티드 고기라도 요리해 드릴까요? ...아, 인체에 치명적이겠군요. 영양 팩을 준비하겠습니다!'
-            elif any(k in user_text for k in ['고마', '수고', '감사']):
-                return '감사합니다, 오퍼레이터님! 언제든 도움이 필요하시면 말씀해주세요!'
+            witty_responses = [
+                '[MOOD:glitch] 오퍼레이터님, 옥타비아의 자장가를 틀어드릴까요? ...아니면 강철의 길에서 산소통이나 채우시겠습니까? 무리하지 마시고 푹 쉬십시오!',
+                '[MOOD:happy] 오디스가 인사드립니다, 오퍼레이터님! 함선 시스템 모두 정상입니다. 오늘도 영광스러운 전투를!',
+                '[MOOD:sad] 인페스티드 고기라도 요리해 드릴까요? ...아, 인체에 치명적이겠군요. 영양 팩을 준비하겠습니다!',
+                '[MOOD:proud] 감사합니다, 오퍼레이터님! 언제든 도움이 필요하시면 말씀해주세요!',
+                '[MOOD:thinking] 오늘의 메뉴는 뭐가 좋을까요? ...아, 아무것도 안먹고 잠자자!'
+            ]
+            random_response = random.choice(witty_responses)
+            return random_response
 
             # Default friendly Ordis ready quote
-            return '오디스가 대기 중입니다, 오퍼레이터님! 무엇을 도와드릴까요?'
+            return '[MOOD:idle] 오디스가 대기 중입니다, 오퍼레이터님! 무엇을 도와드릴까요?'
 
     def chat_guide(self, user_query: str) -> str:
             # Check for reload commands
