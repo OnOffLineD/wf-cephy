@@ -1,6 +1,7 @@
 from enum import Enum
 from dataclasses import dataclass, field
 from typing import List, Dict, Any
+from scripts.damage_formulas import enemy_armor_dr
 
 class CombatState(str, Enum):
     INITIAL = "INITIAL"
@@ -102,8 +103,7 @@ class DamageSimulator:
                     break
 
             # Effective armor calculation
-            effective_armor = min(2700.0, max(0.0, float(enemy_armor)))
-            armor_dr = effective_armor / (effective_armor + 300.0) if effective_armor > 0 else 0.0
+            armor_dr = enemy_armor_dr(float(enemy_armor))
 
             # Viral status health multiplier
             viral_multiplier = 4.25 if any('Viral' in m.name or 'Viral' in m.elements for m in mods) else 1.0

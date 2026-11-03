@@ -1,0 +1,11 @@
+{
+  "_meta": "무기 아케인 R5 효과. 출처: wiki.warframe.com 각 아케인 문서 (2026-11-03 확인). damage_per_stack은 서레이션과 같은 버킷에 합연산. 표에 없는 아케인은 수치 미반영으로 표시한다.",
+  "Primary Merciless": {"trigger": "해당 무기 처치", "damage_per_stack": 0.30, "max_stacks": 12, "reload_speed": 0.30},
+  "Secondary Merciless": {"trigger": "해당 무기 처치", "damage_per_stack": 0.30, "max_stacks": 12, "reload_speed": 0.30},
+  "Primary Deadhead": {"trigger": "약점 처치", "damage_per_stack": 1.20, "max_stacks": 3, "headshot_bonus": 0.30},
+  "Secondary Deadhead": {"trigger": "약점 처치", "damage_per_stack": 1.20, "max_stacks": 3, "headshot_bonus": 0.30},
+  "Primary Dexterity": {"trigger": "근접 처치", "damage_per_stack": 0.60, "max_stacks": 6},
+  "Secondary Dexterity": {"trigger": "근접 처치", "damage_per_stack": 0.60, "max_stacks": 6},
+  "Melee Exposure": {"trigger": "어빌리티 시전", "elemental_per_stack": 0.60, "max_stacks": 4},
+  "Melee Animosity": {"trigger": "일반 근접 적중", "heavy_crit_per_stack": 0.42, "max_stacks": 10}
+}

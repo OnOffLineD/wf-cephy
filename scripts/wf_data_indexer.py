@@ -112,6 +112,12 @@ class WFDataIndexer:
             # Scan attacks for specific types
             attacks = weapon.get('attacks', [])
             metadata['attacks'] = attacks
+            # Multi-mode weapons leave top-level stats empty; the first attack holds the real values.
+            if not metadata['crit_chance'] and attacks and attacks[0].get('crit_chance'):
+                metadata['crit_chance'] = attacks[0]['crit_chance'] / 100.0
+                metadata['crit_mult'] = attacks[0].get('crit_mult', metadata['crit_mult'])
+                metadata['fire_rate'] = attacks[0].get('speed', metadata['fire_rate'])
+                metadata['total_damage'] = sum(attacks[0].get('damage', {}).values()) or metadata['total_damage']
             radial_attack = next((attack for attack in attacks if attack.get('shot_type', '').lower() == 'aoe' or 'radial' in attack.get('name', '').lower() or 'explosion' in attack.get('name', '').lower()), None)
             incarnon_attack = next((attack for attack in attacks if 'incarnon' in attack.get('name', '').lower()), None)
         
@@ -175,62 +181,18 @@ class WFDataIndexer:
                     'fire_rate': 0.0, 'status': 0.0, 'toxin': 0.0, 'cold': 0.0, 'heat': 0.0, 
                     'electric': 0.0, 'viral': 0.0, 'corrosive': 0.0, 'radiation': 0.0, 
                     'magnetic': 0.0, 'blast': 0.0, 'gas': 0.0, 'slash': 0.0, 'impact': 0.0, 
-                    'puncture': 0.0, 'elemental_damage': 0.0
+                    'puncture': 0.0, 'elemental_damage': 0.0,
+                    'status_damage': 0.0, 'slam_damage': 0.0, 'heavy_damage_bonus': 0.0, 'finisher_damage': 0.0,
+                    'weak_point_damage': 0.0, 'combo_crit': 0.0, 'combo_status': 0.0, 'status_type_damage': 0.0,
+                    'heavy_crit_chance': 0.0, 'faction': {}, 'on_kill': []
                 }
-        
+
                 if mod.get('levelStats'):
                     for s in mod['levelStats'][-1].get('stats', []):
-                        low = str(s).lower()
-                        if 'resistance' in low or '감소' in low or 'on kill' in low or 'weak point' in low:
-                            if 'galvanized scope' in name and 'critical chance' in low:
-                                stats['crit_chance'] += 1.2
-                            continue
-                    
-                        m_num = re.search(r'([+-]?\d+(?:\.\d+)?)\s*%', str(s))
-                        if not m_num: 
-                            continue
-                        val = float(m_num.group(1)) / 100.0
-                    
-                        if 'critical chance' in low: 
-                            stats['crit_chance'] += val
-                        elif 'critical damage' in low: 
-                            stats['crit_damage'] += val
-                        elif 'multishot' in low: 
-                            stats['multishot'] += val
-                        elif 'damage' in low: 
-                            stats['damage'] += val
-                        elif 'fire rate' in low or 'attack speed' in low: 
-                            stats['fire_rate'] += val
-                        elif 'status chance' in low: 
-                            stats['status'] += val
-                        elif 'toxin' in low: 
-                            stats['toxin'] += val; stats['elemental_damage'] += val
-                        elif 'cold' in low: 
-                            stats['cold'] += val; stats['elemental_damage'] += val
-                        elif 'heat' in low: 
-                            stats['heat'] += val; stats['elemental_damage'] += val
-                        elif 'electricity' in low: 
-                            stats['electric'] += val; stats['elemental_damage'] += val
-                        elif 'viral' in low: 
-                            stats['viral'] += val; stats['elemental_damage'] += val
-                        elif 'corrosive' in low: 
-                            stats['corrosive'] += val; stats['elemental_damage'] += val
-                        elif 'radiation' in low: 
-                            stats['radiation'] += val; stats['elemental_damage'] += val
-                        elif 'magnetic' in low: 
-                            stats['magnetic'] += val; stats['elemental_damage'] += val
-                        elif 'blast' in low: 
-                            stats['blast'] += val; stats['elemental_damage'] += val
-                        elif 'gas' in low: 
-                            stats['gas'] += val; stats['elemental_damage'] += val
-                        elif 'slash' in low: 
-                            stats['slash'] += val
-                        elif 'impact' in low: 
-                            stats['impact'] += val
-                        elif 'puncture' in low: 
-                            stats['puncture'] += val
-        
-                is_pvp = ('pvpmods' in unique_name.lower()) or ('conclave' in str(type).lower()) or any('conclave' in str(d.get('location', '')).lower() for d in mod.get('drops', []))
+                        self._classify_mod_stat(str(s), stats)
+
+                # Drop locations don't count: ordinary mods like Reach also come from Conclave.
+                is_pvp = ('pvpmods' in unique_name.lower()) or ('conclave' in str(type).lower())
                 mod_is_arcane = is_arcane and (name not in NON_ARCANES)
                 mod_entry = {
                     'name': mod.get('name', ''),
@@ -240,6 +202,8 @@ class WFDataIndexer:
                     'compatName': compatName,
                     'fusionLimit': fusionLimit,
                     'is_arcane': mod_is_arcane,
+                    'modSet': mod.get('modSet'),
+                    'modSetValues': mod.get('modSetValues'),
                     **stats
                 }
         
@@ -250,6 +214,94 @@ class WFDataIndexer:
         
                 self._update_mod_index(name, mod_entry)
                 self._update_mod_index(name.replace(' ', '').lower(), mod_entry)
+
+    def _classify_mod_stat(self, raw: str, stats: Dict[str, Any]) -> None:
+        s = raw.replace('\\n', ' ').replace('\n', ' ')
+        s = re.sub(r'<[^>]+>', '', s).strip().lower()
+
+        if re.match(r'on [^:]+:', s):
+            m = re.match(r'on (?:melee )?kill:\s*\+(\d+(?:\.\d+)?)%\s+(.+?)\s+for\s+\d+s\.\s*stacks up to (\d+)x', s)
+            if m:
+                key_map = {
+                    'multishot': 'multishot',
+                    'critical damage': 'crit_damage',
+                    'critical chance': 'crit_chance',
+                    'status chance': 'status',
+                    'damage': 'damage',
+                    'direct damage per status type affecting the target': 'status_type_direct'
+                }
+                key = key_map.get(m.group(2))
+                if key:
+                    stats.setdefault('on_kill', [])
+                    stats['on_kill'].append({
+                        'stat': key,
+                        'value': float(m.group(1)) / 100.0,
+                        'stacks': int(m.group(3))
+                    })
+                return
+
+        m = re.match(r'x(\d+(?:\.\d+)?) damage to (\w+)', s)
+        if m:
+            stats.setdefault('faction', {})
+            stats['faction'][m.group(2)] = float(m.group(1)) - 1.0
+            return
+
+        m = re.match(r'([+-]\d+(?:\.\d+)?)%\s+(.+)$', s)
+        if not m:
+            return
+
+        val = float(m.group(1)) / 100.0
+        rest = m.group(2)
+        phrase = re.sub(r'\s*\(.*?\)', '', rest).strip()
+
+        direct = {
+            'damage': 'damage',
+            'melee damage': 'damage',
+            'multishot': 'multishot',
+            'critical chance': 'crit_chance',
+            'critical damage': 'crit_damage',
+            'fire rate': 'fire_rate',
+            'attack speed': 'fire_rate',
+            'status chance': 'status',
+            'status damage': 'status_damage',
+            'slam attack damage': 'slam_damage',
+            'heavy attack damage': 'heavy_damage_bonus',
+            'finisher damage': 'finisher_damage',
+            'weak point damage': 'weak_point_damage',
+            'critical chance stacks with combo multiplier': 'combo_crit',
+            'status chance per combo multiplier': 'combo_status',
+            'melee damage per status type affecting the target': 'status_type_damage',
+            'slash': 'slash',
+            'impact': 'impact',
+            'puncture': 'puncture'
+        }
+
+        if phrase in direct:
+            stats.setdefault(direct[phrase], 0.0)
+            stats[direct[phrase]] += val
+            if phrase == 'critical chance' and 'x2 for heavy' in rest:
+                stats.setdefault('heavy_crit_chance', 0.0)
+                stats['heavy_crit_chance'] += val
+            return
+
+        elements = {
+            'toxin': 'toxin',
+            'cold': 'cold',
+            'heat': 'heat',
+            'electricity': 'electric',
+            'viral': 'viral',
+            'corrosive': 'corrosive',
+            'radiation': 'radiation',
+            'magnetic': 'magnetic',
+            'blast': 'blast',
+            'gas': 'gas'
+        }
+
+        if phrase in elements:
+            stats.setdefault(elements[phrase], 0.0)
+            stats[elements[phrase]] += val
+            stats.setdefault('elemental_damage', 0.0)
+            stats['elemental_damage'] += val
 
     def _update_mod_index(self, key, mod_entry):
         if key in self.mods_index:

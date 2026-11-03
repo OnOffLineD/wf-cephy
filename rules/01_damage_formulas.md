@@ -20,6 +20,16 @@ $$M_{\text{base}} = 1 + \sum \text{Base Damage Mods (Serration + Merciless + Gun
 $$M_{\text{elem}} = 1 + \sum \text{Elemental Mod Percentages}$$
 - 복합 속성(예: 독 + 냉기 = 바이러스, 화염 + 전기 = 방사능) 결합 시 모드 슬롯 순서(좌상단 -> 우하단)를 엄격히 준수.
 
+#### 속성 합성 순서 (wiki.warframe.com/w/Damage)
+- 슬롯을 좌상단에서 우하단 순서로 읽어 기본 속성(화염·냉기·전기·독성)이 처음 나온 위치를 정하고, 그 순서대로 두 개씩 묶는다.
+- 예: 1번 화염, 4번 냉기, 5번 독성이면 화염+냉기=폭발, 독성은 단독으로 남는다.
+- 같은 속성을 다시 끼우면 첫 위치에 합쳐진다.
+- 무기 고유 기본 속성과 베일런스 보너스는 맨 마지막에 놓이고, 남은 속성과 합성된다. 같은 속성의 모드가 있으면 그 모드 위치로 당겨진다. 고유 속성이 둘이면 HCET(화염>냉기>전기>독성) 순서다.
+- 무기 고유 복합 속성은 그대로 유지되고, 모드 속성은 그와 별개로 합성된다.
+- 리벤은 마지막에 표기된 속성이 우선한다.
+- 조합: 화염+냉기=폭발, 화염+전기=방사능, 화염+독성=가스, 냉기+전기=자성, 냉기+독성=바이러스, 전기+독성=부식.
+- 아스널 타입별 줄은 발사체 1발 기준이고, 총계만 멀티샷을 포함한다.
+
 ### Bucket 4: Faction Damage Multiplier ($M_{\text{faction}}$)
 베인(Bane), 익스펠(Expel), 클린스(Cleanse), 스마이트(Smite) 모드 및 라이노 로어(Rhino Roar) 버프.
 $$M_{\text{faction}} = 1 + \text{Faction Mod} + \text{Roar Buff}$$
@@ -33,10 +43,19 @@ $$M_{\text{faction}} = 1 + \text{Faction Mod} + \text{Roar Buff}$$
 - 평균 기댓값 연산 시에는 $MS$ 자체를 선형 곱연산으로 처리.
 
 ### Bucket 6: Body Part Multiplier ($M_{\text{body}}$)
-- 기본 헤드샷 배수: $3.0\times$ (업데이트 32 이후 표준)
-- 치명타 헤드샷 특수 보너스: 헤드샷 상태에서 치명타 발생 시 치명타 피해량이 추가로 $3.0\times$ 증폭됨.
-  $$\text{Headshot Crit Damage} = \text{Hit} \times 3.0 \times \left(1 + \text{CritTier} \times (\text{CritMult} \times 1.0 - 1)\right) \times \dots$$
-  (실질적으로 $\text{CritMult}$가 2회 곱해지는 효과)
+- 기본 약점 배수: 대부분 $3.0\times$ (머머·테크로트 등 일부 약 $1.5\times$)
+- 약점 피해 보너스(WP)와 헤드샷 보너스(HS, 데드헤드 등):
+  $$M_{\text{body}} = (\text{Base} + 1.5 \times \sum \text{WP}) \times (1 + \sum \text{HS})$$
+  비헤드샷 약점은 $\text{Base} + \sum \text{WP}$.
+- 치명타 헤드샷은 치명타 배수에 $2\times$가 적용된다.
+
+### 조건부 버프와 절대값 보너스
+- 아케인 머시리스·데드헤드·덱스터리티, 갈바나이즈드 처치 스택 피해는 $M_{\text{base}}$에 합연산한다. 아스널 패널 값에는 전투 스택이 빠져 있으므로 풀스택 계산에서 별도로 더한다.
+- 물리 모드는 무기의 해당 물리 비율만큼 $M_{\text{elem}}$ 괄호에 들어간다: $\text{Dist}_i \times \text{Bonus}_i$.
+- 상태이상 피해(엘리멘탈리스트), 지면 강타 피해(사이즈믹 웨이브), 마무리 일격 피해는 직접 피해 $M_{\text{base}}$에 넣지 않는다.
+- 치명타: $CC = \text{Base} \times (1 + \text{Relative} + \text{BloodRush} \times (\text{Combo} - 1)) + \text{Flat}$, $CM = \text{Base} \times (1 + \text{Relative}) + \text{Flat}$.
+- 콘디션 오버로드: 상태이상 종류당 $M_{\text{base}}$에 합연산 ($+80\% \times n$).
+- 아스널 총계에는 멀티샷이 포함되고 팩션·치명타는 빠져 있다.
 
 ---
 

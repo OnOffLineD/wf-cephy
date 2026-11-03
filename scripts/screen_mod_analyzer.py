@@ -9,7 +9,7 @@ import json
 import asyncio
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple, Union
-from PIL import Image, ImageEnhance, ImageOps
+from PIL import Image, ImageChops, ImageEnhance, ImageOps
 
 try:
     import numpy as np
@@ -186,8 +186,10 @@ class ScreenModAnalyzer:
                     w_meta_ctx,
                     left_stats=left_stats_ctx,
                     mod_objs=mod_objs_ctx,
-                    riven_stats=riven_stats
+                    riven_stats=riven_stats,
+                    riven_in_panel=True
                 )
+                base_metrics_ctx = self._riven_free_metrics(w_meta_ctx, left_stats_ctx, mod_objs_ctx, riven_stats, base_metrics_ctx)
                 report = self.format_riven_comparison_report(
                     w_meta_ctx,
                     riven_name_ctx,
@@ -273,18 +275,6 @@ class ScreenModAnalyzer:
                             if cand.get("category") != "Warframe":
                                 w_meta = cand
                                 break
-                    # Fallback: tokens in slot that has explicit riven keyword
-                    if not w_meta and any(k in s_text.lower() for kw in ['리벤', 'riven', 'critatak']):
-                        tokens = re.findall(r'[가-힣a-zA-Z0-9]+', s_text)
-                        for token in tokens:
-                            if len(token) >= 2 and not any(token.lower().startswith(p) for p in ["프라", "갈바", "아말", "라운"]):
-                                cand = self.indexer.fuzzy_match_weapon(token)
-                                if cand and cand.get("name") not in ["Riven", "Primed", "Galvanized", "Amalgam", "Pride", "Rauta"]:
-                                    if cand.get("category") != "Warframe" and not any(k in cand.get("name", "").lower() for k in ["chamber", "shred", "serration", "vital", "clip"]):
-                                        w_meta = cand
-                                        break
-                    if w_meta:
-                        break
 
             if not w_meta:
                 from scripts.jamo_matcher import CATEGORY_MAPPING, decompose_hangul
@@ -359,8 +349,6 @@ class ScreenModAnalyzer:
             from scripts.jamo_matcher import CATEGORY_MAPPING, decompose_hangul
             from rapidfuzz import fuzz
 
-            allowed = CATEGORY_MAPPING.get(category, [])
-            w_type = (w_meta.get("type") or "").lower()
 
             # 2. Gemma 4 E2B Vision extraction (Hybrid)
             vision_text = ""
@@ -398,53 +386,7 @@ class ScreenModAnalyzer:
                     pass
 
             # 3. Dedicated slot matching
-            candidates = []
-            seen = set()
-            for k, mod in self.indexer.mods_index.items():
-                name = mod.get("name")
-                if not name or name in seen: continue
-                if mod.get('is_pvp') or 'pvpmods' in str(mod.get('uniqueName', '')).lower() or mod.get('conclave'):
-                    continue
-                m_type = str(mod.get("type", "")).lower()
-                m_compat = str(mod.get("compatName", "")).lower()
-                if "stance" in m_type:
-                    if category != "melee":
-                        continue
-                elif "aura" in m_type:
-                    if category != "warframe":
-                        continue
-                else:
-                    m_compat_norm = "rifle" if m_compat == "assault rifle" else m_compat
-                    w_type_norm = "rifle" if w_type == "assault rifle" else w_type
-                    if w_type_norm in ["rifle", "shotgun", "bow", "sniper", "pistol"] and m_compat_norm in ["rifle", "shotgun", "bow", "sniper", "pistol"] and m_compat_norm != w_type_norm:
-                        continue
-                    generic_compat = {"primary", "secondary", "melee", "rifle", "shotgun", "pistol", "warframe", "companion", "archwing", "zaw", "kitgun", "heavy weapon", "robotic", "assault rifle", "sniper", "bow"}
-                    if m_compat and m_compat not in generic_compat:
-                        w_name_clean = w_meta.get("name", "").lower()
-                        w_kr_clean = w_meta.get("kr_name", "").lower()
-                        if m_compat not in w_name_clean and m_compat not in w_kr_clean:
-                            continue
-                # Exclude Arcanes from normal mod slots
-                if mod.get('is_arcane') or 'arcane' in m_type or 'arcane' in m_compat:
-                    continue
-                if any(name.startswith(p) for p in ['Primary ', 'Secondary ', 'Melee ']) and 'mod' not in m_type:
-                    if name in ['Primary Frostbite', 'Primary Merciless', 'Primary Deadhead', 'Primary Blight', 'Primary Crux', 'Primary Exhilarate', 'Primary Obstruct']:
-                        continue
-
-                if allowed:
-                    is_compat = any(cat in m_type or cat in m_compat for cat in allowed)
-                    if "stance" in m_type and category == "melee":
-                        is_compat = True
-                    elif "aura" in m_type and category == "warframe":
-                        is_compat = True
-                    if not is_compat:
-                        if any(x in m_type for x in ["aura", "warframe", "companion", "archwing"]): continue
-                    if not is_compat: continue
-                seen.add(name)
-                kr = mod.get("kr_name", "")
-                if kr:
-                    candidates.append((decompose_hangul(kr.replace(" ", "")), kr, mod))
-                candidates.append((decompose_hangul(name.lower().replace(" ", "")), name, mod))
+            candidates = self._build_slot_candidates(w_meta, category)
 
             slot_matches = []
             assigned_slots = {}
@@ -507,7 +449,8 @@ class ScreenModAnalyzer:
                 seen_mod_names.add(m_name)
                 assigned_slots[slot_idx] = (slot_name, m_obj, score)
 
-            unique_mod_entries = [assigned_slots[k][1] for k in sorted(assigned_slots.keys())]
+            # slot_index keeps top-left to bottom-right order for elemental combination; Exilus is considered after the grid.
+            unique_mod_entries = [dict(assigned_slots[k][1], slot_index=(99 if assigned_slots[k][0] == "Exilus" else k)) for k in sorted(assigned_slots.keys())]
 
             # Fallback to general jamo matching if slot extraction yielded fewer than 4 mods
             if len(unique_mod_entries) < 4 and not slot_res.get("yolo_used", False):
@@ -527,10 +470,14 @@ class ScreenModAnalyzer:
                 kr_name = mod.get("kr_name", mod["name"])
                 formatted_mods.append(f"{kr_name} ({mod['name']})")
 
-            metrics = self.calculate_comprehensive_metrics(w_meta, left_stats=left_stats, mod_objs=unique_mod_entries, riven_stats=parsed.get("stats", {}))
+            metrics = self.calculate_comprehensive_metrics(w_meta, left_stats=left_stats, mod_objs=unique_mod_entries)
+            arcane = self._detect_arcane(img, w_meta.get("category"))
+            metrics["arcane"] = arcane
+            if w_meta.get("category") != "Warframe":
+                metrics["full_stack"] = self.damage_engine.compute_full_stack(w_meta, left_stats=left_stats, mod_objs=unique_mod_entries, arcane=arcane if arcane and arcane.get("modeled") else None)
             briefing = self.format_ordis_briefing(w_meta, formatted_mods, metrics)
             review_msg = self.format_mod_review_briefing(w_meta, formatted_mods, equipped_slot_count=slot_res.get('equipped_slot_count', 0), riven_name=riven_name)
-            breakdown_msg = self.format_calculation_breakdown(w_meta, unique_mod_entries, metrics, riven_stats=parsed.get('stats', {}))
+            breakdown_msg = self.format_calculation_breakdown(w_meta, unique_mod_entries, metrics)
 
             if is_weapon_inferred:
                 inferred_note = (
@@ -542,11 +489,11 @@ class ScreenModAnalyzer:
 
             if riven_name:
                 non_riven_mods = [m for m in unique_mod_entries if m.get('name') != 'Riven Mod']
-                base_metrics_without_riven = self.calculate_comprehensive_metrics(w_meta, left_stats=None, mod_objs=non_riven_mods, riven_stats=None)
+                base_metrics_without_riven = self.calculate_comprehensive_metrics(w_meta, left_stats=left_stats, mod_objs=non_riven_mods, riven_stats=None)
                 self.pending_riven_context = {
                     "w_meta": w_meta,
                     "left_stats": left_stats,
-                    "mod_objs": non_riven_mods,
+                    "mod_objs": unique_mod_entries,
                     "riven_name": riven_name,
                     "base_metrics": base_metrics_without_riven
                 }
@@ -662,18 +609,25 @@ class ScreenModAnalyzer:
             lines.append(f"\n🩸 **[헌터 뮤니션즈 트루 대미지]**:")
             lines.append(f"• **크리티컬 베기 틱**: 틱당 약 `{hm.get('bleed_tick', 0):,.0f}` (방어력 100% 무시!)")
 
-        if metrics.get("full_stack"):
-            fs = metrics["full_stack"]
-            if is_melee:
-                arc_name = "블러드 러시 + 12배수 연속기"
-                lines.append(f"\n🔥 **[실전 풀스택 포텐셜 ({arc_name})]**:")
-                lines.append(f"• **12배수 연속기 순간 폭딜**: 약 `{fs.get('burst_dps', 0):,.0f} DPS`")
-            else:
-                arc_name = "갈바 샷 + 세컨더리 아케인" if w_meta.get("category") == "Secondary" else "갈바 + 프라이머리 아케인"
-                lines.append(f"\n🔥 **[실전 풀스택 포텐셜 ({arc_name})]**:")
-                lines.append(f"• **헤드샷 풀스택 순간 폭딜**: 약 `{fs.get('burst_dps', 0):,.0f} DPS`")
+        if metrics.get("arcane"):
+            arc = metrics["arcane"]
+            arc_note = "풀스택에 반영" if arc.get("modeled") else "효과 수치 미등록, 계산 미반영"
+            lines.append(f"\n✨ **장착 아케인**: {arc.get('kr_name', arc.get('name'))} ({arc_note})")
 
-        lines.append(f"\n💬 **오디스의 한마디**: 오퍼레이터님, 인카논 폼과 실전 버프까지 완벽하게 계산되었습니다! 전장을 찢어발기십시오!")
+        if metrics.get("full_stack") and metrics["full_stack"].get("assumptions"):
+            fs = metrics["full_stack"]
+            lines.append(f"\n🔥 **[조건부 버프 풀스택 추정 ({', '.join(fs['assumptions'])})]**:")
+            lines.append(f"• **순간 폭딜**: 약 `{fs.get('burst_dps', 0):,.0f} DPS`")
+            if fs.get("headshot_burst_dps"):
+                lines.append(f"• **치명타 헤드샷 폭딜 (약점 3배)**: 약 `{fs['headshot_burst_dps']:,.0f} DPS`")
+            if fs.get("heavy_hit"):
+                lines.append(f"• **강공격 기대 단발**: 약 `{fs['heavy_hit']:,.0f}`")
+
+        lines.extend(self._format_elements(metrics))
+
+        if not metrics.get("used_panel_total", True):
+            lines.append("\n⚠️ **참고**: 좌측 패널의 총계를 읽지 못해 코덱스 수치와 인식된 모드로 추정한 값입니다. 패널을 스크롤해 총계가 보이게 다시 캡처하면 더 정확합니다.")
+        lines.append(f"\n💬 **오디스의 한마디**: 오퍼레이터님, 계산을 마쳤습니다! 전장을 찢어발기십시오!")
         return "\n".join(lines)
 
     def parse_stats(self, ocr_text: str) -> Dict[str, Any]:
@@ -727,6 +681,10 @@ class ScreenModAnalyzer:
                                     result["stats"][stat_key] = raw_val
                                 elif percent:
                                     result["stats"][stat_key] = raw_val / 100.0
+                                    if stat_key == 'elemental_damage':
+                                        element = next((el for el, pat in (('heat', r'화염|heat'), ('cold', r'냉기|cold'), ('electric', r'전기|electricity'), ('toxin', r'독성|toxin')) if re.search(pat, line_str, re.IGNORECASE)), None)
+                                        if element:
+                                            result["stats"][element] = raw_val / 100.0
                                 else:
                                     result["stats"][stat_key] = raw_val
                                 break
@@ -927,165 +885,58 @@ class ScreenModAnalyzer:
     def extract_left_panel_stats(self, img, full_text: Optional[str] = None) -> Dict[str, float]:
             if isinstance(img, str):
                 img = Image.open(img)
-            w, h = img.size
-            left_crop = img.crop((0, int(h * 0.05), int(w * 0.38), h))
-            left_crop = left_crop.resize((left_crop.width * 2, left_crop.height * 2), Image.LANCZOS)
-        
-            cw, ch = left_crop.size
-            labels = []
-            values = []
-            ocr_text = ""
-
-            if winocr is not None and self.preferred_ocr == "winocr":
-                try:
-                    try:
-                        loop = asyncio.get_event_loop()
-                        if loop.is_closed():
-                            loop = asyncio.new_event_loop()
-                            asyncio.set_event_loop(loop)
-                    except RuntimeError:
-                        loop = asyncio.new_event_loop()
-                        asyncio.set_event_loop(loop)
-
-                    res = loop.run_until_complete(winocr.recognize_pil(left_crop, lang="ko"))
-
-                    for line in res.lines:
-                        txt = " ".join(w.text for w in line.words).strip()
-                        if not txt: continue
-                        w0 = line.words[0]
-                        ry = w0.bounding_rect.y / ch
-                        rx = w0.bounding_rect.x / cw
-                        if ry > 0.55:  # Below search box / inventory
-                            continue
-                        if rx < 0.38:
-                            labels.append((ry, txt))
-                        elif 0.38 <= rx <= 0.85:
-                            values.append((ry, txt))
-                    ocr_text = "\n".join([l[1] for l in labels] + [v[1] for v in values])
-                except Exception:
-                    ocr_text = self.ocr_image(left_crop)
-            else:
-                ocr_text = self.ocr_image(left_crop)
-
             stats: Dict[str, float] = {}
+            rows = self._ocr_panel_rows(img) if self.preferred_ocr == 'winocr' else []
 
-            # 1. Coordinate-aligned pairing if labels & values extracted
-            if labels and values:
-                for l_ry, l_txt in labels:
-                    best_v = None
-                    min_d = 0.025
-                    for v_ry, v_txt in values:
-                        d = abs(l_ry - v_ry)
-                        if d < min_d:
-                            min_d = d
-                            best_v = (v_ry, v_txt)
-                    if best_v:
-                        v_str = best_v[1].replace(',', '')
-                        m_num = re.search(r'(\d+(?:\.\d+)?)', v_str)
-                        val = float(m_num.group(1)) if m_num else None
-                        if val is not None:
-                            if re.search(r'멀[티터E]|일[티터E]|밀[티터E]|multishot', l_txt, re.I):
-                                stats['multishot'] = val
-                            elif re.search(r'연사|인시|공격\s*속도|공속|fire\s*rate', l_txt, re.I):
-                                stats['fire_rate'] = val
-                            elif re.search(r'치.*확|지.*확|crit.*chance', l_txt, re.I):
-                                stats['crit_chance'] = val / 100.0 if val > 1.0 else val
-                            elif re.search(r'치.*피|지.*피|crit.*dam', l_txt, re.I):
-                                stats['crit_mult'] = val
-                            elif re.search(r'상.*이상|상해|상확|status', l_txt, re.I):
-                                stats['status_chance'] = val / 100.0 if val > 1.0 else val
-                            elif re.search(r'총계|총\s*피해|총합|출계|\*계', l_txt, re.I):
-                                stats['total_damage'] = val
-                            elif re.search(r'지면\s*강|지면', l_txt, re.I):
-                                stats['slam_damage'] = val
-                            elif re.search(r'슬라이드', l_txt, re.I):
-                                stats['slide_damage'] = val
-                            elif re.search(r'강\s*공격', l_txt, re.I):
-                                stats['heavy_damage'] = val
+            if full_text:
+                for line in full_text.splitlines():
+                    m = re.match(r'^\s*([^\d+\-]+?)\s*[:=]?\s*([+\-]?\d.*)$', line)
+                    if m:
+                        rows.append((m.group(1), m.group(2)))
 
-                # Positional heuristic for fire_rate and multishot under basic attack section
-                if 'multishot' not in stats or 'fire_rate' not in stats:
-                    num_cands = []
-                    for v_ry, v_txt in values:
-                        if 0.10 <= v_ry <= 0.32 and '%' not in v_txt and not re.search(r'[xX배mMsS]', v_txt):
-                            for s in re.findall(r'[\d,]+(?:\.\d+)?', v_txt):
-                                try:
-                                    v = float(s.replace(',', ''))
-                                    if 0 < v < 100: num_cands.append(v)
-                                except Exception: pass
-                    if 'fire_rate' not in stats and len(num_cands) >= 1:
-                        stats['fire_rate'] = num_cands[0]
-                    if 'multishot' not in stats and len(num_cands) >= 2:
-                        stats['multishot'] = num_cands[1]
+            prev_is_heavy = False
+            for label, value in rows:
+                compact = re.sub(r'\s+', '', label)
+                if re.search(r'강공격', compact) and not value.strip():
+                    prev_is_heavy = True
+                    continue
+                if prev_is_heavy and re.fullmatch(r'피해\W*', compact) and 'heavy_damage' not in stats:
+                    parsed = self._parse_panel_value(value, 'heavy_damage')
+                    if parsed is not None:
+                        stats['heavy_damage'] = parsed
+                    prev_is_heavy = False
+                    continue
+                prev_is_heavy = False
 
-            # 2. Total damage extraction: explicit label or last valid damage number before search box
-            if 'total_damage' not in stats and values:
-                dmg_cands = []
-                for v_ry, v_txt in values:
-                    if v_ry >= 0.38 and '%' not in v_txt and not re.search(r'[xX배mMsS]', v_txt):
-                        for s in re.findall(r'[\d,]+(?:\.\d+)?', v_txt):
-                            try:
-                                v = float(s.replace(',', ''))
-                                if v > 0: dmg_cands.append(v)
-                            except Exception: pass
-                if dmg_cands:
-                    stats['total_damage'] = dmg_cands[-1]
+                key = self._match_panel_label(label)
+                if key and key.startswith('el_') and '%' in value and ('valence_' + key[3:]) not in stats:
+                    m_pct = re.search(r'(\d+(?:\.\d+)?)\s*%', value)
+                    if m_pct:
+                        stats['valence_' + key[3:]] = float(m_pct.group(1)) / 100.0
+                    continue
 
-            # 3. Supplemental text parsing fallbacks
-            combined_text = ocr_text + "\n" + (full_text or "")
-        
-            if 'crit_mult' not in stats:
-                m_cd = re.search(r'(\d+(?:\.\d+)?)\s*[xX배]', combined_text)
-                if m_cd:
-                    stats['crit_mult'] = float(m_cd.group(1))
+                if key is None or key in stats or not value.strip():
+                    continue
 
-            if 'crit_chance' not in stats or 'status_chance' not in stats:
-                pcts = [float(p) / 100.0 for p in re.findall(r'(\d+(?:\.\d+)?)\s*%', combined_text)]
-                if pcts:
-                    if len(pcts) >= 3 and pcts[0] <= 0.60:
-                        stats.setdefault('valence_bonus', pcts[0])
-                        stats.setdefault('crit_chance', pcts[1])
-                        stats.setdefault('status_chance', pcts[2])
-                    elif len(pcts) >= 2:
-                        stats.setdefault('crit_chance', pcts[0])
-                        stats.setdefault('status_chance', pcts[1])
-                    elif len(pcts) == 1:
-                        stats.setdefault('crit_chance', pcts[0])
-
-            if 'multishot' not in stats:
-                m_ms = re.search(r'(?:멀[티터E]|일[티터E]|밀[티터E]|multishot)\s*샷?[\s\S]*?(\d+(?:\.\d+)?)', combined_text, re.I)
-                if m_ms:
-                    stats['multishot'] = float(m_ms.group(1))
-
-            if 'fire_rate' not in stats:
-                m_fr = re.search(r'(?:연사력|공격\s*속도|공속|fire\s*rate)[\s\S]*?(\d+(?:\.\d+)?)', combined_text, re.I) or re.search(r'(\d+\.\d+)\s*(?:자동|반자동|점사)', combined_text)
-                if m_fr:
-                    stats['fire_rate'] = float(m_fr.group(1))
-
-            if 'total_damage' not in stats:
-                m_tot = re.search(r'(?:총계|총\s*피해|총\s*데미지|total\s*damage|총합|출계|\*계|奢기l)[\s\S]*?([\d,]+(?:\.\d+)?)', combined_text)
-                if m_tot:
-                    stats['total_damage'] = float(m_tot.group(1).replace(',', ''))
-
-            for line in combined_text.splitlines():
-                l = line.strip()
-                if re.search(r'(지면\s*강타|slam)', l, re.I) and 'slam_damage' not in stats:
-                    m = re.search(r'([\d,]+(?:\.\d+)?)', l)
-                    if m: stats['slam_damage'] = float(m.group(1).replace(',', ''))
-                elif re.search(r'(슬라이드|slide)', l, re.I) and 'slide_damage' not in stats:
-                    m = re.search(r'([\d,]+(?:\.\d+)?)', l)
-                    if m: stats['slide_damage'] = float(m.group(1).replace(',', ''))
-                elif re.search(r'(강\s*공격|heavy)', l, re.I) and 'heavy_damage' not in stats:
-                    m = re.search(r'([\d,]+(?:\.\d+)?)', l)
-                    if m: stats['heavy_damage'] = float(m.group(1).replace(',', ''))
+                parsed = self._parse_panel_value(value, key)
+                if parsed is not None:
+                    stats[key] = parsed
 
             return stats
 
-    def calculate_comprehensive_metrics(self, w_meta: Dict[str, Any], left_stats: Optional[Dict[str, float]] = None, mod_objs: Optional[List[Dict[str, Any]]] = None, riven_stats: Optional[Dict[str, float]] = None) -> Dict[str, Any]:
+    def calculate_comprehensive_metrics(self, w_meta: Dict[str, Any], left_stats: Optional[Dict[str, float]] = None, mod_objs: Optional[List[Dict[str, Any]]] = None, riven_stats: Optional[Dict[str, float]] = None, riven_in_panel: bool = False) -> Dict[str, Any]:
             from scripts.warframe_damage_engine import WarframeDamageEngine
             if not hasattr(self, 'damage_engine') or not self.damage_engine:
                 self.damage_engine = WarframeDamageEngine()
-            return self.damage_engine.compute_metrics(w_meta, left_stats=left_stats, mod_objs=mod_objs, riven_stats=riven_stats)
+            return self.damage_engine.compute_metrics(w_meta, left_stats=left_stats, mod_objs=mod_objs, riven_stats=riven_stats, riven_in_panel=riven_in_panel)
+
+    def _riven_free_metrics(self, w_meta: Dict[str, Any], left_stats: Dict[str, float], mod_objs: List[Dict[str, Any]], riven_stats: Dict[str, float], fallback: Dict[str, Any]) -> Dict[str, Any]:
+            # A riven-equipped screenshot already has the riven in its panel, so the "before" side must take it out.
+            if not left_stats:
+                return fallback
+            from scripts.warframe_damage_engine import WarframeDamageEngine
+            stripped = WarframeDamageEngine().strip_riven_from_panel(left_stats, w_meta, mod_objs, riven_stats)
+            return self.calculate_comprehensive_metrics(w_meta, left_stats=stripped, mod_objs=mod_objs)
 
     def has_pending_diagnosis(self) -> bool:
         return hasattr(self, 'pending_screenshot') and self.pending_screenshot is not None
@@ -1139,6 +990,10 @@ class ScreenModAnalyzer:
                 "fire_rate": "공격 속도/연사력",
                 "status_chance": "상태이상 확률",
                 "elemental_damage": "속성 피해",
+                "heat": "화염",
+                "cold": "냉기",
+                "electric": "전기",
+                "toxin": "독성",
                 "finisher_damage": "마무리 일격 피해",
                 "initial_combo": "기본 연속기"
             }
@@ -1175,6 +1030,7 @@ class ScreenModAnalyzer:
                 f"- **치명타 최고점(Peak)**: {base_max:,.0f} ➔ **{r_max:,.0f}**\n"
                 f"- **최저 데미지(Trough)**: {base_min:,.0f} ➔ **{r_min:,.0f}**\n\n"
                 f"💡 **세팔론 오디스의 평가**: 리벤 모드의 스탯이 무기 기본 스펙과 증폭 연쇄를 일으켜 실전 기대 화력이 {gain:+.1f}% 강화되었습니다!"
+                + "\n".join(self._format_elements(with_riven_metrics))
             )
 
     def resume_pending_riven(self, user_input: Union[str, Dict[str, float]]) -> Dict[str, Any]:
@@ -1209,7 +1065,10 @@ class ScreenModAnalyzer:
                 elif label in ['상태이상확률', '상확', 'sc']:
                     riven_stats['status_chance'] = val
                 elif label in ['독', 'toxin', '냉기', '얼음', 'cold', '화염', '불', 'heat', '전기', 'elec', '속성']:
-                    riven_stats['elemental_damage'] = val
+                    riven_stats['elemental_damage'] = riven_stats.get('elemental_damage', 0.0) + val
+                    element = {'독': 'toxin', 'toxin': 'toxin', '냉기': 'cold', '얼음': 'cold', 'cold': 'cold', '화염': 'heat', '불': 'heat', 'heat': 'heat', '전기': 'electric', 'elec': 'electric'}.get(label)
+                    if element:
+                        riven_stats[element] = val
                 elif label in ['베기', 'slash']:
                     riven_stats['slash'] = val
                 elif label in ['팩션', 'faction']:
@@ -1240,7 +1099,8 @@ class ScreenModAnalyzer:
         riven_name_ctx = ctx.get('riven_name', '리벤 모드')
         base_metrics_ctx = ctx.get('base_metrics', {})
 
-        with_riven_metrics = self.calculate_comprehensive_metrics(w_meta_ctx, left_stats=left_stats_ctx, mod_objs=mod_objs_ctx, riven_stats=riven_stats)
+        with_riven_metrics = self.calculate_comprehensive_metrics(w_meta_ctx, left_stats=left_stats_ctx, mod_objs=mod_objs_ctx, riven_stats=riven_stats, riven_in_panel=True)
+        base_metrics_ctx = self._riven_free_metrics(w_meta_ctx, left_stats_ctx, mod_objs_ctx, riven_stats, base_metrics_ctx)
         report = self.format_riven_comparison_report(w_meta_ctx, riven_name_ctx, riven_stats, base_metrics_ctx, with_riven_metrics)
         breakdown_msg = self.format_calculation_breakdown(w_meta_ctx, mod_objs_ctx, with_riven_metrics, riven_stats=riven_stats)
 
@@ -1321,6 +1181,8 @@ class ScreenModAnalyzer:
         mod_details = []
 
         for mod in mod_objs:
+            if mod.get('name') == 'Riven Mod':
+                continue
             mod_stats = [
                 f"피해 +{mod.get('damage', 0.0)*100:.1f}%" if mod.get('damage', 0.0) != 0 else "",
                 f"멀티샷 +{mod.get('multishot', 0.0)*100:.1f}%" if mod.get('multishot', 0.0) != 0 else "",
@@ -1351,7 +1213,7 @@ class ScreenModAnalyzer:
 
         if riven_stats:
             r_stats = [
-                f"피해 +{riven_stats.get('damage', 0.0)*100:.1f}%" if riven_stats.get('damage', 0.0) != 0 else "",
+                f"피해 +{(riven_stats.get('damage', 0.0) or riven_stats.get('base_damage', 0.0))*100:.1f}%" if (riven_stats.get('damage', 0.0) or riven_stats.get('base_damage', 0.0)) != 0 else "",
                 f"멀티샷 +{riven_stats.get('multishot', 0.0)*100:.1f}%" if riven_stats.get('multishot', 0.0) != 0 else "",
                 f"원소 피해 +{riven_stats.get('elemental_damage', 0.0)*100:.1f}%" if riven_stats.get('elemental_damage', 0.0) != 0 else "",
                 f"치명타 확률 +{riven_stats.get('crit_chance', 0.0)*100:.1f}%" if riven_stats.get('crit_chance', 0.0) != 0 else "",
@@ -1362,7 +1224,7 @@ class ScreenModAnalyzer:
             riven_stats_str = ', '.join(r_stats) if r_stats else '[옵션 미입력]'
             mod_details.append(f"  - 🔮 리벤 모드 (Riven Mod): {riven_stats_str}")
 
-            mod_dmg += riven_stats.get('damage', 0.0)
+            mod_dmg += riven_stats.get('damage', 0.0) or riven_stats.get('base_damage', 0.0)
             mod_ms += riven_stats.get('multishot', 0.0)
             mod_elem += riven_stats.get('elemental_damage', 0.0)
             mod_cc += riven_stats.get('crit_chance', 0.0)
@@ -1420,26 +1282,101 @@ class ScreenModAnalyzer:
             f"  ② 순수 발사체당 피해 = {per_pellet:,.1f} (비크리 최저 {ms_min}발 적중 시 {min_hit:,.1f}, 최대 {ms_max}발 적중 시 {max_non_crit:,.1f}, 평균 총계 {avg_non_crit:,.1f});" if not is_melee else f"  ② 비크리 1타(최저점) = {min_hit:,.1f};",
             f"  ③ 치명타 최고점 = 최대 {ms_max}발 적중({max_non_crit:,.1f}) × {final_cd:.2f}배 = {max_crit:,.1f};",
             f"  ④ 기대 단발 = {avg_non_crit:,.1f} × [1 + {final_cc:.2f} × ({final_cd:.2f} - 1)] = {exp_hit:,.1f};",
-            f"  ⑤ 순간 폭딜 = {exp_hit:,.1f} × {final_fr:.2f} = {b_dps:,.0f} DPS, 지속 DPS = {b_dps:,.0f} × 0.78 = {s_dps:,.0f} DPS;"
+            f"  ⑤ 순간 폭딜 = {exp_hit:,.1f} × {final_fr:.2f} = {b_dps:,.0f} DPS, 지속 DPS = {b_dps:,.0f} × {(s_dps / b_dps) if b_dps else 1.0:.2f} = {s_dps:,.0f} DPS;"
         ]
 
-        if not is_melee and bleed_tick > 0:
-            breakdown.append(f"  ⑥ 베기 상태이상 틱딜(헌터 뮤니션즈 트루 데미지) = 0.35 × 발사체 피해({per_pellet:.1f}) × 치명타평균배율({crit_avg_mult:.2f}) = 틱당 약 {bleed_tick:,.1f};")
+        if metrics.get('hunter_munitions'):
+            breakdown.append(f"  ⑥ 베기 상태이상 틱딜(헌터 뮤니션즈 트루 데미지) = 0.35 × 발사체 피해({per_pellet:.1f}) × 치명타평균배율({crit_avg_mult:.2f}) = 틱당 약 {metrics['hunter_munitions'].get('bleed_tick', 0):,.1f};")
 
         if inc_dps > 0 or fs_dps > b_dps:
             breakdown.append(f"  ⑦ 인카논 변신 폼 및 풀스택(아케인+갈바나이즈드) 폭딜 = {fs_dps:,.0f} DPS, 인카논 폭딜 = {inc_dps:,.0f} DPS.")
 
         return "\n".join(breakdown)
 
+    def _build_slot_candidates(self, w_meta: Dict[str, Any], category: str) -> List[Any]:
+        from scripts.jamo_matcher import CATEGORY_MAPPING, decompose_hangul
+
+        allowed = CATEGORY_MAPPING.get(category, [])
+        w_type = (w_meta.get("type") or "").lower()
+        w_type_norm = "rifle" if w_type == "assault rifle" else w_type
+        ranged_classes = ["rifle", "shotgun", "bow", "sniper", "pistol"]
+        candidates = []
+        seen = set()
+        for mod in self.indexer.mods_index.values():
+            name = mod.get("name")
+            if not name or name in seen: continue
+            if mod.get('is_pvp') or 'pvpmods' in str(mod.get('uniqueName', '')).lower() or mod.get('conclave'):
+                continue
+            m_type = str(mod.get("type", "")).lower()
+            m_compat = str(mod.get("compatName", "")).lower()
+            if "stance" in m_type:
+                if category != "melee":
+                    continue
+            elif "aura" in m_type:
+                if category != "warframe":
+                    continue
+            else:
+                m_compat_norm = "rifle" if m_compat == "assault rifle" else m_compat
+                # Rifle mods also fit snipers and bows; class-exclusive mods only fit their own class.
+                rifle_family = m_compat_norm == "rifle" and w_type_norm in ("sniper", "bow")
+                if w_type_norm in ranged_classes and m_compat_norm in ranged_classes and m_compat_norm != w_type_norm and not rifle_family:
+                    continue
+                # A compat naming a real weapon is that weapon's augment. An inferred weapon has no name to check.
+                if m_compat in self.indexer.weapons_index and not w_meta.get("is_inferred"):
+                    w_name_clean = w_meta.get("name", "").lower()
+                    w_kr_clean = w_meta.get("kr_name", "").lower()
+                    if m_compat not in w_name_clean and m_compat not in w_kr_clean:
+                        continue
+            # Exclude Arcanes from normal mod slots
+            if mod.get('is_arcane') or 'arcane' in m_type or 'arcane' in m_compat:
+                continue
+            if any(name.startswith(p) for p in ['Primary ', 'Secondary ', 'Melee ']) and 'mod' not in m_type:
+                if name in ['Primary Frostbite', 'Primary Merciless', 'Primary Deadhead', 'Primary Blight', 'Primary Crux', 'Primary Exhilarate', 'Primary Obstruct']:
+                    continue
+
+            if allowed:
+                is_compat = any(cat in m_type or cat in m_compat for cat in allowed)
+                if "stance" in m_type and category == "melee":
+                    is_compat = True
+                elif "aura" in m_type and category == "warframe":
+                    is_compat = True
+                if not is_compat:
+                    continue
+            seen.add(name)
+            kr = mod.get("kr_name", "")
+            if kr:
+                candidates.append((decompose_hangul(kr.replace(" ", "")), kr, mod))
+            candidates.append((decompose_hangul(name.lower().replace(" ", "")), name, mod))
+        return candidates
+
     def _match_single_slot(self, s_text: str, candidates: List[Any], return_all: bool = False) -> Any:
         from scripts.jamo_matcher import decompose_hangul
         from rapidfuzz import fuzz
 
-        variants = [re.sub(r'[^가-힣a-zA-Z0-9\s]', ' ', v).strip() for v in s_text.split('|||') if v.strip()]
-        q_jamos = [decompose_hangul(v.lower().replace(' ', '')) for v in variants if v]
+        # Each OCR pass is a variant, and so is each of its lines: a mod name is often clean on one line next to noise.
+        raw_variants = []
+        for chunk in s_text.split('|||'):
+            lines = [l for l in chunk.splitlines() if l.strip()]
+            if lines:
+                raw_variants.append(' '.join(lines))
+            if len(lines) > 1:
+                raw_variants.extend(lines)
+        q_jamos = []
+        for v in raw_variants:
+            # OCR reads the syllable 이 as 0 next to Hangul (드라0브, 나0 즈드).
+            cleaned = re.sub(r'(?<=[가-힣])0+', '이', v)
+            cleaned = re.sub(r'[^가-힣a-zA-Z\s]', ' ', cleaned)
+            cleaned = re.sub(r'(?<![a-zA-Z])[a-zA-Z]{1,2}(?![a-zA-Z])', ' ', cleaned)
+            jamo = decompose_hangul(cleaned.lower().replace(' ', '').replace('\t', ''))
+            if jamo and jamo not in q_jamos:
+                q_jamos.append(jamo)
 
         if not q_jamos:
             return [] if return_all else (None, 0.0)
+
+        def partial_weight(cand_len: int, q_len: int) -> float:
+            # A short name fully inside long noisy text proves little, so partial matches need real coverage.
+            return min(1.0, 0.55 + 0.75 * cand_len / max(q_len, 1))
 
         prefixes = ('갈바나이즈드 ', '프라임드 ', '프라이머리 ', '세컨더리 ', '아말감 ', '새크리피셜 ', '움브랄 ', 'galvanized ', 'primed ', 'primary ', 'secondary ', 'amalgam ', 'sacrificial ', 'umbral ')
         best_mod = None
@@ -1450,6 +1387,7 @@ class ScreenModAnalyzer:
         has_primed = any(k in s_low for k in ['프라임', '라임드', '임드', '표라임', '프래임', 'primed'])
         has_galv = any(k in s_low for k in ['갈바', '바나', '이즈드', '길바', 'galv'])
         has_amalgam = ('아말' in s_low or 'amalgam' in s_low)
+        has_sacrificial = any(k in s_low for k in ['새크', '재크', '세크', '사크', '크리피', '리피셜', '리피설', 'sacrific'])
 
         # Faction detection in slot text
         has_infested = any(k in s_low for k in ['인페', '페스', '스티드', '감염', 'infested'])
@@ -1475,6 +1413,8 @@ class ScreenModAnalyzer:
                     prefix_ok = has_galv
                 elif disp_low.startswith(('아말감 ', 'amalgam ')):
                     prefix_ok = has_amalgam
+                elif disp_low.startswith(('새크리피셜 ', 'sacrificial ')):
+                    prefix_ok = has_sacrificial
 
             # Faction Mod Disambiguation (Cleanse, Bane, Expel, Smite)
             is_faction_mod = any(disp_low.startswith(fp) for fp in ['클렌즈 ', 'cleanse ', '베인 ', 'bane ', '익스펠 ', 'expel ', '스마이트 ', 'smite '])
@@ -1499,28 +1439,39 @@ class ScreenModAnalyzer:
                 if has_corrupted and mod_faction and mod_faction != 'corrupted':
                     continue
 
+            variant_scores = []
             for q_j in q_jamos:
-                if len(q_j) < 6:
-                    r = fuzz.ratio(q_j, cand_jamo)
-                    cand_score = max(cand_score, r)
-                    continue
                 r = fuzz.ratio(q_j, cand_jamo)
-                pr = fuzz.partial_ratio(q_j, cand_jamo)
+                if len(q_j) < 6:
+                    variant_scores.append(r)
+                    continue
+                pr = fuzz.partial_ratio(q_j, cand_jamo) * partial_weight(len(cand_jamo), len(q_j))
 
                 if suffix_jamo:
-                    suf_pr = fuzz.partial_ratio(q_j, suffix_jamo)
+                    suf_pr = fuzz.partial_ratio(q_j, suffix_jamo) * partial_weight(len(suffix_jamo), len(q_j))
                     suf_r = fuzz.ratio(q_j, suffix_jamo)
                     s_val = max(r, pr * 0.90) * 0.40 + max(suf_r, suf_pr) * 0.60
                 else:
                     s_val = max(r, pr * 0.90)
 
-                cand_score = max(cand_score, s_val)
+                variant_scores.append(s_val)
+
+            # Agreement across OCR passes beats one lucky pass.
+            variant_scores.sort(reverse=True)
+            top_scores = variant_scores[:3]
+            cand_score = variant_scores[0] * 0.7 + (sum(top_scores) / len(top_scores)) * 0.3
+            if suffix_jamo:
+                # Mods sharing a prefix are only told apart by the rest of the name.
+                cand_score += (max(fuzz.ratio(q_j, suffix_jamo) for q_j in q_jamos) - 50.0) * 0.2
 
             if is_prefixed:
                 if not prefix_ok:
                     cand_score -= 22.0
                 elif prefix_ok and cand_score > 0:
                     cand_score += 8.0
+            elif (has_primed or has_galv or has_amalgam or has_sacrificial) and cand_score > 0:
+                # The slot shows a variant prefix, so the plain mod is less likely.
+                cand_score -= 8.0
 
             if is_faction_mod:
                 if has_infested and any(w in disp_low for w in ['인페스티드', 'infested']):
@@ -1544,6 +1495,257 @@ class ScreenModAnalyzer:
             return matches
 
         return best_mod, best_score
+
+    def _parse_panel_value(self, text: str, key: str) -> Optional[float]:
+            tokens = re.findall(r'\d[\d.,]*\d|\d', text)
+            if not tokens:
+                return None
+            token = tokens[-1]
+            has_pct = '%' in text
+
+            try:
+                parts = re.split(r'[.,]', token)
+                if len(parts) == 1:
+                    value = float(parts[0])
+                elif len(parts) == 2:
+                    if ',' in token and len(parts[1]) == 3:
+                        value = float(parts[0] + parts[1])
+                    elif '.' in token and len(parts[1]) >= 4:
+                        value = float(parts[0] + parts[1][:3] + '.' + parts[1][3:])
+                    else:
+                        value = float(parts[0] + '.' + parts[1])
+                elif len(parts) >= 3:
+                    if len(parts[-1]) <= 2:
+                        value = float(''.join(parts[:-1]) + '.' + parts[-1])
+                    else:
+                        value = float(''.join(parts))
+                else:
+                    return None
+
+                if key in ['crit_chance', 'status_chance']:
+                    if has_pct or value > 10.0:
+                        value = value / 100.0
+                    if not (0 < value <= 10):
+                        return None
+                elif key == 'crit_mult':
+                    if not (1.0 <= value <= 30.0) or has_pct:
+                        return None
+                elif key == 'fire_rate':
+                    if not (0.05 <= value <= 60.0) or has_pct:
+                        return None
+                elif key == 'multishot':
+                    if not (1.0 <= value <= 60.0) or has_pct:
+                        return None
+                elif key in ['total_damage', 'slam_damage', 'slide_damage', 'heavy_damage']:
+                    if not (value >= 1.0) or has_pct:
+                        return None
+                elif key in ['reload_time', 'charge_time']:
+                    if not (0.05 <= value <= 30.0) or has_pct:
+                        return None
+                elif key == 'magazine':
+                    if not (1.0 <= value <= 5000.0) or has_pct:
+                        return None
+                elif key.startswith('el_'):
+                    if not (value >= 0.1) or has_pct:
+                        return None
+
+                return value
+            except ValueError:
+                return None
+
+    def _match_panel_label(self, label: str) -> Optional[str]:
+            s = re.sub(r'\s+', '', label)
+            if re.search(r'범위', s):
+                return None
+            if re.search(r'[치지]명타?[확라학하]|critchance', s, re.I):
+                return 'crit_chance'
+            if re.search(r'[치지]명타?[피배]|critdam|critmult', s, re.I):
+                return 'crit_mult'
+            if re.search(r'상[태대]이상|status', s, re.I):
+                return 'status_chance'
+            if re.search(r'[멀밀일][티터E]샷?|multishot', s, re.I):
+                return 'multishot'
+            if re.search(r'연사|공격속도|공속|firerate|attackspeed', s, re.I):
+                return 'fire_rate'
+            if re.fullmatch(r'[총송출종충]계\W*', s) or re.search(r'총피해|totaldamage', s, re.I):
+                return 'total_damage'
+            if re.search(r'지[면연]강?타?공격|slam', s, re.I):
+                return 'slam_damage'
+            if re.search(r'슬라이드|slide', s, re.I):
+                return 'slide_damage'
+            if re.search(r'재장전|reload', s, re.I):
+                return 'reload_time'
+            if re.search(r'탄창|magazine', s, re.I):
+                return 'magazine'
+            if re.search(r'충전시간|chargetime', s, re.I):
+                return 'charge_time'
+            return self._match_element_label(s)
+
+    def _format_elements(self, metrics: Dict[str, Any]) -> List[str]:
+            el = metrics.get('elements')
+            if not el or not el.get('types'):
+                return []
+
+            kr = {
+                'heat': '화염', 'cold': '냉기', 'electric': '전기', 'toxin': '독성',
+                'blast': '폭발', 'radiation': '방사능', 'gas': '가스', 'magnetic': '자성',
+                'viral': '바이러스', 'corrosive': '부식', 'impact': '충격', 'puncture': '관통', 'slash': '베기'
+            }
+            faction_kr = {
+                'grineer': '그리니어', 'corpus': '코퍼스', 'infested': '인페스티드', 'orokin': '오로킨',
+                'sentient': '센티언트', 'narmer': '나르메르', 'murmur': '머머'
+            }
+
+            lines = ['\n🧪 **[속성 합성 (슬롯 순서: 좌상단 → 우하단)]**:']
+            if el.get('pairs'):
+                for a, b, name in el.get('pairs', []):
+                    lines.append(f"• {kr.get(a, a)} + {kr.get(b, b)} → **{kr.get(name, name)}**")
+            else:
+                lines.append('• 합성 없음')
+
+            if not el.get('order_known', True):
+                lines.append('⚠️ 일부 모드의 슬롯 위치를 확인하지 못해 합성 순서가 다를 수 있습니다.')
+
+            suffix = {'panel': ' (패널 실측)', 'panel_partial': ' (패널 일부 + 계산값)'}.get(el.get('source'), ' (계산값)')
+            if el.get('first_attack_only') and el.get('source') == 'computed':
+                suffix += ' - 첫 공격 모드 기준'
+            lines.append(f"\n📐 **타입별 피해{suffix}**:")
+            for t, d in sorted(el['types'].items(), key=lambda item: item[1], reverse=True):
+                lines.append(f"• {kr.get(t, t)}: `{d:,.1f}` ({el['shares'].get(t, 0) * 100:.0f}%)")
+
+            burst = metrics.get('burst_dps', 0)
+            fm = el.get('faction_multipliers') or {}
+            if fm:
+                lines.append('\n🎯 **진영별 순간 폭딜 (방어력 제외)**:')
+                for f, m in sorted(fm.items(), key=lambda item: item[1], reverse=True):
+                    lines.append(f"• {faction_kr.get(f, f)}: `{burst * m:,.0f}` (×{m:.2f})")
+
+            return lines
+
+    def _match_element_label(self, s: str) -> Optional[str]:
+            patterns = [
+                (r'방사능|radiation', 'el_radiation'),
+                (r'바이러스|viral', 'el_viral'),
+                (r'부식|corrosive', 'el_corrosive'),
+                (r'자성|magnetic', 'el_magnetic'),
+                (r'폭발|blast', 'el_blast'),
+                (r'가스|gas', 'el_gas'),
+                (r'화염|heat', 'el_heat'),
+                (r'냉기|cold', 'el_cold'),
+                (r'전기|electricity', 'el_electric'),
+                (r'독성|toxin', 'el_toxin'),
+                (r'충격|impact', 'el_impact'),
+                (r'관통|puncture', 'el_puncture'),
+                (r'베기|slash', 'el_slash')
+            ]
+            for pattern, label in patterns:
+                if re.search(pattern, s, re.I):
+                    return label
+            return None
+
+    def _detect_arcane(self, img, category: Optional[str]) -> Optional[Dict[str, Any]]:
+        from rapidfuzz import fuzz
+        from pathlib import Path
+        import json
+
+        if winocr is None or category not in ('Primary', 'Secondary', 'Melee'):
+            return None
+
+        w, h = img.size
+        crop = img.convert('RGB').crop((int(w * 0.72), int(h * 0.08), w, int(h * 0.42)))
+        crop = crop.resize((crop.width * 3, crop.height * 3), Image.LANCZOS)
+        text = self.ocr_image(crop)
+        norm = re.sub(r'\s+', '', text).lower()
+        if not norm:
+            return None
+
+        prefix = category.lower()
+        candidates = {}
+        for entry in self.indexer.mods_index.values():
+            if entry.get('is_arcane') and entry.get('kr_name') and str(entry.get('name', '')).lower().startswith(prefix):
+                candidates[entry['kr_name']] = entry['name']
+
+        best_score = 0
+        best_candidate = None
+        for candidate in candidates:
+            score = fuzz.partial_ratio(re.sub(r'\s+', '', candidate).lower(), norm)
+            if score > best_score:
+                best_score = score
+                best_candidate = candidate
+
+        if best_score < 88:
+            return None
+
+        try:
+            path = Path(__file__).resolve().parent.parent / 'data' / 'arcane_effects.json'
+            effects = json.loads(path.read_text(encoding='utf-8'))
+        except Exception:
+            effects = {}
+
+        eff = effects.get(candidates[best_candidate])
+        return dict(name=candidates[best_candidate], kr_name=best_candidate, modeled=eff is not None, **(eff or dict()))
+
+    def _ocr_panel_rows(self, img) -> List[Tuple[str, str]]:
+            if winocr is None:
+                return []
+
+            w, h = img.size
+            bottom = int(h * 0.62) if w / max(h, 1) < 2.2 else h
+            panel = img.convert('RGB').crop((0, int(h * 0.05), int(w * 0.38), bottom))
+
+            v1 = ImageOps.autocontrast(panel.convert('L').resize((panel.width * 3, panel.height * 3), Image.LANCZOS)).convert('RGB')
+            r, g, b = panel.split()
+            m = ImageChops.lighter(ImageChops.lighter(r, g), b)
+            v2 = ImageOps.invert(ImageOps.autocontrast(m.resize((panel.width * 4, panel.height * 4), Image.LANCZOS))).convert('RGB')
+
+            def ocr_variant(variant):
+                loop = asyncio.new_event_loop()
+                try:
+                    res = loop.run_until_complete(winocr.recognize_pil(variant, lang='ko'))
+                except Exception:
+                    res = []
+                finally:
+                    loop.close()
+                return res
+
+            res_v1 = ocr_variant(v1)
+            res_v2 = ocr_variant(v2)
+
+            def extract_rows(res):
+                labels = []
+                values = []
+                for line in getattr(res, 'lines', res):
+                    label_words = []
+                    value_words = []
+                    for word in line.words:
+                        if re.search(r'\d', word.text) and not re.search(r'[가-힣]', word.text):
+                            value_words.append(word.text)
+                        else:
+                            label_words.append(word.text)
+                    if label_words:
+                        y = line.words[0].bounding_rect.y
+                        labels.append((y, ' '.join(label_words)))
+                    if value_words:
+                        y = line.words[0].bounding_rect.y
+                        values.append((y, ' '.join(value_words)))
+                labels.sort()
+                gaps = sorted(b[0] - a[0] for a, b in zip(labels, labels[1:]) if b[0] > a[0])
+                tol = gaps[len(gaps) // 2] * 0.6 if gaps else 30.0
+                rows = []
+                for y, label_text in labels:
+                    min_dist = float('inf')
+                    value_text = ''
+                    for vy, value_text_candidate in values:
+                        if abs(vy - y) <= tol and abs(vy - y) < min_dist:
+                            min_dist = abs(vy - y)
+                            value_text = value_text_candidate
+                    rows.append((label_text, value_text))
+                return rows
+
+            rows_v1 = extract_rows(res_v1)
+            rows_v2 = extract_rows(res_v2)
+
+            return rows_v1 + rows_v2
 
 # Compatibility Aliases
 RivenOCRAnalyzer = ScreenModAnalyzer

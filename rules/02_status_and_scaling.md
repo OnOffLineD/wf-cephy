@@ -15,10 +15,9 @@ $$\text{Shield Multiplier} = 1 + 0.02 \times (L - L_{\text{base}})^{1.75}$$
 
 ### 1.2. 방어력 개편 (Update 36: Armor Cap at 2,700)
 - 과거 지수적 방어력 증가가 **최대 방어력 2,700**에서 캡(Cap)으로 고정됨.
-- 방어력 피해 감소 공식:
-  $$\text{DR}_{\text{Armor}} = \frac{\text{Armor}}{\text{Armor} + 300}$$
-- 방어력 2,700 도달 시:
-  $$\text{Max DR}_{\text{Armor}} = \frac{2700}{2700 + 300} = 90.0\%$$
+- 적 방어력 피해 감소 공식 (wiki.warframe.com/w/Armor, 2,700 이하 선형):
+  $$\text{DR}_{\text{Armor}} = 0.9 \times \frac{\text{Armor}}{2700}$$
+- 방어력 2,700 도달 시 90%, 1,350이면 45%. 예외적으로 2,700을 넘으면 $\text{Armor}/(\text{Armor}+300)$. 이 식은 원래 Tenno용이다.
 - 강철의 길(Steel Path) 보정: 적 기본 체력/방어력/실드 $+150\%$ (계수 $2.5\times$).
 
 ---
