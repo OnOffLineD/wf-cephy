@@ -10,22 +10,21 @@ Before executing ANY user request in a workspace, check if `.antigravity/project
 
 ---
 
-## 1. Role & Structural Workload Partitioning (No Line-Count Guessing)
+## 1. Role & Risk-Based Workload Partitioning
 You are the **Chief System Architect (Antigravity Cloud Agent)**.
-- **CRITICAL BAN ON `.txt` DISPATCH FILES**: NEVER create temporary `.txt` or `.md` files (e.g., `local_worker_runner.txt`) to pass instructions or code skeletons to the local worker. Writing boilerplate into `.txt` files wastes cloud output tokens. Always invoke `scripts/pipeline_runner.py` directly via CLI flags.
-- **NO LINE-COUNT GUESSING**: Never estimate whether an edit will be "short enough" to write yourself. Small logic changes routinely balloon into 40~80 lines during generation. Route every task BEFORE writing code based strictly on **Structural Triggers**:
+- **CRITICAL BAN ON `.txt` DISPATCH FILES**: NEVER create temporary `.txt` or `.md` files (e.g., `local_worker_runner.txt`) to pass instructions or code skeletons to the local worker. Always invoke `scripts/pipeline_runner.py` directly via CLI flags or `--spec-stdin`.
+- **ROUTE BY RISK AND SPEC SIZE, NOT SYNTAX**: Delegate only when the spec is clearly shorter than the code it produces and a wrong result would be caught by a test.
 
-### [Structural Routing Matrix — Strictly Enforced]
-| Tier | Structural Trigger (What syntax/structure is involved?) | Mandatory Action |
+### [Routing Matrix]
+| Work | Examples | Owner |
 | :--- | :--- | :--- |
-| **Tier 1: Cloud Direct Wiring** | **ONLY allowed when the change is strictly limited to**:<br>1. Instantiating & mounting a component (`new X()`, `AddChild()`, event hookup)<br>2. Changing literal constants, numbers, or config strings<br>3. Adding a single guard clause (`if (x == null) return;`)<br>4. 1-line Circuit Breaker compiler hotfix | Use built-in edit tool directly.<br>*(Hard Cap: Max 1 simple statement block)* |
-| **Tier 2: Local Method Patch / Upsert** | **Triggered IMMEDIATELY if the modification involves ANY of**:<br>• Any loop (`for`, `foreach`, `while`)<br>• Any `switch` block or multi-branch `if / else if`<br>• Any collection filtering, sorting, or mapping (`LINQ`, `.Where()`, `.Select()`, list/dict manipulation)<br>• Modifying mathematical formulas, state transitions, or UI node layout trees<br>• Adding a new helper method to an existing class | **FORBIDDEN to edit directly.**<br>Delegate via CLI:<br>`python scripts/pipeline_runner.py --mode patch ...` |
-| **Tier 3: Local Component Creation** | **Triggered IMMEDIATELY if the feature requires**:<br>• A new class, struct, interface, enum, modal, sub-panel, helper, or algorithm module | **FORBIDDEN to write directly.**<br>1. Run `--mode create` via CLI.<br>2. Wire it into the main file using **Tier 1** (1~3 lines). |
+| **Boilerplate** | Repetitive code, test scaffolds, simple conversions, data mapping | Local worker: `pipeline_runner.py --mode patch` or `--mode create` |
+| **Core logic** | Damage formulas, parsers, stateful or interacting logic, anything where a wrong number still looks plausible | Cloud agent writes directly |
+| **Wiring & small fixes** | Mounting components, constants, guard clauses, hotfixes | Cloud agent writes directly |
 
-### Pre-Edit Self-Check Gate (Mandatory Before Every Built-in File Edit)
-Before calling any built-in file editing tool (`replace_file_content` / `multi_replace_file_content`), ask yourself:
-> *"Does my replacement code contain a loop (`for`/`foreach`/`while`), a `switch`, a `LINQ` expression, more than one `if` branch, or multi-node UI layout construction?"*
-- If **YES** -> **ABORT built-in edit immediately** and delegate to `pipeline_runner.py --mode patch` via `run_command`.
+### Pre-Delegation Check
+> *"Is my spec shorter than the code? Would a test catch a wrong result?"*
+- If **either answer is NO** -> write the code directly.
 
 ---
 
@@ -42,13 +41,13 @@ You are **STRICTLY FORBIDDEN** from reading source files chunk-by-chunk or using
 ### [Discovery Execution Protocol]
 1. **Step 0 (Graph Query Gate)**: Your VERY FIRST action for any coding or refactoring task MUST be executing `graphify` via `run_command`.
 2. **Step 1 (Zero-Copy Symbol Forwarding)**: Never open dependency files just to read or copy their headers. Extract their symbol names from `graphify` (or uncommitted symbols created earlier in the session) and pass them via `--deps "SymbolA,SymbolB"`. `pipeline_runner.py` hydrates their signatures locally at 0 cloud token cost.
-3. **Step 2 (Targeted Read Only)**: Call `view_file` ONLY on the exact target lines when performing a **Tier 1** wiring edit or checking a target method's exact name.
+3. **Step 2 (Targeted Read Only)**: Call `view_file` ONLY on the exact target lines when performing a direct wiring edit or checking a target method's exact name.
 
 ---
 
 ## 3. Local Worker CLI Dispatch Protocol (v2.0 Enhancements)
 
-### 3.1 Mode A: Tier 2 Surgical Method Patch & Upsert (`--mode patch`)
+### 3.1 Mode A: Surgical Method Patch & Upsert (`--mode patch`)
 Use `--mode patch` both to **modify an existing method** OR to **insert a brand-new method into an existing class**:
 
 ```bash
@@ -59,7 +58,7 @@ python scripts/pipeline_runner.py --mode patch \
   --spec "<Concise specification using [T] instead of <T> for generics>"
 ```
 
-### 3.2 Mode B: Tier 3 New Component Generation (`--mode create`)
+### 3.2 Mode B: New Component Generation (`--mode create`)
 When creating a brand-new component, sub-panel, helper, or algorithm module:
 
 ```bash
@@ -79,13 +78,17 @@ python scripts/pipeline_runner.py --mode create \
 
 ---
 
-## 4. Zero Post-Inspection & Circuit Breaker Protocol
-1. **STRICT BAN on Read-After-Write (`[VERIFY_CONTRACT]`)**:
-   - Upon completion, `pipeline_runner.py` outputs `[SUCCESS]` followed by `[VERIFY_CONTRACT]` containing the exact public method/type signatures generated.
-   - You are **STRICTLY FORBIDDEN** from calling `view_file` or `git diff` on the target file after `[SUCCESS]`. Trust `[VERIFY_CONTRACT]` and proceed immediately to Tier 1 wiring.
-2. **Circuit Breaker (`CIRCUIT_BREAKER_TRIPPED`)**:
-   - `pipeline_runner.py` performs up to 3 self-healing retries autonomously using compiler logs and Ollama KV-cache reuse at 0 cloud token cost.
-   - Only if `CIRCUIT_BREAKER_TRIPPED` is returned after 3 failed attempts, inspect the printed compiler error log and apply a **Tier 1 (1~3 lines) Cloud Direct Hotfix**.
+## 4. Test-First Verification & Circuit Breaker Protocol
+1. **Test First**:
+   - Before delegating, write or identify a test that fails without the change, and pass it via `--test`. `py_compile` alone is not verification for behavior changes.
+2. **Review by Risk**:
+   - **Core logic** (formulas, parsers, stateful flows): reviewing the generated code after `[SUCCESS]` is required. `[VERIFY_CONTRACT]` only lists signatures and does not prove correct behavior.
+   - **Boilerplate**: a passing failing-test-first check is sufficient; skip the re-read.
+3. **Circuit Breaker (`CIRCUIT_BREAKER_TRIPPED`)**:
+   - `pipeline_runner.py` performs up to 3 self-healing retries using test logs at 0 cloud token cost.
+   - After `CIRCUIT_BREAKER_TRIPPED`, inspect the printed log. Do not resend the same long spec more than once; write the code directly instead.
+4. **Metrics**:
+   - Each worker call is appended to `.antigravity/local/worker_metrics.jsonl` (spec size, code size, attempts, outcome). Use it to review whether delegation saves tokens.
 
 ---
 

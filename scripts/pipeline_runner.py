@@ -19,6 +19,7 @@ import subprocess
 import sys
 import urllib.error
 import urllib.request
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -394,12 +395,20 @@ class LocalPipelineRunner:
 
         is_python = self.profile.get("language") == "python" or self.profile.get("default_ext") == ".py"
         if is_python:
+            import ast
             import textwrap
+            cleaned_method = textwrap.dedent(new_method_code.strip())
+            classes = [node for node in ast.parse(original_content).body if isinstance(node, ast.ClassDef)]
+            if classes:
+                # 모듈 코드(별칭, __main__ 등)가 뒤따라도 마지막 클래스 본문 끝에 넣습니다.
+                lines = original_content.splitlines(keepends=True)
+                head = "".join(lines[:classes[-1].end_lineno]).rstrip()
+                tail = "".join(lines[classes[-1].end_lineno:]).lstrip()
+                indented = textwrap.indent(cleaned_method, "    ")
+                return f"{head}\n\n{indented}\n\n{tail}", "INSERTED"
             main_match = re.search(r"^[ \t]*if\s+__name__\s*==\s*['\"]__main__['\"]:", original_content, re.MULTILINE)
             insert_pos = main_match.start() if main_match else len(original_content)
-            cleaned_method = textwrap.dedent(new_method_code.strip())
-            indented = "\n    " + cleaned_method.replace("\n", "\n    ") + "\n\n"
-            patched = original_content[:insert_pos].rstrip() + "\n" + indented + original_content[insert_pos:].lstrip()
+            patched = original_content[:insert_pos].rstrip() + "\n\n\n" + cleaned_method + "\n\n" + original_content[insert_pos:].lstrip()
             return patched, "INSERTED"
 
         last_brace = original_content.rfind("}")
@@ -479,7 +488,30 @@ class LocalPipelineRunner:
         summary = " | ".join(s.strip() for s in sigs[:6]) or "Method/Component body updated"
         print(f"[SUCCESS] {action} on {file_rel} (Model: {model}, Attempt: {attempt})")
         print(f"[VERIFY_CONTRACT] {summary}")
-        print("[PROTOCOL_LOCK] DO NOT invoke view_file or git diff. Proceed directly to Tier 1 wiring.")
+        print("[REVIEW_POLICY] Core logic (formulas, parsers, stateful flows) must be reviewed. Boilerplate may trust the failing-test-first check.")
+
+    def log_metrics(
+        self, mode: str, file_rel: str, symbol: str, spec: str, code: str, attempts: int, outcome: str, test_cmd: Optional[str]
+    ) -> None:
+        """위임 효과를 수치로 확인할 수 있도록 호출별 지표를 로컬 JSONL에 남깁니다."""
+        record = {
+            "time": datetime.now().isoformat(timespec="seconds"),
+            "mode": mode,
+            "file": file_rel,
+            "symbol": symbol,
+            "spec_chars": len(spec),
+            "code_chars": len(code),
+            "attempts": attempts,
+            "outcome": outcome,
+            "custom_test": bool(test_cmd),
+        }
+        try:
+            path = self.root / ".antigravity" / "local" / "worker_metrics.jsonl"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with path.open("a", encoding="utf-8") as f:
+                f.write(json.dumps(record, ensure_ascii=False) + "\n")
+        except OSError as e:
+            print(f"[WARN] Could not write worker metrics: {e}")
 
     # -------------------------------------------------------------------------
     # 6. Execution Modes: Patch (Replace/Insert) & Create
@@ -543,6 +575,7 @@ class LocalPipelineRunner:
             ok, last_log = self.run_verification(test_cmd)
             if ok:
                 self._register_live_symbols(file_rel, patched_content)
+                self.log_metrics("patch", file_rel, clean_symbol, clean_spec, new_method, attempt, "success", test_cmd)
                 self.print_verify_contract(
                     file_rel, f"{action_type} '{clean_symbol}'", new_method, self.model, attempt
                 )
@@ -555,6 +588,7 @@ class LocalPipelineRunner:
 
         # 3회 실패 시 원본 완벽 복원 및 서킷 브레이커 발동
         file_path.write_text(original_content, encoding="utf-8")
+        self.log_metrics("patch", file_rel, clean_symbol, clean_spec, "", retries, "circuit_breaker", test_cmd)
         print(f"CIRCUIT_BREAKER_TRIPPED on {file_rel}::{clean_symbol}\nLast Error:\n{last_log}")
         sys.exit(2)
 
@@ -597,6 +631,7 @@ class LocalPipelineRunner:
             ok, last_log = self.run_verification(test_cmd)
             if ok:
                 self._register_live_symbols(file_rel, generated_code)
+                self.log_metrics("create", file_rel, clean_sig, clean_spec, generated_code, attempt, "success", test_cmd)
                 self.print_verify_contract(
                     file_rel, "CREATED", generated_code, self.model, attempt
                 )
@@ -607,6 +642,7 @@ class LocalPipelineRunner:
                 f"```\n{last_log}\n```"
             )
 
+        self.log_metrics("create", file_rel, clean_sig, clean_spec, "", retries, "circuit_breaker", test_cmd)
         print(f"CIRCUIT_BREAKER_TRIPPED on {file_rel}\nLast Error:\n{last_log}")
         sys.exit(2)
 
