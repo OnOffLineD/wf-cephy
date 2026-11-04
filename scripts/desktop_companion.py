@@ -7,6 +7,7 @@ import os
 import re
 import html
 import threading
+import traceback
 from datetime import datetime
 from PIL import Image, ImageGrab
 
@@ -14,7 +15,7 @@ ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
-from scripts.path_config import get_path
+from scripts.path_config import get_path, get_user_data_path
 
 try:
     from PyQt6.QtCore import (
@@ -50,6 +51,21 @@ from scripts.build_edit_dialog import BuildEditDialog
 from scripts.morphing_tab_bar import MorphingTabBar
 from scripts.persona_dialog import OrdisPersonaDialog
 from scripts.layered_pet_renderer import LayeredPetRenderer
+
+
+def handle_uncaught_exception(exc_type, exc, tb, panel=None, log_path=None):
+    """PyQt ends the whole app on an exception in a button handler, so log it and keep running instead."""
+    details = "".join(traceback.format_exception(exc_type, exc, tb))
+    sys.stderr.write(details)
+    log_path = log_path or get_user_data_path('logs', 'app-errors.log')
+    try:
+        os.makedirs(os.path.dirname(log_path), exist_ok=True)
+        with open(log_path, 'a', encoding='utf-8') as f:
+            f.write(f"--- {datetime.now().isoformat(timespec='seconds')}\n{details}\n")
+    except OSError:
+        pass
+    if panel is not None:
+        panel.chat_reply_signal.emit("세팔론 오디스", f"⚠️ 오류가 발생했지만 앱은 계속 실행 중입니다: {exc}\n로그: {log_path}", False, None)
 
 
 def render_chat_markup(text: str) -> str:
@@ -1068,6 +1084,7 @@ class OrdisCompanionApp(QWidget):
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     panel = OrdisCompanionApp()
+    sys.excepthook = lambda *exc_info: handle_uncaught_exception(*exc_info, panel=panel)
     app.aboutToQuit.connect(panel.llm_runner.stop_server)
     panel.start_llm_in_background()
     panel.show()

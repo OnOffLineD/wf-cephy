@@ -14,7 +14,7 @@ try:
     from PyQt6.QtWidgets import QApplication
 except ImportError:
     from PySide6.QtWidgets import QApplication
-from scripts.desktop_companion import DesktopPet, OrdisCompanionApp
+from scripts.desktop_companion import DesktopPet, OrdisCompanionApp, handle_uncaught_exception
 
 def main():
     app = QApplication(sys.argv)
@@ -24,6 +24,7 @@ def main():
 
     # Main dashboard panel (headless popover, hidden by default)
     panel = OrdisCompanionApp()
+    sys.excepthook = lambda *exc_info: handle_uncaught_exception(*exc_info, panel=panel)
     app.aboutToQuit.connect(panel.llm_runner.stop_server)
     panel.start_llm_in_background()
 

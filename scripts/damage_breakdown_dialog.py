@@ -110,8 +110,11 @@ class DamageBreakdownDialog(QDialog):
             self.table_widget.setColumnCount(8)
             self.table_widget.setHorizontalHeaderLabels(["모드명", "피해", "멀티샷", "속성", "치확", "치피", "연사/공속", "비고"])
 
-            if not self.mod_objs:
+            if not self.mod_objs and not self.riven_stats:
                 return
+
+            def percent(value):
+                return f"{value*100:+.1f}%" if value != 0 else "-"
 
             data = []
             total_damage = 0
@@ -121,7 +124,10 @@ class DamageBreakdownDialog(QDialog):
             total_crit_damage = 0
             total_fire_rate = 0
 
-            for m in self.mod_objs:
+            for m in self.mod_objs or []:
+                # The riven's values get their own row below; this is only its slot marker.
+                if self.riven_stats and m.get('name') == 'Riven Mod':
+                    continue
                 mod_name = m.get('kr_name') or m.get('name')
                 damage = float(m.get('damage') or 0.0)
                 multishot = float(m.get('multishot') or 0.0)
@@ -142,37 +148,44 @@ class DamageBreakdownDialog(QDialog):
 
                 row_data = [
                     mod_name,
-                    f"+{damage*100:.1f}%" if damage != 0 else "-",
-                    f"+{multishot*100:.1f}%" if multishot != 0 else "-",
-                    f"+{elemental_damage*100:.1f}%" if elemental_damage != 0 else "-",
-                    f"+{crit_chance*100:.1f}%" if crit_chance != 0 else "-",
-                    f"+{crit_damage*100:.1f}%" if crit_damage != 0 else "-",
-                    f"+{fire_rate*100:.1f}%" if fire_rate != 0 else "-",
+                    percent(damage),
+                    percent(multishot),
+                    percent(elemental_damage),
+                    percent(crit_chance),
+                    percent(crit_damage),
+                    percent(fire_rate),
                     note
                 ]
                 data.append(row_data)
 
             if self.riven_stats:
-                riven_row = [
+                riven = self.riven_stats
+                riven_damage = riven.get('damage', 0.0) or riven.get('base_damage', 0.0)
+                total_damage += riven_damage
+                total_multishot += riven.get('multishot', 0.0)
+                total_elemental_damage += riven.get('elemental_damage', 0.0)
+                total_crit_chance += riven.get('crit_chance', 0.0)
+                total_crit_damage += riven.get('crit_damage', 0.0)
+                total_fire_rate += riven.get('fire_rate', 0.0)
+                data.append([
                     "Riven",
-                    f"+{self.riven_stats.get('damage', 0):.1f}",
-                    f"+{self.riven_stats.get('multishot', 0):.1f}",
-                    self.riven_stats.get('elemental_damage', ""),
-                    f"+{self.riven_stats.get('crit_chance', 0)*100:.1f}%" if self.riven_stats.get('crit_chance', 0) != 0 else "-",
-                    f"+{self.riven_stats.get('crit_damage', 0)*100:.1f}%" if self.riven_stats.get('crit_damage', 0) != 0 else "-",
-                    f"+{self.riven_stats.get('fire_rate', 0)*100:.1f}%" if self.riven_stats.get('fire_rate', 0) != 0 else "-",
+                    percent(riven_damage),
+                    percent(riven.get('multishot', 0.0)),
+                    percent(riven.get('elemental_damage', 0.0)),
+                    percent(riven.get('crit_chance', 0.0)),
+                    percent(riven.get('crit_damage', 0.0)),
+                    percent(riven.get('fire_rate', 0.0)),
                     "고유 롤 옵션 합산"
-                ]
-                data.append(riven_row)
+                ])
 
             summary_row = [
                 "🎯 총합 적용치",
-                f"+{total_damage*100:.1f}%",
-                f"+{total_multishot*100:.1f}%",
-                f"+{total_elemental_damage*100:.1f}%",
-                f"+{total_crit_chance*100:.1f}%",
-                f"+{total_crit_damage*100:.1f}%",
-                f"+{total_fire_rate*100:.1f}%",
+                f"{total_damage*100:+.1f}%",
+                f"{total_multishot*100:+.1f}%",
+                f"{total_elemental_damage*100:+.1f}%",
+                f"{total_crit_chance*100:+.1f}%",
+                f"{total_crit_damage*100:+.1f}%",
+                f"{total_fire_rate*100:+.1f}%",
                 "연산 대입값 (Total Sum)"
             ]
             data.append(summary_row)
@@ -187,21 +200,13 @@ class DamageBreakdownDialog(QDialog):
                     self.table_widget.setItem(row, col, item)
 
     def copy_to_clipboard(self):
-        selected_text = self.table_widget.selectedRanges()
-        if not selected_text:
-            return
-
-        clipboard = QApplication.clipboard()
-        clipboard.clear()
-        for range in selected_text:
-            text = ""
-            for row in range.rowCount():
-                for col in range.columnCount():
-                    item = self.table_widget.item(range.topRow() + row, range.leftColumn() + col)
-                    if item:
-                        text += item.text() + "\t"
-                text = text.strip() + "\n"
-            clipboard.setText(text.strip())
+        lines = []
+        for selection in self.table_widget.selectedRanges():
+            for row in range(selection.topRow(), selection.bottomRow() + 1):
+                items = (self.table_widget.item(row, col) for col in range(selection.leftColumn(), selection.rightColumn() + 1))
+                lines.append("\t".join(item.text() for item in items if item))
+        # With nothing selected, the calculation steps are what the button can usefully copy.
+        QApplication.clipboard().setText("\n".join(lines) if lines else (self.breakdown_text or ""))
 
     def apply_dark_theme(self):
         palette = QPalette()
