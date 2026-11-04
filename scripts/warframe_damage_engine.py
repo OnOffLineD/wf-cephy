@@ -19,6 +19,22 @@ class WarframeDamageEngine:
     
         return sanitized_stats
 
+    def _magazine_and_reload(self, w_meta: Dict[str, Any], left: Dict[str, float], mods: List[Dict[str, Any]], rv: Dict[str, float], add_r: bool) -> Any:
+        base_mag = float(w_meta.get('magazineSize') or 30.0)
+        base_reload = float(w_meta.get('reloadTime') or 2.0)
+        r_mag = rv.get('magazine_capacity', 0.0)
+        r_reload = rv.get('reload_speed', 0.0)
+        if left.get('magazine'):
+            mag = float(left['magazine']) + (base_mag * r_mag if add_r else 0.0)
+        else:
+            mag = base_mag * (1.0 + sum(m.get('magazine_capacity', 0.0) for m in mods) + r_mag)
+        # Reload speed adds up as a rate, so a panel time is converted to a rate first.
+        if left.get('reload_time'):
+            rate = 1.0 / float(left['reload_time']) + (r_reload / base_reload if add_r else 0.0)
+        else:
+            rate = (1.0 + sum(m.get('reload_speed', 0.0) for m in mods) + r_reload) / base_reload
+        return max(1.0, mag), 1.0 / max(rate, 0.01)
+
     def _physical_bonus(self, w_meta: Dict[str, Any], values: Dict[str, float]) -> float:
         attacks = w_meta.get('attacks') or []
         dist = attacks[0].get('damage') if attacks and isinstance(attacks[0].get('damage'), dict) else {}
@@ -136,8 +152,7 @@ class WarframeDamageEngine:
         if is_melee:
             sustained_dps = burst_dps
         else:
-            mag = float(left.get('magazine') or w_meta.get('magazineSize') or 30.0)
-            reload_t = float(left.get('reload_time') or w_meta.get('reloadTime') or 2.0)
+            mag, reload_t = self._magazine_and_reload(w_meta, left, mod_objs, rv, add_r)
             sustained_dps = burst_dps * shooting_proportion(mag, efr, reload_t)
 
         result = {
@@ -160,7 +175,9 @@ class WarframeDamageEngine:
             "effective_fire_rate": efr
         }
 
-        result['elements'] = self.compute_elements(w_meta, left, mod_objs, rv, final_ms, final_dmg)
+        # Panel type rows don't include a riven that is added on top of them.
+        element_left = left if riven_in_panel or not rv else {k: v for k, v in left.items() if not k.startswith('el_')}
+        result['elements'] = self.compute_elements(w_meta, element_left, mod_objs, rv, final_ms, final_dmg)
 
         if left.get('slam_damage'):
             result['radial'] = {'base_damage': left['slam_damage']}
@@ -249,14 +266,25 @@ class WarframeDamageEngine:
     
         if out.get('fire_rate'):
             out['fire_rate'] = max(0.05, out['fire_rate'] - base_fr * r_fr)
+
+        if out.get('magazine'):
+            out['magazine'] = max(1.0, out['magazine'] - float(w_meta.get('magazineSize') or 30.0) * riven_stats.get('magazine_capacity', 0.0))
+
+        if out.get('reload_time'):
+            rate = 1.0 / out['reload_time'] - riven_stats.get('reload_speed', 0.0) / float(w_meta.get('reloadTime') or 2.0)
+            out['reload_time'] = 1.0 / max(rate, 0.01)
+
+        # Type rows show the build with the removed stats, so they no longer describe what remains.
+        out = {k: v for k, v in out.items() if not k.startswith('el_')}
     
         return out
 
-    def compute_full_stack(self, w_meta: Dict[str, Any], left_stats: Optional[Dict[str, float]] = None, mod_objs: Optional[List[Dict[str, Any]]] = None, arcane: Optional[Dict[str, Any]] = None, combo_mult: float = 12.0, status_types: int = 3) -> Dict[str, Any]:
+    def compute_full_stack(self, w_meta: Dict[str, Any], left_stats: Optional[Dict[str, float]] = None, mod_objs: Optional[List[Dict[str, Any]]] = None, arcane: Optional[Dict[str, Any]] = None, combo_mult: float = 12.0, status_types: int = 3, riven_stats: Optional[Dict[str, float]] = None) -> Dict[str, Any]:
         from scripts.damage_formulas import average_crit_mult, effective_fire_rate, weak_point_multiplier
     
         mods = [m for m in self._apply_mod_sets(mod_objs or []) if m.get('name') != 'Riven Mod']
-        base = self.compute_metrics(w_meta, left_stats=left_stats, mod_objs=mods)
+        rv = riven_stats or {}
+        base = self.compute_metrics(w_meta, left_stats=left_stats, mod_objs=mods, riven_stats=rv)
         is_melee = w_meta.get('category') == 'Melee'
         arc = arcane or dict()
         stacks = float(arc.get('max_stacks') or 0)
@@ -267,9 +295,10 @@ class WarframeDamageEngine:
         base_cd = float(w_meta.get('crit_mult', 1.5))
         base_ms = float(w_meta.get('base_multishot') or 1.0)
     
-        mod_dmg = sum(mod.get('damage', 0.0) for mod in mods)
-        mod_elem = sum(mod.get('elemental_damage', 0.0) for mod in mods)
-        mod_elem += self._physical_bonus(w_meta, {k: sum(mod.get(k, 0.0) for mod in mods) for k in ('slash', 'impact', 'puncture')})
+        # The riven shares these buckets, so buffs are measured against the total with it included.
+        mod_dmg = sum(mod.get('damage', 0.0) for mod in mods) + (rv.get('damage', 0.0) or rv.get('base_damage', 0.0))
+        mod_elem = sum(mod.get('elemental_damage', 0.0) for mod in mods) + rv.get('elemental_damage', 0.0)
+        mod_elem += self._physical_bonus(w_meta, {k: sum(mod.get(k, 0.0) for mod in mods) + rv.get(k, 0.0) for k in ('slash', 'impact', 'puncture')})
 
         buff_dmg = float(arc.get('damage_per_stack') or 0) * stacks
         buff_elem = float(arc.get('elemental_per_stack') or 0) * stacks

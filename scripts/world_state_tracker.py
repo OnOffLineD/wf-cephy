@@ -10,7 +10,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 import requests
 
-from scripts.path_config import get_user_data_path
+from scripts.path_config import get_user_data_path, write_json_atomic
 
 UNKNOWN = "확인 불가"
 EXPIRED = "갱신 대기"
@@ -166,14 +166,6 @@ class WorldStateTracker:
         if not os.path.exists(self.data_file):
             self.save_checklist(copy.deepcopy(self.DEFAULT_CHECKLIST))
 
-    @staticmethod
-    def _write_json(path: str, data: Any) -> None:
-        # Write then swap, so a crash mid-save can't leave a half-written checklist.
-        tmp_path = f"{path}.tmp"
-        with open(tmp_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-        os.replace(tmp_path, path)
-
     def _read_items(self) -> List[Dict[str, Any]]:
         try:
             with open(self.data_file, "r", encoding="utf-8") as f:
@@ -224,11 +216,11 @@ class WorldStateTracker:
         meta["last_weekly_key"] = weekly_key
 
         self.save_checklist(items)
-        self._write_json(meta_file, meta)
+        write_json_atomic(meta_file, meta)
         return items
 
     def save_checklist(self, items: List[Dict[str, Any]]):
-        self._write_json(self.data_file, items)
+        write_json_atomic(self.data_file, items)
 
     def toggle_item(self, item_id: str) -> List[Dict[str, Any]]:
         items = self.load_checklist()

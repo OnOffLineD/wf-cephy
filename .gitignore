@@ -29,6 +29,7 @@ graphify-out/cache/
 # Runtime logs and recovered user data
 data/logs/
 data/*.corrupt-*
+data/user_builds.json*
 
 # Temporary captures and debug crops
 *.png

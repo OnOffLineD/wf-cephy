@@ -25,6 +25,8 @@ except ImportError:
 
 from scripts.wf_data_indexer import WFDataIndexer
 from scripts.jamo_matcher import match_mods_jamo
+from scripts.build_store import BuildStore, GRID_SLOTS, RIVEN_MOD, canonical_slot, slot_order
+from scripts.riven_reroll_reader import STAT_DISPLAY, looks_like_reroll_screen, read_reroll_screen
 
 class ScreenModAnalyzer:
 
@@ -47,6 +49,7 @@ class ScreenModAnalyzer:
     def __init__(self, preferred_ocr: str = "winocr"):
         self.preferred_ocr = preferred_ocr
         self.indexer = WFDataIndexer()
+        self.build_store = BuildStore()
         self.pending_screenshot = None
         self.incarnon_traits = self._load_incarnon_traits()
         try:
@@ -164,6 +167,10 @@ class ScreenModAnalyzer:
 
             # Run full-image OCR
             full_text = self.ocr_image(img)
+            if looks_like_reroll_screen(full_text):
+                compare = self._diagnose_reroll_screen(img)
+                if compare:
+                    return compare
             parsed = self.parse_stats(full_text)
 
             # Check for pending riven and parsed stats (only if NOT a full modding screen)
@@ -411,7 +418,7 @@ class ScreenModAnalyzer:
                 assigned_slots[slot_idx] = (slot_name, m_obj, score)
 
             # slot_index keeps top-left to bottom-right order for elemental combination; Exilus is considered after the grid.
-            unique_mod_entries = [dict(assigned_slots[k][1], slot_index=(99 if assigned_slots[k][0] == "Exilus" else k)) for k in sorted(assigned_slots.keys())]
+            unique_mod_entries = [dict(assigned_slots[k][1], slot_index=(99 if assigned_slots[k][0] == "Exilus" else k), slot_name=assigned_slots[k][0]) for k in sorted(assigned_slots.keys())]
 
             # Fallback to general jamo matching if slot extraction yielded fewer than 4 mods
             if len(unique_mod_entries) < 4 and not slot_res.get("yolo_used", False):
@@ -1074,6 +1081,12 @@ class ScreenModAnalyzer:
         }
 
         self.clear_pending_riven()
+        saved = self.build_store.get_build(w_meta_ctx['name'])
+        if saved:
+            saved['riven'] = riven_stats
+            if saved.get('panel_has_riven'):
+                saved['panel_riven'] = riven_stats
+            self.build_store.save_build(saved)
         return {
             'success': True,
             'is_riven_report': True,
@@ -1636,14 +1649,304 @@ class ScreenModAnalyzer:
         if best_score < 88:
             return None
 
+        return self._arcane_info(candidates[best_candidate])
+
+    def _arcane_info(self, name: Optional[str]) -> Optional[Dict[str, Any]]:
+        if not name:
+            return None
         try:
             path = Path(__file__).resolve().parent.parent / 'data' / 'arcane_effects.json'
             effects = json.loads(path.read_text(encoding='utf-8'))
-        except Exception:
+        except (OSError, ValueError):
             effects = {}
+        eff = effects.get(name)
+        kr_name = (self.indexer.mods_index.get(name.lower()) or {}).get('kr_name', name)
+        return dict(name=name, kr_name=kr_name, modeled=eff is not None, **(eff or dict()))
 
-        eff = effects.get(candidates[best_candidate])
-        return dict(name=candidates[best_candidate], kr_name=best_candidate, modeled=eff is not None, **(eff or dict()))
+    # --- Saved builds ---
+
+    def result_slots(self, res: Dict[str, Any]) -> Dict[str, str]:
+        slots = {}
+        for mod in res.get('mod_objs') or []:
+            slot = canonical_slot(mod.get('slot_name'), mod)
+            if slot and slot not in slots:
+                slots[slot] = mod['name']
+        return slots
+
+    def save_scanned_build(self, res: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        w_meta = res.get('w_meta') or {}
+        if not w_meta.get('name') or w_meta.get('is_inferred'):
+            return None
+        slots = self.result_slots(res)
+        arcane = (res.get('metrics') or {}).get('arcane') or {}
+        build = {
+            'weapon': w_meta['name'],
+            'kr_name': w_meta.get('kr_name', ''),
+            'category': w_meta.get('category', ''),
+            'slots': slots,
+            'extra': [m['name'] for m in res.get('mod_objs') or [] if m['name'] not in slots.values()],
+            'arcane': arcane.get('name'),
+            'panel': res.get('stats') or {},
+            # A scanned panel already contains an equipped riven, even before its values are known.
+            'panel_has_riven': RIVEN_MOD in slots.values(),
+            'panel_riven': None,
+            'panel_removed': [],
+            'riven': None,
+        }
+        self.build_store.save_build(build)
+        return build
+
+    def _resolve_build_mods(self, build: Dict[str, Any]) -> List[Dict[str, Any]]:
+        mods = []
+        for slot, name in build.get('slots', {}).items():
+            if name == RIVEN_MOD:
+                mods.append({'name': RIVEN_MOD, 'kr_name': '리벤 모드', 'slot_name': slot, 'slot_index': slot_order(slot)})
+            else:
+                mods.append(dict(self.indexer.mods_index.get(name.lower()) or {'name': name}, slot_name=slot, slot_index=slot_order(slot)))
+        for name in build.get('extra', []):
+            mods.append(dict(self.indexer.mods_index.get(name.lower()) or {'name': name}))
+        return mods
+
+    def _panel_without_changes(self, build: Dict[str, Any], w_meta: Dict[str, Any], mods: List[Dict[str, Any]], riven_in_panel: Optional[Dict[str, float]]) -> Dict[str, float]:
+        """The scanned panel with mods removed since the scan, and the riven it contained, taken out."""
+        left = dict(build.get('panel') or {})
+        if not left:
+            return left
+        self.calculate_comprehensive_metrics(w_meta)
+        others = [m for m in mods if m.get('name') != RIVEN_MOD]
+        for name in build.get('panel_removed', []):
+            left = self.damage_engine.strip_riven_from_panel(left, w_meta, others, self.indexer.mods_index.get(name.lower()) or {})
+        if riven_in_panel:
+            left = self.damage_engine.strip_riven_from_panel(left, w_meta, others, riven_in_panel)
+        return left
+
+    def _evaluate_build(self, w_meta: Dict[str, Any], left: Dict[str, float], mods: List[Dict[str, Any]], build: Optional[Dict[str, Any]], riven: Optional[Dict[str, float]], riven_in_panel: bool = False) -> Dict[str, Any]:
+        metrics = self.calculate_comprehensive_metrics(w_meta, left_stats=left, mod_objs=mods, riven_stats=riven, riven_in_panel=riven_in_panel)
+        arcane = self._arcane_info((build or {}).get('arcane'))
+        # With the riven already in the panel, adding it to the full-stack base would count it twice.
+        metrics['full_stack'] = self.damage_engine.compute_full_stack(
+            w_meta, left_stats=left, mod_objs=mods,
+            arcane=arcane if arcane and arcane.get('modeled') else None,
+            riven_stats=None if riven_in_panel else riven
+        )
+        return metrics
+
+    def evaluate_saved_build(self, build: Dict[str, Any]) -> Dict[str, Any]:
+        w_meta = self.indexer.weapons_index.get(build['weapon'].lower()) or {'name': build['weapon']}
+        mods = self._resolve_build_mods(build)
+        # An equipped riven with unknown values can only be read as part of the panel.
+        if build.get('panel_has_riven') and not build.get('panel_riven'):
+            return self._evaluate_build(w_meta, self._panel_without_changes(build, w_meta, mods, None), mods, build, None)
+        left = self._panel_without_changes(build, w_meta, mods, build.get('panel_riven'))
+        return self._evaluate_build(w_meta, left, mods, build, build.get('riven'))
+
+    def apply_slot_edits(self, res: Dict[str, Any], edits: Dict[str, str]) -> Dict[str, Any]:
+        """Replace recognized mods with the user's corrections and recalculate the review."""
+        w_meta = res['w_meta']
+        mods = []
+        for slot, name in edits.items():
+            if slot == 'arcane' or not name:
+                continue
+            if name == RIVEN_MOD:
+                mods.append({'name': RIVEN_MOD, 'kr_name': '리벤 모드', 'slot_name': slot, 'slot_index': slot_order(slot)})
+            else:
+                mods.append(dict(self.indexer.mods_index.get(name.lower()) or {'name': name}, slot_name=slot, slot_index=slot_order(slot)))
+        mods.sort(key=lambda m: m['slot_index'])
+        if not any(m['name'] == RIVEN_MOD for m in mods):
+            self.clear_pending_riven()
+
+        metrics = self.calculate_comprehensive_metrics(w_meta, left_stats=res.get('stats'), mod_objs=mods)
+        arcane = self._arcane_info(edits.get('arcane')) if 'arcane' in edits else metrics.get('arcane') or (res.get('metrics') or {}).get('arcane')
+        metrics['arcane'] = arcane
+        metrics['full_stack'] = self.damage_engine.compute_full_stack(w_meta, left_stats=res.get('stats'), mod_objs=mods, arcane=arcane if arcane and arcane.get('modeled') else None)
+        formatted = [f"{m.get('kr_name', m['name'])} ({m['name']})" for m in mods]
+        res.update(
+            mod_objs=mods,
+            metrics=metrics,
+            detected_mods=formatted,
+            recognized_mod_count=len(formatted),
+            equipped_slot_count=len(formatted),
+            message=self.format_ordis_briefing(w_meta, formatted, metrics),
+            review_message=self.format_mod_review_briefing(w_meta, formatted, equipped_slot_count=len(formatted)),
+            calculation_breakdown=self.format_calculation_breakdown(w_meta, mods, metrics),
+        )
+        return res
+
+    def mod_choices(self, w_meta: Dict[str, Any]) -> List[Any]:
+        """(display name, mod name) pairs for the slot editor."""
+        category = (w_meta.get('category') or '').lower()
+        seen, choices = set(), []
+        for _, _, mod in self._build_slot_candidates(w_meta, category):
+            if mod['name'] not in seen:
+                seen.add(mod['name'])
+                choices.append((mod.get('kr_name') or mod['name'], mod['name']))
+        return sorted(choices)
+
+    def arcane_choices(self, w_meta: Dict[str, Any]) -> List[Any]:
+        prefix = (w_meta.get('category') or '').lower()
+        seen, choices = set(), []
+        for mod in self.indexer.mods_index.values():
+            name = mod.get('name', '')
+            if mod.get('is_arcane') and name.lower().startswith(prefix) and name not in seen:
+                seen.add(name)
+                choices.append((mod.get('kr_name') or name, name))
+        return sorted(choices)
+
+    def format_saved_build(self, build: Dict[str, Any]) -> str:
+        def label(slot: str) -> str:
+            name = build['slots'].get(slot)
+            if not name:
+                return '(빈 슬롯)'
+            if name == RIVEN_MOD:
+                return '리벤 모드'
+            return (self.indexer.mods_index.get(name.lower()) or {}).get('kr_name') or name
+
+        weapon = build.get('kr_name') or build['weapon']
+        lines = [f"**{weapon}** (저장: {build.get('saved_at', '').replace('T', ' ')[:16]})"]
+        if build['slots'].get('stance'):
+            lines.append(f"• 스탠스: {label('stance')}")
+        if build['slots'].get('exilus'):
+            lines.append(f"• 엑실러스: {label('exilus')}")
+        lines.append("• 1행: " + " / ".join(label(s) for s in GRID_SLOTS[:4]))
+        lines.append("• 2행: " + " / ".join(label(s) for s in GRID_SLOTS[4:]))
+        if build.get('extra'):
+            lines.append("• 슬롯 미확인: " + ", ".join((self.indexer.mods_index.get(n.lower()) or {}).get('kr_name') or n for n in build['extra']))
+        if build.get('arcane'):
+            lines.append(f"• 아케인: {self._arcane_info(build['arcane'])['kr_name']}")
+        if build.get('riven'):
+            lines.append(f"• 리벤 옵션: {self._format_riven_options(build['riven'])}")
+        elif RIVEN_MOD in build['slots'].values():
+            lines.append("• 리벤 옵션: 아직 모름 (리롤 화면을 찍거나 수치를 입력하면 기록됩니다)")
+        return "\n".join(lines)
+
+    def format_saved_damage(self, build: Dict[str, Any]) -> str:
+        metrics = self.evaluate_saved_build(build)
+        weapon = build.get('kr_name') or build['weapon']
+        lines = [
+            f"**{weapon}** 저장 빌드 화력:",
+            f"• 지속 DPS: `{metrics['sustained_dps']:,.0f}`",
+            f"• 순간 DPS: `{metrics['burst_dps']:,.0f}`",
+            f"• 최고점: `{metrics['max_crit_hit']:,.0f}` / 최저점: `{metrics['min_hit']:,.0f}`",
+        ]
+        full_stack = metrics.get('full_stack') or {}
+        if full_stack.get('assumptions'):
+            lines.append(f"• 풀스택 추정: `{full_stack['burst_dps']:,.0f}` ({', '.join(full_stack['assumptions'])})")
+        return "\n".join(lines)
+
+    # --- Riven reroll comparison ---
+
+    @staticmethod
+    def _format_riven_options(stats: Dict[str, float]) -> str:
+        return ", ".join(f"{STAT_DISPLAY[k]} {v * 100:+g}%" for k, v in stats.items() if k in STAT_DISPLAY) or "없음"
+
+    def _diagnose_reroll_screen(self, img) -> Optional[Dict[str, Any]]:
+        reading = read_reroll_screen(img)
+        if not reading:
+            return None
+        text = reading.get('weapon_text', '')
+        w_meta = self.indexer.match_weapon_strict(text) or self.indexer.fuzzy_match_weapon(text)
+        if not w_meta:
+            return {
+                'success': False,
+                'message': "**[세팔론 오디스]** 오퍼레이터님, 리벤 옵션은 읽었지만 어떤 무기의 리벤인지 확인하지 못했습니다. 카드의 무기 이름이 보이도록 다시 캡처해 주십시오.",
+            }
+        return self.compare_riven_rolls(w_meta, reading['old'], reading['new'])
+
+    def compare_riven_rolls(self, w_meta: Dict[str, Any], old_card: Dict[str, Any], new_card: Dict[str, Any], removed_slot: Optional[str] = None) -> Dict[str, Any]:
+        build = self.build_store.get_build(w_meta['name'])
+        working = dict(build) if build else None
+        notes = []
+        riven_slot = None
+        if working:
+            working['slots'] = dict(working.get('slots', {}))
+            working['panel_removed'] = list(working.get('panel_removed', []))
+            riven_slot = next((s for s, n in working['slots'].items() if n == RIVEN_MOD), None)
+            if riven_slot is None:
+                if removed_slot:
+                    working['panel_removed'].append(working['slots'][removed_slot])
+                    riven_slot = removed_slot
+                else:
+                    riven_slot = next((s for s in GRID_SLOTS if s not in working['slots']), None)
+                if riven_slot is None:
+                    weapon = w_meta.get('kr_name') or w_meta['name']
+                    choices = [(s, (self.indexer.mods_index.get(working['slots'][s].lower()) or {}).get('kr_name') or working['slots'][s]) for s in GRID_SLOTS]
+                    return {
+                        'success': True, 'is_riven_compare': True, 'needs_slot_choice': True, 'choices': choices,
+                        'w_meta': w_meta, 'old_card': old_card, 'new_card': new_card,
+                        'message': f"**[세팔론 오디스]** {weapon} 저장 빌드에 빈 슬롯이 없습니다. 리벤과 바꿀 모드를 골라 주십시오.",
+                    }
+                working['slots'][riven_slot] = RIVEN_MOD
+            mods = self._resolve_build_mods(working)
+            # The left card is the roll currently equipped, so it is what the scanned panel contains.
+            riven_in_panel = working.get('panel_riven') or (old_card['stats'] if working.get('panel_has_riven') else None)
+            left = self._panel_without_changes(working, w_meta, mods, riven_in_panel)
+            if not left:
+                notes.append("저장 빌드에 패널 수치가 없어 코덱스와 모드로 계산했습니다.")
+        else:
+            mods = [{'name': RIVEN_MOD, 'slot_index': 1}]
+            left = {}
+            notes.append("저장된 빌드가 없어 모드 없이 계산했습니다. 모딩 화면을 스캔하면 실제 빌드 기준으로 비교합니다.")
+
+        before = self._evaluate_build(w_meta, left, mods, working, old_card['stats'])
+        after = self._evaluate_build(w_meta, left, mods, working, new_card['stats'])
+        rows = [
+            ('지속 DPS', before['sustained_dps'], after['sustained_dps']),
+            ('순간 DPS', before['burst_dps'], after['burst_dps']),
+            ('기대 단발', before['expected_hit'], after['expected_hit']),
+            ('최고점', before['max_crit_hit'], after['max_crit_hit']),
+            ('최저점', before['min_hit'], after['min_hit']),
+        ]
+        assumptions = before['full_stack'].get('assumptions') or []
+        if assumptions:
+            rows.append(('풀스택 추정', before['full_stack']['burst_dps'], after['full_stack']['burst_dps']))
+            notes.append(f"풀스택 가정: {', '.join(assumptions)}")
+        gain = (after['sustained_dps'] - before['sustained_dps']) / max(before['sustained_dps'], 1e-9) * 100.0
+        if abs(gain) < 0.5:
+            verdict = "두 옵션의 화력이 거의 같습니다"
+        elif gain > 0:
+            verdict = f"새 옵션이 {gain:+.1f}% 더 강합니다"
+        else:
+            verdict = f"이전 옵션이 더 강합니다 (새 옵션 {gain:+.1f}%)"
+
+        weapon = w_meta.get('kr_name') or w_meta['name']
+        res = {
+            'success': True, 'is_riven_compare': True, 'weapon': w_meta['name'], 'w_meta': w_meta,
+            'old_card': old_card, 'new_card': new_card, 'before': before, 'after': after, 'rows': rows,
+            'gain': gain, 'verdict': verdict, 'notes': notes, 'has_build': bool(build),
+            'riven_slot': riven_slot, 'removed_slot': removed_slot,
+        }
+        lines = [
+            f"🔮 **[리벤 리롤 비교: {weapon}]**",
+            f"⚖️ **{verdict}** (지속 DPS 기준)",
+            f"• 이전: {self._format_riven_options(old_card['stats'])}",
+            f"• 새 옵션: {self._format_riven_options(new_card['stats'])}",
+            f"• 지속 DPS: `{rows[0][1]:,.0f}` ➔ `{rows[0][2]:,.0f}`",
+            f"• 순간 DPS: `{rows[1][1]:,.0f}` ➔ `{rows[1][2]:,.0f}`",
+        ]
+        unapplied = [f"{u['label']} {u['value'] * 100:+g}%" for u in old_card.get('unapplied', []) + new_card.get('unapplied', [])]
+        unapplied += [f"{STAT_DISPLAY['status_chance']} {c['stats']['status_chance'] * 100:+g}%" for c in (old_card, new_card) if 'status_chance' in c['stats']]
+        if unapplied:
+            res['unapplied'] = unapplied
+            lines.append(f"ℹ️ DPS에 반영되지 않는 옵션: {', '.join(unapplied)}")
+        lines.extend(f"💡 {note}" for note in notes)
+        res['message'] = "\n".join(lines)
+        self.last_riven_compare = res
+        return res
+
+    def adopt_new_riven(self, res: Dict[str, Any]) -> str:
+        """Record the new roll as the build's riven."""
+        weapon = res['w_meta'].get('kr_name') or res['w_meta']['name']
+        build = self.build_store.get_build(res['w_meta']['name'])
+        if not build:
+            return f"**[세팔론 오디스]** {weapon} 저장 빌드가 없어 반영하지 못했습니다. 모딩 화면을 먼저 스캔해 주십시오."
+        if res.get('removed_slot'):
+            build.setdefault('panel_removed', []).append(build['slots'][res['removed_slot']])
+        if build.get('panel_has_riven') and not build.get('panel_riven'):
+            build['panel_riven'] = res['old_card']['stats']
+        build['slots'][res['riven_slot']] = RIVEN_MOD
+        build['riven'] = res['new_card']['stats']
+        self.build_store.save_build(build)
+        return f"💾 {weapon} 빌드의 리벤을 새 옵션으로 갱신했습니다: {self._format_riven_options(build['riven'])}"
 
     def _ocr_panel_rows(self, img) -> List[Tuple[str, str]]:
             if winocr is None:

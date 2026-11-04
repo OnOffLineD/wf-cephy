@@ -6,6 +6,7 @@ from typing import Dict, Any, Optional
 import os
 import random
 
+from scripts.build_store import BuildStore
 from scripts.chroma_rag_retriever import ChromaRAGRetriever
 from scripts.path_config import get_path
 from scripts.short_term_memory import ShortTermMemory
@@ -20,6 +21,15 @@ SMALLTALK_ABOUT_ORDIS = (
 )
 # Casual only when the message has no game topic: "누구 잡아야 샤드 나와?" is a question.
 SMALLTALK_CASUAL = ('안녕', '반가', '피곤', '배고', '밥', '식사', '고마', '감사', '수고', '심심', '졸려', '누구', '빵')
+
+BUILD_NOT_ABOUT_SAVED = re.compile(r'추천|공략|어떻게|파밍|어디서|얻')
+BUILD_LIST = re.compile(r'(저장|스캔)(한|된|해\s*둔)?\s*(무기|빌드)|(빌드|무기)\s*(목록|리스트)')
+BUILD_DELETE = re.compile(r'(빌드|저장).*(삭제|지워|지우)')
+BUILD_OWNED = re.compile(r'(뭐|뭘|무슨\s*모드)\s*(꼈|끼웠|꽂|달았)|장착(한|된|했|중)|끼고\s*있|꼈(어|지|나|더라)|내\s*빌드|저장된\s*빌드')
+BUILD_MODS = re.compile(r'(모드|리벤|아케인|빌드|세팅)\s*(뭐|뭘|알려|보여|옵션)')
+BUILD_DAMAGE = re.compile(r'(dps|화력|데미지|대미지|딜)\s*(이|은|는)?\s*(얼마|몇|나와|알려|뭐|어때)|얼마나\s*나와', re.I)
+BUILD_PRONOUN = re.compile(r'그\s*무기|그거|방금|아까|마지막')
+BUILD_LEAD_DEFAULT = "오퍼레이터님, 저장된 기록을 찾아왔습니다."
 
 class LLMOrchestrator:
     def __init__(self,
@@ -243,6 +253,11 @@ class LLMOrchestrator:
                 report = self.chat_guide(user_query)
                 return {'type': 'GUIDE', 'report': report}
 
+            # Questions about the user's own saved builds are answered from storage, not from the model.
+            build_answer = self._answer_build_query(user_query)
+            if build_answer:
+                return build_answer
+
             # 5. Analyze query text
             q_lower = user_query.strip().lower()
 
@@ -282,6 +297,76 @@ class LLMOrchestrator:
                 'vfx': parsed.get('vfx'),
                 'raw_report': report
             }
+
+    def _weapon_in_query(self, query: str) -> Optional[Dict[str, Any]]:
+        tokens = re.findall(r'[가-힣a-zA-Z0-9]+', query)
+        tokens = [re.sub(r'(에|의|은|는|이|가|을|를|로|도|랑|엔)$', '', t) or t for t in tokens]
+        for size in (3, 2, 1):
+            for i in range(len(tokens) - size + 1):
+                meta = self.diagnoser.indexer.match_weapon_strict(''.join(tokens[i:i + size]), min_ratio=92.0)
+                if meta:
+                    return meta
+        return None
+
+    def _build_lead(self, query: str) -> str:
+        # The model only supplies a tone sentence. Names and numbers come from storage, so it can't invent them.
+        system_prompt = (
+            f"{self._persona_prompt()}\n{MOOD_INSTRUCTION} "
+            "오퍼레이터가 저장된 무기 빌드를 물었고, 실제 내용은 시스템이 바로 뒤에 붙입니다. "
+            "한 문장으로 짧게 운만 떼세요. 숫자, 모드 이름, 무기 이름을 절대 쓰지 마세요."
+        )
+        response = self._call_llm(system_prompt, query, temperature=0.6) or ""
+        tag = re.search(r'\[MOOD:[^\]]*\]', response)
+        # The model may put the tag alone on the first line, so the sentence is looked up without it.
+        lines = [l.strip() for l in re.sub(r'\[MOOD:[^\]]*\]', '', response).splitlines() if l.strip()]
+        if not lines or re.search(r'\d', lines[0]):
+            return BUILD_LEAD_DEFAULT
+        return f"{tag.group(0) if tag else ''} {lines[0]}".strip()
+
+    def _build_reply(self, query: str, body: str, reply_type: str = 'BUILD_QUERY', **extra) -> Dict[str, Any]:
+        parsed = self.emotion_parser.parse(self._build_lead(query))
+        report = f"{parsed.get('clean_text', '')}\n\n{body}"
+        self.memory.add_turn(query, report)
+        return {'type': reply_type, 'report': report, 'mood': parsed.get('mood', 'idle'), 'intensity': parsed.get('intensity', 1), **extra}
+
+    def _answer_build_query(self, query: str) -> Optional[Dict[str, Any]]:
+        store = getattr(self.diagnoser, 'build_store', None)
+        if not isinstance(store, BuildStore) or BUILD_NOT_ABOUT_SAVED.search(query):
+            return None
+
+        if BUILD_LIST.search(query):
+            builds = store.list_builds()
+            if not builds:
+                return self._build_reply(query, "저장된 빌드가 아직 없습니다. 모딩 화면을 스캔하고 인식을 확인하면 저장됩니다.")
+            names = "\n".join(f"• {b.get('kr_name') or b['weapon']} ({b.get('saved_at', '').replace('T', ' ')[:16]})" for b in builds)
+            return self._build_reply(query, f"저장된 빌드 {len(builds)}개:\n{names}")
+
+        is_delete = bool(BUILD_DELETE.search(query))
+        is_owned = bool(BUILD_OWNED.search(query))
+        is_mods = bool(BUILD_MODS.search(query))
+        is_damage = bool(BUILD_DAMAGE.search(query))
+        if not (is_delete or is_owned or is_mods or is_damage):
+            return None
+
+        weapon = self._weapon_in_query(query)
+        if weapon:
+            build = store.get_build(weapon['name'])
+        else:
+            build = store.latest_build() if (is_owned or BUILD_PRONOUN.search(query)) else None
+
+        if build is None:
+            # Only a question clearly about the user's own gear gets "not saved"; others may be game questions.
+            if weapon and (is_owned or is_delete):
+                name = weapon.get('kr_name') or weapon['name']
+                return self._build_reply(query, f"{name} 빌드는 아직 저장되어 있지 않습니다. 모딩 화면을 스캔해 주십시오.")
+            return None
+
+        if is_delete:
+            name = build.get('kr_name') or build['weapon']
+            return {'type': 'BUILD_DELETE_CONFIRM', 'weapon': build['weapon'], 'report': f"{name} 빌드를 삭제할까요? 삭제하려면 아래 버튼을 눌러 주십시오.", 'mood': 'worried', 'intensity': 1}
+        if is_damage:
+            return self._build_reply(query, self.diagnoser.format_saved_damage(build))
+        return self._build_reply(query, self.diagnoser.format_saved_build(build))
 
     def set_context_mode(self, mode: str) -> str:
         mode_to_size = {'2k': 2048, '4k': 4096, '8k': 8192}

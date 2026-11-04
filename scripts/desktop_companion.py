@@ -25,7 +25,7 @@ try:
     from PyQt6.QtWidgets import (
         QApplication, QWidget, QLabel, QVBoxLayout, QHBoxLayout,
         QLineEdit, QPushButton, QTextEdit, QScrollArea, QFrame,
-        QCheckBox, QMenu, QSplitter, QStackedWidget, QDialog
+        QCheckBox, QMenu, QSplitter, QStackedWidget, QDialog, QInputDialog
     )
 except ImportError:
     from PySide6.QtCore import (
@@ -36,7 +36,7 @@ except ImportError:
     from PySide6.QtWidgets import (
         QApplication, QWidget, QLabel, QVBoxLayout, QHBoxLayout,
         QLineEdit, QPushButton, QTextEdit, QScrollArea, QFrame,
-        QCheckBox, QMenu, QSplitter, QStackedWidget, QDialog
+        QCheckBox, QMenu, QSplitter, QStackedWidget, QDialog, QInputDialog
     )
 
 from scripts.llm_orchestrator import LLMOrchestrator
@@ -45,6 +45,8 @@ from scripts.screen_mod_analyzer import ScreenModAnalyzer
 from scripts.embedded_llm_runner import EmbeddedLLMRunner
 from scripts.damage_breakdown_dialog import DamageBreakdownDialog
 from scripts.riven_quick_dialog import RivenQuickInputDialog
+from scripts.riven_compare_dialog import RivenCompareDialog, RivenRollEditDialog
+from scripts.build_edit_dialog import BuildEditDialog
 from scripts.morphing_tab_bar import MorphingTabBar
 from scripts.persona_dialog import OrdisPersonaDialog
 from scripts.layered_pet_renderer import LayeredPetRenderer
@@ -228,6 +230,8 @@ class ChatBubble(QWidget):
                     self._think_timer = QTimer(self)
                     self._think_timer.timeout.connect(lambda: (setattr(self, '_dot_step', (self._dot_step % 3) + 1), msg_lbl.setText(self._base_think_text + ' ' + '.' * self._dot_step)))
                     self._think_timer.start(350)
+                for label, callback, once in self.action_todo.get('buttons', []):
+                    self._add_action_button(bubble_col, label, callback, once)
                 if self.action_todo.get('type') == 'MOD_REVIEW' and callable(self.action_todo.get('on_confirm')):
                     btn_conf = QPushButton('✅ 인식 일치 - 데미지 계산 실행')
                     btn_conf.setStyleSheet('QPushButton { background: #059669; color: white; padding: 8px 14px; border-radius: 6px; font-weight: bold; font-size: 12px; margin-top: 6px; } QPushButton:hover { background: #10b981; }')
@@ -255,6 +259,18 @@ class ChatBubble(QWidget):
                     riven_fn = self.action_todo['on_open_riven_dialog']
                     btn_riven.clicked.connect(riven_fn)
                     bubble_col.addWidget(btn_riven)
+
+    def _add_action_button(self, bubble_col, label, callback, once):
+        button = QPushButton(label)
+        button.setStyleSheet('QPushButton { background: #1e293b; color: #e2e8f0; border: 1px solid #334155; padding: 7px 14px; border-radius: 6px; font-weight: bold; font-size: 12px; margin-top: 4px; } QPushButton:hover { background: #334155; } QPushButton:disabled { color: #64748b; }')
+
+        def on_click():
+            if once:
+                button.setEnabled(False)
+            callback()
+
+        button.clicked.connect(on_click)
+        bubble_col.addWidget(button)
 
     def _handle_add(self, btn):
         if self.on_add_todo and self.action_todo:
@@ -613,6 +629,13 @@ class OrdisCompanionApp(QWidget):
                 self.pet_update_signal.emit(mood, intensity, vfx, sec_mood, min(4500, max(1500, len(reply_text) * 45)))
 
                 action_obj = detected_todo
+                if res.get('type') == 'DIAGNOSIS_CLARIFIED' and res.get('data', {}).get('w_meta'):
+                    # The weapon name came from chat, so this scan can now be reviewed and saved.
+                    self._pending_mod_review = res['data']
+                    self.chat_reply_signal.emit("세팔론 오디스", res['data'].get('review_message', reply_text), False, self._review_action(res['data']))
+                    return
+                if res.get('type') == 'BUILD_DELETE_CONFIRM':
+                    action_obj = {'buttons': [('🗑️ 삭제', lambda w=res['weapon']: self._delete_build(w), True)]}
                 if res.get('type') == 'RIVEN_CLARIFIED':
                     self._pending_mod_review = None
                     bd = res.get('data', {}).get('calculation_breakdown')
@@ -651,23 +674,89 @@ class OrdisCompanionApp(QWidget):
             def diagnose_in_background():
                 try:
                     res = self.diagnoser.diagnose_screenshot(img)
-                    if res.get('is_riven_report'):
+                    if res.get('is_riven_compare'):
+                        self.chat_reply_signal.emit("세팔론 오디스", res['message'], False, self._riven_compare_action(res))
+                    elif res.get('is_riven_report'):
                         bd = res.get('calculation_breakdown')
                         act = {'calculation_breakdown': bd, 'on_show_breakdown': self.on_show_calculation_breakdown, 'breakdown_data': res} if bd else None
                         self.chat_reply_signal.emit("세팔론 오디스", res.get('message', '분석 완료'), False, act)
                     elif res.get('review_message'):
-                        action = {'type': 'MOD_REVIEW', 'on_confirm': lambda r=res: self.on_confirm_mod_review(r)}
-                        if res.get('has_pending_riven') or self.diagnoser.has_pending_riven():
-                            action['has_pending_riven'] = True
-                            action['on_open_riven_dialog'] = self.open_riven_quick_dialog
                         self._pending_mod_review = res
-                        self.chat_reply_signal.emit('세팔론 오디스', res['review_message'], False, action)
+                        self.chat_reply_signal.emit('세팔론 오디스', res['review_message'], False, self._review_action(res))
                     else:
                         self.chat_reply_signal.emit("세팔론 오디스", res.get('message', '분석 완료'), False, self._result_action(res))
                 except Exception as e:
                     self.chat_reply_signal.emit("세팔론 오디스", f"오류 발생: {str(e)}", False, None)
 
             threading.Thread(target=diagnose_in_background, daemon=True).start()
+
+    def _review_action(self, res):
+        action = {
+            'type': 'MOD_REVIEW',
+            'on_confirm': lambda r=res: self.on_confirm_mod_review(r),
+            'buttons': [('✏️ 슬롯 수정', lambda r=res: self.open_build_editor(r), False)],
+        }
+        if res.get('has_pending_riven') or self.diagnoser.has_pending_riven():
+            action['has_pending_riven'] = True
+            action['on_open_riven_dialog'] = self.open_riven_quick_dialog
+        return action
+
+    def open_build_editor(self, res):
+        w_meta = res['w_meta']
+        dialog = BuildEditDialog(
+            self.diagnoser.result_slots(res),
+            self.diagnoser.mod_choices(w_meta),
+            arcane=((res.get('metrics') or {}).get('arcane') or {}).get('name'),
+            arcane_choices=self.diagnoser.arcane_choices(w_meta),
+            parent=self,
+        )
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        self.diagnoser.apply_slot_edits(res, dialog.get_edits())
+        self._pending_mod_review = res
+        self.add_chat_bubble('세팔론 오디스', res['review_message'], is_user=False, action_todo=self._review_action(res))
+
+    def _riven_compare_action(self, res):
+        if res.get('needs_slot_choice'):
+            return {'buttons': [('🔧 뺄 모드 고르기', lambda r=res: self._choose_riven_slot(r), False)]}
+        buttons = [
+            ('📊 상세 비교', lambda r=res: RivenCompareDialog(r, parent=self).exec(), False),
+            ('✏️ 옵션 수정', lambda r=res: self._edit_riven_rolls(r), False),
+        ]
+        if res.get('has_build'):
+            buttons.append(('💾 새 옵션 사용', lambda r=res: self._use_new_riven(r), True))
+        return {'buttons': buttons}
+
+    def _show_riven_compare(self, res):
+        self.add_chat_bubble('세팔론 오디스', res['message'], is_user=False, action_todo=self._riven_compare_action(res))
+
+    def _choose_riven_slot(self, res):
+        labels = [mod for _, mod in res['choices']]
+        chosen, accepted = QInputDialog.getItem(self, "리벤과 바꿀 모드", "뺄 모드를 고르세요", labels, 0, False)
+        if accepted:
+            slot = res['choices'][labels.index(chosen)][0]
+            self._show_riven_compare(self.diagnoser.compare_riven_rolls(res['w_meta'], res['old_card'], res['new_card'], removed_slot=slot))
+
+    def _edit_riven_rolls(self, res):
+        dialog = RivenRollEditDialog(res['old_card']['stats'], res['new_card']['stats'], parent=self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        old_card = dict(res['old_card'], stats=dialog.old_stats())
+        new_card = dict(res['new_card'], stats=dialog.new_stats())
+        self._show_riven_compare(self.diagnoser.compare_riven_rolls(res['w_meta'], old_card, new_card, removed_slot=res.get('removed_slot')))
+
+    def _use_new_riven(self, res):
+        self.add_chat_bubble('세팔론 오디스', self.diagnoser.adopt_new_riven(res), is_user=False)
+
+    def _save_build_message(self, res):
+        if self.diagnoser.save_scanned_build(res):
+            weapon = res['w_meta'].get('kr_name') or res['w_meta']['name']
+            return f"💾 {weapon} 빌드를 저장했습니다."
+        return "ℹ️ 무기를 확인하지 못해 빌드를 저장하지 않았습니다. 무기 이름을 알려 주시면 저장할 수 있습니다."
+
+    def _delete_build(self, weapon):
+        deleted = self.diagnoser.build_store.delete_build(weapon)
+        self.add_chat_bubble('세팔론 오디스', f"🗑️ {weapon} 빌드를 삭제했습니다." if deleted else "이미 삭제된 빌드입니다.", is_user=False)
 
     def _result_action(self, res):
         action = {}
@@ -780,7 +869,8 @@ class OrdisCompanionApp(QWidget):
 
     def on_confirm_mod_review(self, res):
             self._pending_mod_review = None
-            self.add_chat_bubble('세팔론 오디스', res.get('message', ''), is_user=False, action_todo=self._result_action(res))
+            message = f"{res.get('message', '')}\n\n{self._save_build_message(res)}"
+            self.add_chat_bubble('세팔론 오디스', message, is_user=False, action_todo=self._result_action(res))
 
     def on_show_calculation_breakdown(self, breakdown_text: str, breakdown_data=None):
         if not breakdown_text and not breakdown_data:

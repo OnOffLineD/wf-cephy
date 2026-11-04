@@ -262,6 +262,8 @@ class WFDataIndexer:
             'critical damage': 'crit_damage',
             'fire rate': 'fire_rate',
             'attack speed': 'fire_rate',
+            'magazine capacity': 'magazine_capacity',
+            'reload speed': 'reload_speed',
             'status chance': 'status',
             'status damage': 'status_damage',
             'slam attack damage': 'slam_damage',

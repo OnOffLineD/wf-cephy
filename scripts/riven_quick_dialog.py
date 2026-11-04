@@ -1,4 +1,3 @@
-import re
 from typing import Dict
 
 try:
@@ -7,6 +6,11 @@ try:
 except ImportError:
     from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QComboBox, QGridLayout
     from PySide6.QtCore import Qt
+
+from scripts.riven_reroll_reader import parse_riven_input
+
+STAT_CHOICES = ['치확', '치피', '멀샷', '피해', '공속', '탄창', '재장전', '화염', '냉기', '전기', '독성', '충격', '관통', '베기', '상태이상']
+
 
 class RivenQuickInputDialog(QDialog):
     def __init__(self, parent=None):
@@ -30,7 +34,7 @@ class RivenQuickInputDialog(QDialog):
         for i in range(3):
             label = QLabel(f'Positive Stat {i+1}', self)
             combo = QComboBox(self)
-            combo.addItems(['치확', '치피', '멀샷', '피해', '공속'])
+            combo.addItems(STAT_CHOICES)
             line_edit = QLineEdit(self)
             self.positive_stats.append((combo, line_edit))
             self.positive_stats_layout.addWidget(label, i, 0)
@@ -41,7 +45,7 @@ class RivenQuickInputDialog(QDialog):
         # Section for 1 curse combo + line_edit
         self.curse_label = QLabel('Curse', self)
         self.curse_combo = QComboBox(self)
-        self.curse_combo.addItems(['치명', '분산', '재사용'])
+        self.curse_combo.addItems(STAT_CHOICES)
         self.curse_line_edit = QLineEdit(self)
         self.curse_layout = QHBoxLayout()
         self.curse_layout.addWidget(self.curse_label)
@@ -64,57 +68,12 @@ class RivenQuickInputDialog(QDialog):
         self.accept()
 
     def get_stats(self) -> Dict[str, float]:
-        stats = {}
-
-        # Check quick input
-        quick_input_text = self.quick_input.text().strip()
-        if quick_input_text:
-            pattern = re.compile(r'(\w+)\s+(\d+\.?\d*)')
-            matches = pattern.findall(quick_input_text)
-            for label, value in matches:
-                if label in ['치확', 'crit_chance', 'cc']:
-                    stats['crit_chance'] = float(value) / 100
-                elif label in ['치피', 'crit_damage', 'cd']:
-                    stats['crit_damage'] = float(value) / 100
-                elif label in ['멀샷', 'multishot', 'ms']:
-                    stats['multishot'] = float(value) / 100
-                elif label in ['피해', 'base_damage', 'dmg']:
-                    stats['base_damage'] = float(value)
-                elif label in ['공속', 'fire_rate', 'fr']:
-                    stats['fire_rate'] = float(value)
-
-        # Check positive combos and curse combo
+        # All values are percents, and the curse is always a penalty whichever sign was typed.
+        parts = [self.quick_input.text().strip()]
         for combo, line_edit in self.positive_stats:
-            label = combo.currentText()
-            value_text = line_edit.text().strip()
-            if value_text:
-                try:
-                    value = float(value_text)
-                    if abs(value) > 3.0:
-                        value /= 100
-                    if label in ['치확', 'crit_chance', 'cc']:
-                        stats['crit_chance'] = value
-                    elif label in ['치피', 'crit_damage', 'cd']:
-                        stats['crit_damage'] = value
-                    elif label in ['멀샷', 'multishot', 'ms']:
-                        stats['multishot'] = value
-                except ValueError:
-                    pass
-
-        curse_label = self.curse_combo.currentText()
-        curse_value_text = self.curse_line_edit.text().strip()
-        if curse_value_text:
-            try:
-                curse_value = float(curse_value_text)
-                if abs(curse_value) > 3.0:
-                    curse_value /= 100
-                if curse_label in ['치명', 'critical_chance', 'cc']:
-                    stats['critical_chance'] = -curse_value
-                elif curse_label in ['분산', 'dispersion', 'd']:
-                    stats['dispersion'] = -curse_value
-                elif curse_label in ['재사용', 'reload', 'r']:
-                    stats['reload'] = -curse_value
-            except ValueError:
-                pass
-
-        return stats
+            if line_edit.text().strip():
+                parts.append(f"{combo.currentText()} {line_edit.text().strip()}")
+        curse_value = self.curse_line_edit.text().strip().lstrip('+-')
+        if curse_value:
+            parts.append(f"{self.curse_combo.currentText()} -{curse_value}")
+        return parse_riven_input(" ".join(parts))

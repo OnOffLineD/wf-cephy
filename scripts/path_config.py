@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 
@@ -14,6 +15,13 @@ def get_user_data_path(*parts):
     """Return a path for user-owned state. WF_USER_DATA_DIR overrides data/, so tests stay away from real data."""
     base = os.environ.get('WF_USER_DATA_DIR') or os.path.join(ROOT_DIR, 'data')
     return os.path.abspath(os.path.join(base, *parts))
+
+def write_json_atomic(path, data):
+    """Write then swap, so a crash mid-save can't leave a half-written file."""
+    tmp_path = f"{path}.tmp"
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    os.replace(tmp_path, path)
 
 class PathConfig:
     ROOT_DIR = ROOT_DIR
