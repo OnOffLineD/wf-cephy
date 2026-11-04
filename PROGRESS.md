@@ -1,7 +1,7 @@
 # Project Progress & Verification Board (Warframe Companion)
 
-> **Last Updated**: 2026-10-22  
-> **Overall Status**: Phase 1 IN_PROGRESS (Harness² Architecture Active)  
+> **Last Updated**: 2026-11-04  
+> **Overall Status**: Phase 4 IN_PROGRESS (Harness² Architecture Active)  
 > **Managed By**: `AGENT_SCRIBE`
 
 ---
@@ -11,7 +11,7 @@
 | Phase | Description | Assigned Agent | Status | Test / Verification |
 | :--- | :--- | :--- | :--- | :--- |
 | **Phase 0** | Bootstrap, Git, Rules & Harness Scaffolding | `AGENT_SCRIBE`, `AGENT_ARCH` | **COMPLETED** | `scripts/probe.py` 3-Gate PASS |
-| **Phase 1** | Warframe Damage Engine & Math Core | `AGENT_CORE`, `AGENT_QA` | **COMPLETED** | 43 Unit/Integration Tests PASS |
+| **Phase 1** | Warframe Damage Engine & Math Core | `AGENT_CORE`, `AGENT_QA` | **COMPLETED** | Formula tests pinned to in-game panel values PASS |
 | **Phase 2** | Screen OCR Mod Analyzer & Diagnostic Workflow | `AGENT_CORE`, `AGENT_QA` | **COMPLETED** | OCR & Riven Diagnosis Tests PASS |
 | **Phase 3** | Desktop Companion UI (PyQt6) & World State Tracker | `AGENT_UI`, `AGENT_QA` | **COMPLETED** | UI Tab & Tracker Tests PASS |
 | **Phase 4** | 3-Tier Chat Routing & Ordis LLM Orchestration | `AGENT_CORE`, `AGENT_UI` | **IN_PROGRESS** | Chat Intent & Memory Tests PASS |

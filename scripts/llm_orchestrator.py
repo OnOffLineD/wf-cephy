@@ -12,8 +12,17 @@ from scripts.short_term_memory import ShortTermMemory
 from scripts.persona_manager import PersonaManager
 from scripts.emotion_parser import EmotionParser
 
+MOOD_INSTRUCTION = "답변 맨 첫머리에 반드시 현재 감정을 [MOOD:tactical|proud|worried|happy|glitch] 중 하나의 태그로 쓰세요."
+# Always about Ordis or the app itself.
+SMALLTALK_ABOUT_ORDIS = (
+    '작동중', '작동 중', '살아있', '켜져', '상태 어때', '오디스 상태', '너 살아', '너 작동', '시스템 상태', '함선 상태', '특이사항', '함선',
+    '자장가', '옥타비아', '인덱싱', '대화', '말투', '구분', '똑같', '변주', '인식률', '자연스럽', '챗봇'
+)
+# Casual only when the message has no game topic: "누구 잡아야 샤드 나와?" is a question.
+SMALLTALK_CASUAL = ('안녕', '반가', '피곤', '배고', '밥', '식사', '고마', '감사', '수고', '심심', '졸려', '누구', '빵')
+
 class LLMOrchestrator:
-    def __init__(self, 
+    def __init__(self,
                  model_path: str = "models/google_gemma-4-E2B-it-Q4_K_M.gguf", 
                  llama_server_url: str = "http://127.0.0.1:18080/v1/chat/completions",
                  diagnoser: Optional[Any] = None):
@@ -36,6 +45,10 @@ class LLMOrchestrator:
     @rag_retriever.setter
     def rag_retriever(self, val):
         self._rag_retriever = val
+
+    def _persona_prompt(self) -> str:
+        active = self.persona_manager.get_active_persona()
+        return active.get("prompt", "") if isinstance(active, dict) else (active or "")
 
     def _call_llm(self, system_prompt: str, user_prompt: str, temperature: float = 0.5) -> Optional[str]:
         # Convert system_prompt to string if it's a dict
@@ -88,21 +101,18 @@ class LLMOrchestrator:
                 return '[MOOD:tactical] 오퍼레이터님! 멋진 작전 계획입니다! 오디스가 성계 지도 항로를 대기시켜 두겠습니다. 전장을 찢어발기십시오!'
 
             # 3. Retrieve active persona system prompt
-            active_persona = self.persona_manager.get_active_persona()
-            if active_persona:
-                if isinstance(active_persona, dict):
-                    system_prompt = active_persona.get("prompt", "")
-                else:
-                    system_prompt = active_persona
-            else:
-                system_prompt = (
-                    "당신은 워프레임(Warframe) 함선의 인공지능 '세팔론 오디스(Cephalon Ordis)'입니다.\n"
-                    "오퍼레이터(유저)의 일상적인 말이나 잡담에 대해 오디스 특유의 충성스러우면서도 엉뚱하고 가끔 욱하는 글리치(Glitch) 유머가 섞인 2~3줄의 친절한 한국어 답변을 하세요.\n"
-                    "절대로 영어 번역이나 빌드 표를 억지로 만들지 마십시오. 오직 자연스러운 한국어 대화만 하십시오."
-                )
+            system_prompt = self._persona_prompt() or (
+                "당신은 워프레임(Warframe) 함선의 인공지능 '세팔론 오디스(Cephalon Ordis)'입니다.\n"
+                "오퍼레이터(유저)의 일상적인 말이나 잡담에 대해 오디스 특유의 충성스러우면서도 엉뚱하고 가끔 욱하는 글리치(Glitch) 유머가 섞인 2~3줄의 친절한 한국어 답변을 하세요.\n"
+                "절대로 영어 번역이나 빌드 표를 억지로 만들지 마십시오. 오직 자연스러운 한국어 대화만 하십시오."
+            )
+            system_prompt = f"{system_prompt}\n{MOOD_INSTRUCTION}"
+
+            context = self.memory.get_context_for_prompt()
+            user_prompt = f"[최근 대화 기록]\n{context}\n\n오퍼레이터: {user_text}" if context else user_text
 
             # 4. LLM call with Ordis persona
-            response = self._call_llm(system_prompt, user_text, temperature=0.6)
+            response = self._call_llm(system_prompt, user_prompt, temperature=0.6)
             if response:
                 return response
 
@@ -114,11 +124,7 @@ class LLMOrchestrator:
                 '[MOOD:proud] 감사합니다, 오퍼레이터님! 언제든 도움이 필요하시면 말씀해주세요!',
                 '[MOOD:thinking] 오늘의 메뉴는 뭐가 좋을까요? ...아, 아무것도 안먹고 잠자자!'
             ]
-            random_response = random.choice(witty_responses)
-            return random_response
-
-            # Default friendly Ordis ready quote
-            return '[MOOD:idle] 오디스가 대기 중입니다, 오퍼레이터님! 무엇을 도와드릴까요?'
+            return random.choice(witty_responses)
 
     def chat_guide(self, user_query: str) -> str:
             # Check for reload commands
@@ -145,13 +151,12 @@ class LLMOrchestrator:
             conversation_context_text = f"[최근 대화 기록]\n{conversation_context}\n\n" if conversation_context else ""
 
             # Get active persona prompt
-            active_persona = self.persona_manager.get_active_persona()
-            persona_prompt = active_persona if active_persona else "충성스러운 집사"
+            persona_prompt = self._persona_prompt() or "충성스러운 집사"
 
             # Construct system_prompt based on active persona
             system_prompt = (
-                f"당신은 세팔론 오디스입니다. 성격 및 어조 지침: {persona_prompt}. "
-                "오퍼레이터의 질문에 대해 답변 맨 첫머리에 반드시 현재 감정을 [MOOD:tactical|proud|worried|happy|glitch] 태그로 포함하고, [참고 데이터]에서 추출된 사실을 2~4줄의 간결한 한국어로 요약하세요. "
+                f"당신은 세팔론 오디스입니다. 성격 및 어조 지침: {persona_prompt}\n"
+                f"{MOOD_INSTRUCTION} 오퍼레이터의 질문에 대해 [참고 데이터]에서 추출된 사실을 2~4줄의 간결한 한국어로 요약하세요. "
                 "동일한 문장이나 불릿을 절대로 반복하지 마십시오. 8-mod 빌드는 요청받지 않는 한 생성하지 마십시오."
             )
 
@@ -300,14 +305,9 @@ class LLMOrchestrator:
 
     def classify_intent(self, user_query: str, rag_top_score: float = 0.0) -> str:
         q_lower = user_query.strip().lower()
-        smalltalk_meta = [
-            '작동중', '작동 중', '살아있', '켜져', '상태 어때', '오디스 상태', '너 살아', '너 작동', '시스템 상태', '함선 상태', '특이사항', '함선',
-            '자장가', '옥타비아', '안녕', '반가', '하이', '피곤', '배고', '밥', '식사', '고마', '감사', '수고', '심심', '졸려', '누구',
-            '인덱싱', '대화', '말투', '구분', '똑같', '변주', '인식률', '자연스럽', '챗봇', '빵'
-        ]
-        if any(k in q_lower for k in smalltalk_meta):
+        if any(k in q_lower for k in SMALLTALK_ABOUT_ORDIS):
             return 'SMALLTALK'
-    
+
         todo_markers = [
             '돌아야', '해야', '가야', '잡아야', '깨야', '파밍해야', '사야', '돌거야', '갈거야', '할거야', '돌자', '가자', '잡을래', '잡으러', '가볼까', '시작할게', '출발', '달릴거', '숙제', '클리어', '완료', '다 했', '다했', '끝냈'
         ]
@@ -316,10 +316,15 @@ class LLMOrchestrator:
             return 'TODO'
     
         guide_keywords = [
-            '무기', '추천', '티어', '출격', '스펙', '성유물', '드랍', '패턴', '약점', '스토리', '퀘스트', '선행', '공략', '기믹', '보스', '파밍', '오버가드', '엑시무스', '아콜', '프로핏', '테랄', '3랄', '익스플로이터', '로팔', '집정관', '아콘', '뉴워', '두번째꿈', '갈챔', '곱연산', '속성', '두비리', '강길', '모딩', '세팅', '레이텀', '토리드', '펠락스', '펜모어', '인카논', '부식', '바이러스', '생존', '이동방어', '방어', '섬멸', '포획', '도청', '첩보', '구출', '감청', '교란', '네트라셀', '아르키메디아', '미션'
+            '무기', '추천', '티어', '출격', '스펙', '성유물', '드랍', '패턴', '약점', '스토리', '퀘스트', '선행', '공략', '기믹', '보스', '파밍', '오버가드', '엑시무스', '아콜', '프로핏', '테랄', '3랄', '익스플로이터', '로팔', '집정관', '아콘', '뉴워', '두번째꿈', '갈챔', '곱연산', '속성', '두비리', '강길', '모딩', '세팅', '레이텀', '토리드', '펠락스', '펜모어', '인카논', '부식', '바이러스', '생존', '이동방어', '방어', '섬멸', '포획', '도청', '첩보', '구출', '감청', '교란', '네트라셀', '아르키메디아', '미션', '샤드', '공략'
         ]
         has_guide_kw = any(kw in q_lower for kw in guide_keywords)
-    
+
+        # '하이' must stand alone: it also starts names like 하이드로이드.
+        is_greeting = re.search(r'(^|\s)하이($|[\s!~.,])', q_lower) is not None
+        if not has_guide_kw and (is_greeting or any(k in q_lower for k in SMALLTALK_CASUAL)):
+            return 'SMALLTALK'
+
         if rag_top_score < 2.0 and not has_guide_kw:
             return 'SMALLTALK'
     

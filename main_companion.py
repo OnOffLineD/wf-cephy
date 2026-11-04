@@ -15,19 +15,17 @@ try:
 except ImportError:
     from PySide6.QtWidgets import QApplication
 from scripts.desktop_companion import DesktopPet, OrdisCompanionApp
-from scripts.embedded_llm_runner import EmbeddedLLMRunner
 
 def main():
     app = QApplication(sys.argv)
     app.setApplicationName("WF-Companion")
-
-    # Start portable embedded LLM server with Job Object protection
-    llm_runner = EmbeddedLLMRunner()
-    llm_runner.start_server(wait_ready=False)
-    app.aboutToQuit.connect(llm_runner.stop_server)
+    # Closing the chat panel leaves the pet running; the app quits from the pet's menu.
+    app.setQuitOnLastWindowClosed(False)
 
     # Main dashboard panel (headless popover, hidden by default)
     panel = OrdisCompanionApp()
+    app.aboutToQuit.connect(panel.llm_runner.stop_server)
+    panel.start_llm_in_background()
 
     # Floating pet widget (shown by default)
     pet = DesktopPet(asset_dir=os.path.join(ROOT_DIR, "assets", "character"))

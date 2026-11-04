@@ -23,7 +23,6 @@ try:
 except ImportError:
     winocr = None
 
-from scripts.optimizer_engine import OptimizerEngine
 from scripts.wf_data_indexer import WFDataIndexer
 from scripts.jamo_matcher import match_mods_jamo
 
@@ -47,7 +46,6 @@ class ScreenModAnalyzer:
 
     def __init__(self, preferred_ocr: str = "winocr"):
         self.preferred_ocr = preferred_ocr
-        self.engine = OptimizerEngine()
         self.indexer = WFDataIndexer()
         self.pending_screenshot = None
         self.incarnon_traits = self._load_incarnon_traits()
@@ -350,42 +348,7 @@ class ScreenModAnalyzer:
             from rapidfuzz import fuzz
 
 
-            # 2. Gemma 4 E2B Vision extraction (Hybrid)
-            vision_text = ""
-            if not slot_res.get("yolo_used", False):
-                try:
-                    import base64
-                    import urllib.request
-                    is_fs = slot_res.get("is_fullscreen", True)
-                    off_x = slot_res.get("offset_x", 0)
-                    b_w = slot_res.get("base_w", w)
-                    if not is_fs:
-                        crop_eq = img.crop((off_x + int(b_w * 0.25), int(h * 0.15), off_x + int(b_w * 0.95), int(h * 0.95)))
-                    else:
-                        crop_eq = img.crop((off_x + int(b_w * 0.28), int(h * 0.08), off_x + int(b_w * 0.98), int(h * 0.56)))
-                    buf = BytesIO()
-                    crop_eq.save(buf, format="JPEG", quality=90)
-                    img_b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
-                    payload = {
-                        "model": "gemma4:e2b",
-                        "prompt": "이 워프레임 무기 업그레이드 화면에 장착된 모드들의 한국어 이름을 모두 쉼표로 구분해서 나열해줘.",
-                        "images": [img_b64],
-                        "options": {"num_ctx": 2048, "temperature": 0.1},
-                        "stream": False
-                    }
-                    req = urllib.request.Request(
-                        "http://localhost:11434/api/generate",
-                        data=json.dumps(payload).encode("utf-8"),
-                        headers={"Content-Type": "application/json"},
-                        method="POST"
-                    )
-                    with urllib.request.urlopen(req, timeout=10) as resp:
-                        v_data = json.loads(resp.read().decode("utf-8"))
-                        vision_text = v_data.get("response", "")
-                except Exception:
-                    pass
-
-            # 3. Dedicated slot matching
+            # 2. Dedicated slot matching
             candidates = self._build_slot_candidates(w_meta, category)
 
             slot_matches = []
@@ -394,8 +357,6 @@ class ScreenModAnalyzer:
             riven_name = None
 
             for slot_idx, (slot_name, s_text) in enumerate(slot_results):
-                eval_text = f"{s_text} {vision_text}".strip() if len(s_text) < 4 else s_text
-
                 w_kr = w_meta.get('kr_name', '').lower()
                 w_en = w_meta.get('name', '').lower()
                 w_kr_base = w_kr.split()[-1] if w_kr else ""
@@ -427,7 +388,7 @@ class ScreenModAnalyzer:
                     riven_name = s_text
                     continue
 
-                slot_cands = self._match_single_slot(eval_text, candidates, return_all=True)
+                slot_cands = self._match_single_slot(s_text, candidates, return_all=True)
                 for score, m_cand in slot_cands:
                     slot_matches.append((score, slot_idx, slot_name, m_cand))
 
@@ -454,8 +415,7 @@ class ScreenModAnalyzer:
 
             # Fallback to general jamo matching if slot extraction yielded fewer than 4 mods
             if len(unique_mod_entries) < 4 and not slot_res.get("yolo_used", False):
-                combined_text = slot_res.get("merged_text", "") + "\n" + vision_text
-                jamo_mods = match_mods_jamo(combined_text, self.indexer.mods_index, category=category, w_meta=w_meta)
+                jamo_mods = match_mods_jamo(slot_res.get("merged_text", ""), self.indexer.mods_index, category=category, w_meta=w_meta)
                 for m in jamo_mods:
                     if m["name"] not in seen_mod_names:
                         seen_mod_names.add(m["name"])

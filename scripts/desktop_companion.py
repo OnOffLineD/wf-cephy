@@ -5,6 +5,7 @@ except Exception:
 import sys
 import os
 import re
+import html
 import threading
 from datetime import datetime
 from PIL import Image, ImageGrab
@@ -47,6 +48,22 @@ from scripts.riven_quick_dialog import RivenQuickInputDialog
 from scripts.morphing_tab_bar import MorphingTabBar
 from scripts.persona_dialog import OrdisPersonaDialog
 from scripts.layered_pet_renderer import LayeredPetRenderer
+
+
+def render_chat_markup(text: str) -> str:
+    """Turn the small markdown subset used by Ordis reports into Qt rich text."""
+    escaped = html.escape(text, quote=False)
+    escaped = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', escaped)
+    escaped = re.sub(r'`([^`]+)`', r"<span style='color: #7dd3fc;'>\1</span>", escaped)
+    return escaped.replace('\n', '<br>')
+
+
+def qimage_to_pil(qimg) -> Image.Image:
+    rgb = qimg.convertToFormat(qimg.Format.Format_RGB888)
+    ptr = rgb.bits()
+    ptr.setsize(rgb.sizeInBytes())
+    # Qt pads rows to 4 bytes, so widths like 1366 need the real row length.
+    return Image.frombuffer('RGB', (rgb.width(), rgb.height()), bytes(ptr), 'raw', 'RGB', rgb.bytesPerLine(), 1)
 
 # -------------------------------------------------------------------------
 # 1. Desktop Pet Floating Widget
@@ -147,7 +164,8 @@ class ChatBubble(QWidget):
         time_lbl.setStyleSheet("color: #64748b; font-size: 10px;")
 
         msg_box = QVBoxLayout()
-        msg_lbl = QLabel(self.text)
+        msg_lbl = QLabel(self.text if self.is_user else render_chat_markup(self.text))
+        msg_lbl.setTextFormat(Qt.TextFormat.PlainText if self.is_user else Qt.TextFormat.RichText)
         msg_lbl.setWordWrap(True)
         msg_lbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
 
@@ -252,30 +270,49 @@ class ChatBubble(QWidget):
 class OrdisCompanionApp(QWidget):
     chat_reply_signal = pyqtSignal(str, str, bool, object)
     world_events_signal = pyqtSignal(str)
+    pet_update_signal = pyqtSignal(str, int, object, object, int)
 
     def __init__(self):
         super().__init__()
         self.llm_runner = EmbeddedLLMRunner()
-        if not self.llm_runner.is_healthy():
-            threading.Thread(target=self.llm_runner.start_server, kwargs={"wait_ready": False}, daemon=True).start()
         self.orchestrator = LLMOrchestrator()
         self.orchestrator.runner = self.llm_runner
-        self.tracker = WorldStateTracker()
         self.diagnoser = ScreenModAnalyzer()
+        self.tracker = WorldStateTracker(name_translator=self._translate_game_name)
         self.orchestrator.diagnoser = self.diagnoser
         self.auto_todo_enabled = True
         self.init_ui()
         self.chat_reply_signal.connect(self.add_chat_bubble)
         self.world_events_signal.connect(self.lbl_events.setText)
+        self.pet_update_signal.connect(self._apply_pet_update)
         self.setup_global_hotkeys()
 
-    def closeEvent(self, event):
-        try:
-            if hasattr(self, 'llm_runner') and self.llm_runner:
-                self.llm_runner.stop_server()
-        except Exception:
-            pass
-        super().closeEvent(event)
+    def _translate_game_name(self, name: str) -> str:
+        meta = self.diagnoser.indexer.weapons_index.get(name.lower()) or {}
+        return meta.get("kr_name") or name
+
+    def start_llm_in_background(self):
+        # Can download a 3GB model on first run, so it must never block the UI thread.
+        def start():
+            if self.llm_runner.start_server(wait_ready=True):
+                self.chat_reply_signal.emit("세팔론 오디스", "✅ 대화 엔진 준비가 끝났습니다, 오퍼레이터님!", False, None)
+                return
+            reason = self.llm_runner.last_error or "알 수 없는 오류"
+            self.chat_reply_signal.emit(
+                "세팔론 오디스",
+                f"⚠️ 로컬 LLM을 시작하지 못했습니다. 모딩 진단은 그대로 쓸 수 있지만 대화와 공략 답변은 제한됩니다.\n사유: {reason}",
+                False,
+                None
+            )
+
+        threading.Thread(target=start, daemon=True).start()
+
+    def _apply_pet_update(self, mood, intensity, vfx, secondary_mood, talk_ms):
+        pet = getattr(self, 'pet', None)
+        if not pet:
+            return
+        pet.set_mood(mood, intensity=intensity, vfx=vfx, secondary_mood=secondary_mood)
+        pet.start_talking(duration_ms=talk_ms)
 
     def init_ui(self):
             self.setWindowTitle("WF-Companion: Cephalon Ordis Messenger")
@@ -482,13 +519,20 @@ class OrdisCompanionApp(QWidget):
             # Initial Welcome Message
             self.add_chat_bubble(
                 "세팔론 오디스",
-                "오퍼레이터님! 오디스가 대기 중입니다. 공략이든 잡담이든 무엇이든 말씀해 주십시오! 모딩창을 캡처(F9 또는 Ctrl+V)해 주시면 현재 스펙의 화력과 고점/저점을 즉시 브리핑해 드립니다!",
+                "오퍼레이터님! 오디스가 대기 중입니다. 공략이든 잡담이든 무엇이든 말씀해 주십시오! 모딩창을 캡처(F9 또는 Ctrl+V)해 주시면 현재 스펙의 화력과 고점/저점을 즉시 브리핑해 드립니다! 대화 엔진은 시작하는 데 1~2분 걸릴 수 있습니다.",
                 is_user=False
             )
 
             # Refresh
             self.refresh_checklist_ui()
             QTimer.singleShot(400, self.refresh_world_events)
+            self.world_timer = QTimer(self)
+            self.world_timer.timeout.connect(self._refresh_world_events_if_visible)
+            self.world_timer.start(60000)
+
+    def _refresh_world_events_if_visible(self):
+        if self.isVisible() and self.tab_stack.currentIndex() == 2:
+            self.refresh_world_events()
 
     def add_chat_bubble(self, sender: str, text: str, is_user: bool = False, action_todo=None):
             is_thinking = isinstance(action_todo, dict) and bool(action_todo.get('is_thinking'))
@@ -538,8 +582,10 @@ class OrdisCompanionApp(QWidget):
             return
 
         # Handle pending mod review confirmation
-        if getattr(self, '_pending_mod_review', None) is not None and text in ('계산', '맞아', 'ㅇㅇ', '확인', '네', '응', '진행'):
-            self.on_confirm_mod_review(self._pending_mod_review)
+        pending_review = getattr(self, '_pending_mod_review', None)
+        self._pending_mod_review = None
+        if pending_review is not None and text in ('계산', '맞아', 'ㅇㅇ', '확인', '네', '응', '진행'):
+            self.on_confirm_mod_review(pending_review)
             return
 
         # Check smart todo detection
@@ -563,12 +609,8 @@ class OrdisCompanionApp(QWidget):
                 vfx = res.get("vfx")
                 sec_mood = res.get("secondary_mood")
 
-                if hasattr(self, 'pet') and self.pet:
-                    if hasattr(self.pet, 'set_mood'):
-                        self.pet.set_mood(mood, intensity=intensity, vfx=vfx, secondary_mood=sec_mood)
-                    if hasattr(self.pet, 'start_talking'):
-                        duration = min(4500, max(1500, len(reply_text) * 45))
-                        self.pet.start_talking(duration_ms=duration)
+                # Widgets may only be touched on the UI thread.
+                self.pet_update_signal.emit(mood, intensity, vfx, sec_mood, min(4500, max(1500, len(reply_text) * 45)))
 
                 action_obj = detected_todo
                 if res.get('type') == 'RIVEN_CLARIFIED':
@@ -618,18 +660,22 @@ class OrdisCompanionApp(QWidget):
                         if res.get('has_pending_riven') or self.diagnoser.has_pending_riven():
                             action['has_pending_riven'] = True
                             action['on_open_riven_dialog'] = self.open_riven_quick_dialog
+                        self._pending_mod_review = res
                         self.chat_reply_signal.emit('세팔론 오디스', res['review_message'], False, action)
                     else:
-                        bd = res.get('calculation_breakdown')
-                        action = {'calculation_breakdown': bd, 'on_show_breakdown': self.on_show_calculation_breakdown, 'breakdown_data': res} if bd else None
-                        if res.get('has_pending_riven') or self.diagnoser.has_pending_riven():
-                            action['has_pending_riven'] = True
-                            action['on_open_riven_dialog'] = self.open_riven_quick_dialog
-                        self.chat_reply_signal.emit("세팔론 오디스", res.get('message', '분석 완료'), False, action)
+                        self.chat_reply_signal.emit("세팔론 오디스", res.get('message', '분석 완료'), False, self._result_action(res))
                 except Exception as e:
                     self.chat_reply_signal.emit("세팔론 오디스", f"오류 발생: {str(e)}", False, None)
 
             threading.Thread(target=diagnose_in_background, daemon=True).start()
+
+    def _result_action(self, res):
+        action = {}
+        if res.get('calculation_breakdown'):
+            action.update({'calculation_breakdown': res['calculation_breakdown'], 'on_show_breakdown': self.on_show_calculation_breakdown, 'breakdown_data': res})
+        if res.get('has_pending_riven') or self.diagnoser.has_pending_riven():
+            action.update({'has_pending_riven': True, 'on_open_riven_dialog': self.open_riven_quick_dialog})
+        return action or None
 
     def setup_global_hotkeys(self):
             import ctypes
@@ -674,7 +720,8 @@ class OrdisCompanionApp(QWidget):
 
                     if prt_down and not self._prt_down:
                         self._prt_down = True
-                        self.analyze_clipboard()
+                        # Windows fills the clipboard shortly after the key press.
+                        QTimer.singleShot(400, self.analyze_clipboard)
                     elif not prt_down:
                         self._prt_down = False
                 except Exception:
@@ -686,72 +733,7 @@ class OrdisCompanionApp(QWidget):
 
     def refresh_world_events(self):
             def fetch_and_update():
-                try:
-                    ev = self.tracker.fetch_live_events()
-                    if not ev:
-                        raise ValueError("No data received from tracker")
-
-                    cetus = ev.get("cetus", {})
-                    duviri = ev.get("duviri", {})
-                    sortie = ev.get("sortie", {})
-                    archon = ev.get("archon", {})
-                    incarnon = ev.get("incarnon", {})
-                    void_trader = ev.get("void_trader", {})
-
-                    txt = (
-                        f"<div style='background-color: #141c2b; border: 1px solid #233147; padding: 10px; margin-bottom: 10px;'>"
-                        f"🌕 <b>아이돌론</b>: {cetus.get('state', 'N/A')} ({cetus.get('timeLeft', 'N/A')})<br>"
-                        f"💡 팁: {cetus.get('huntingTip', 'N/A')}"
-                        f"</div>"
-                        f"<div style='background-color: #141c2b; border: 1px solid #233147; padding: 10px; margin-bottom: 10px;'>"
-                        f"🌀 <b>두비리</b>: {duviri.get('state', 'N/A')} 나선"
-                        f"</div>"
-                        f"<div style='background-color: #141c2b; border: 1px solid #233147; padding: 10px; margin-bottom: 10px;'>"
-                        f"⚔️ <b>출격</b>: {sortie.get('boss', 'N/A')} ({sortie.get('faction', 'N/A')})<br>"
-                        f"👑 <b>집정관</b>: {archon.get('boss', 'N/A')}"
-                        f"</div>"
-                    )
-
-                    if incarnon:
-                        txt += (
-                            f"<div style='background-color: #141c2b; border: 1px solid #233147; padding: 10px; margin-bottom: 10px;'>"
-                            f"🔮 <b>인카르논</b>: {incarnon.get('boss', 'N/A')} ({incarnon.get('location', 'N/A')})"
-                            f"</div>"
-                        )
-
-                    if void_trader:
-                        txt += (
-                            f"<div style='background-color: #141c2b; border: 1px solid #233147; padding: 10px; margin-bottom: 10px;'>"
-                            f"📦 <b>바로 키티어</b>: {void_trader.get('status', 'N/A')}<br>"
-                            f"📍 위치: {void_trader.get('location', 'N/A')}<br>"
-                            f"⏰ ETA: {void_trader.get('eta', 'N/A')}"
-                            f"</div>"
-                        )
-
-                except Exception as e:
-                    txt = (
-                        f"<div style='background-color: #141c2b; border: 1px solid #233147; padding: 10px; margin-bottom: 10px;'>"
-                        f"🌕 <b>아이돌론</b>: Day/Night estimated<br>"
-                        f"💡 팁: N/A"
-                        f"</div>"
-                        f"<div style='background-color: #141c2b; border: 1px solid #233147; padding: 10px; margin-bottom: 10px;'>"
-                        f"🌀 <b>두비리</b>: N/A"
-                        f"</div>"
-                        f"<div style='background-color: #141c2b; border: 1px solid #233147; padding: 10px; margin-bottom: 10px;'>"
-                        f"⚔️ <b>출격</b>: Check sortie<br>"
-                        f"👑 <b>집정관</b>: N/A"
-                        f"</div>"
-                        f"<div style='background-color: #141c2b; border: 1px solid #233147; padding: 10px; margin-bottom: 10px;'>"
-                        f"🔮 <b>인카르논</b>: N/A"
-                        f"</div>"
-                        f"<div style='background-color: #141c2b; border: 1px solid #233147; padding: 10px; margin-bottom: 10px;'>"
-                        f"📦 <b>바로 키티어</b>: N/A<br>"
-                        f"📍 위치: N/A<br>"
-                        f"⏰ ETA: N/A"
-                        f"</div>"
-                    )
-
-                self.world_events_signal.emit(txt)
+                self.world_events_signal.emit(WorldStateTracker.format_world_events(self.tracker.fetch_live_events()))
 
             threading.Thread(target=fetch_and_update, daemon=True).start()
 
@@ -798,15 +780,7 @@ class OrdisCompanionApp(QWidget):
 
     def on_confirm_mod_review(self, res):
             self._pending_mod_review = None
-            msg = res.get('message', '')
-            bd = res.get('calculation_breakdown', '')
-            action_obj = {'calculation_breakdown': bd, 'on_show_breakdown': self.on_show_calculation_breakdown, 'breakdown_data': res} if bd else None
-        
-            if res.get('has_pending_riven') or self.diagnoser.has_pending_riven():
-                action_obj['has_pending_riven'] = True
-                action_obj['on_open_riven_dialog'] = self.open_riven_quick_dialog
-        
-            self.add_chat_bubble('세팔론 오디스', msg, is_user=False, action_todo=action_obj or None)
+            self.add_chat_bubble('세팔론 오디스', res.get('message', ''), is_user=False, action_todo=self._result_action(res))
 
     def on_show_calculation_breakdown(self, breakdown_text: str, breakdown_data=None):
         if not breakdown_text and not breakdown_data:
@@ -845,10 +819,7 @@ class OrdisCompanionApp(QWidget):
             if screen:
                 pixmap = screen.grabWindow(0)
                 if pixmap and not pixmap.isNull():
-                    qimg = pixmap.toImage().convertToFormat(pixmap.toImage().Format.Format_RGB888)
-                    ptr = qimg.bits()
-                    ptr.setsize(qimg.sizeInBytes())
-                    img = Image.frombuffer('RGB', (qimg.width(), qimg.height()), bytes(ptr), 'raw', 'RGB', 0, 1)
+                    img = qimage_to_pil(pixmap.toImage())
 
             if not img:
                 try:
@@ -1007,5 +978,6 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     panel = OrdisCompanionApp()
     app.aboutToQuit.connect(panel.llm_runner.stop_server)
+    panel.start_llm_in_background()
     panel.show()
     sys.exit(app.exec())

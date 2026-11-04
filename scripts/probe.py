@@ -7,6 +7,7 @@ Gate 3: Graphify & Workspace Integrity Check
 """
 import sys
 import os
+import re
 import subprocess
 
 # Ensure project root is in python path
@@ -23,7 +24,10 @@ def run_tests():
             [sys.executable, "-m", "pytest", "tests", "-v", "--tb=short"],
             cwd=ROOT_DIR,
             capture_output=True,
-            text=True
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env=dict(os.environ, PYTHONIOENCODING="utf-8")
         )
         passed = res.returncode == 0
     except ImportError:
@@ -31,7 +35,10 @@ def run_tests():
             [sys.executable, "-m", "unittest", "discover", "-s", "tests"],
             cwd=ROOT_DIR,
             capture_output=True,
-            text=True
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env=dict(os.environ, PYTHONIOENCODING="utf-8")
         )
         passed = res.returncode == 0
 
@@ -59,12 +66,31 @@ def run_domain_sanity():
         for script_name in required_scripts:
             script_path = os.path.join(ROOT_DIR, "scripts", script_name)
             assert os.path.exists(script_path), f"Missing core script: {script_name}"
-            
+
+        # Pin worked examples from the wiki so a broken formula fails even without the test suite.
+        from scripts.damage_formulas import average_crit_mult, combine_elements, enemy_armor_dr, weak_point_multiplier
+        assert abs(enemy_armor_dr(1350) - 0.45) < 1e-9, "Enemy armor formula changed"
+        assert abs(average_crit_mult(0.5, 3.0) - 2.0) < 1e-9, "Average crit formula changed"
+        assert abs(weak_point_multiplier(3.0, 4.25, 0.7, True) - 15.9375) < 1e-9, "Weak point formula changed"
+        combined = combine_elements([("heat", 1.0), ("cold", 1.0), ("toxin", 1.0)])["types"]
+        assert combined == {"blast": 2.0, "toxin": 1.0}, "Elemental combination order changed"
+
         print(" -> Domain Sanity: PASSED")
         return True
     except Exception as e:
         print(f" -> Domain Sanity: FAILED ({e})")
         return False
+
+def warn_if_graph_is_stale():
+    # A stale graph misleads code discovery but does not break the app, so this only warns.
+    report_path = os.path.join(ROOT_DIR, "graphify-out", "GRAPH_REPORT.md")
+    if not os.path.exists(report_path):
+        return
+    with open(report_path, "r", encoding="utf-8", errors="replace") as f:
+        found = re.search(r"Built from commit: `([0-9a-f]+)`", f.read())
+    head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT_DIR, capture_output=True, text=True)
+    if found and head.returncode == 0 and not head.stdout.strip().startswith(found.group(1)):
+        print(f" -> Graphify Graph: STALE (built from {found.group(1)}). Run `graphify update .`")
 
 def run_graph_check():
     print("[PROBE 3/3] Checking Graphify / AST Integrity...")
@@ -72,6 +98,7 @@ def run_graph_check():
     if os.path.exists(graph_path):
         size_kb = os.path.getsize(graph_path) / 1024
         print(f" -> Graphify Graph: PRESENT ({size_kb:.1f} KB)")
+        warn_if_graph_is_stale()
         return True
     else:
         print(" -> Graphify Graph: SKIPPED (graph.json not generated yet)")

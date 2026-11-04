@@ -75,7 +75,6 @@ def test_embedded_llm_runner_default_4k_and_restart():
     assert runner.context_size == 4096
 
     runner.stop_server = MagicMock()
-    runner.cleanup_existing_server = MagicMock()
     runner.start_server = MagicMock(return_value=True)
 
     success = runner.restart_server(context_size=8192)

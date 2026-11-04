@@ -2,6 +2,7 @@ import os
 import json
 import random
 from typing import Dict, Any, Optional
+from scripts.path_config import get_user_data_path
 
 DEFAULT_PRESETS = {
     "caretaker": {
@@ -36,8 +37,7 @@ DEFAULT_PRESETS = {
 class PersonaManager:
     def __init__(self, config_path: Optional[str] = None):
         if config_path is None:
-            root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-            self.config_path = os.path.join(root_dir, "data", "persona_config.json")
+            self.config_path = get_user_data_path("persona_config.json")
         else:
             self.config_path = config_path
 

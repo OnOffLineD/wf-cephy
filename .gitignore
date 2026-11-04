@@ -26,6 +26,10 @@ labeling/
 data/chroma_db/
 graphify-out/cache/
 
+# Runtime logs and recovered user data
+data/logs/
+data/*.corrupt-*
+
 # Temporary captures and debug crops
 *.png
 crops/

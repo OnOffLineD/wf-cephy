@@ -4,7 +4,7 @@ title WF-Companion: Desktop Cephalon Ordis (Embedded Standalone)
 
 echo =====================================================================
 echo             WF-Companion: Desktop Cephalon Ordis Pet
-echo        Embedded Standalone Engine - Gemma 2 2B (Zero-Setup)
+echo        Embedded Standalone Engine - Gemma 4 E2B
 echo =====================================================================
 echo.
 

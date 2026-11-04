@@ -10,6 +10,11 @@ def get_path(*parts):
     """Return the absolute path by joining ROOT_DIR with the given parts."""
     return os.path.abspath(os.path.join(ROOT_DIR, *parts))
 
+def get_user_data_path(*parts):
+    """Return a path for user-owned state. WF_USER_DATA_DIR overrides data/, so tests stay away from real data."""
+    base = os.environ.get('WF_USER_DATA_DIR') or os.path.join(ROOT_DIR, 'data')
+    return os.path.abspath(os.path.join(base, *parts))
+
 class PathConfig:
     ROOT_DIR = ROOT_DIR
     get_path = staticmethod(get_path)

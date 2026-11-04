@@ -316,6 +316,27 @@ class WFDataIndexer:
         else:
             self.mods_index[key] = mod_entry
 
+    def match_weapon_strict(self, query: str, min_ratio: float = 88.0) -> Optional[Dict[str, Any]]:
+        """For chat text, where a loose match turns everyday words into weapons. OCR uses fuzzy_match_weapon."""
+        from scripts.jamo_matcher import decompose_hangul
+        from rapidfuzz import fuzz
+
+        key = query.lower().replace(' ', '')
+        if key in self.weapons_index:
+            return self.weapons_index[key]
+        if len(key) < 3:
+            return None
+        decomposed = decompose_hangul(key)
+        best, best_ratio = None, 0.0
+        for candidate, meta in self.weapons_index.items():
+            joined = candidate.replace(' ', '')
+            if abs(len(joined) - len(key)) > 2:
+                continue
+            ratio = fuzz.ratio(decomposed, decompose_hangul(joined))
+            if ratio > best_ratio:
+                best, best_ratio = meta, ratio
+        return best if best_ratio >= min_ratio else None
+
     def fuzzy_match_weapon(self, input_text: str) -> Optional[Dict[str, Any]]:
         # 1. Clean Lich/Sister/Coda prefix
         text = input_text

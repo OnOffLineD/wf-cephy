@@ -3,7 +3,7 @@ import shutil
 from pathlib import Path
 
 def setup_runtime():
-    source_dir = Path(r"C:\Users\2doo2\AppData\Local\Programs\Ollama\lib\ollama")
+    source_dir = Path(os.environ["LOCALAPPDATA"]) / "Programs" / "Ollama" / "lib" / "ollama"
     project_root = Path(__file__).resolve().parent.parent
     target_bin = project_root / "bin"
     target_models = project_root / "models"
