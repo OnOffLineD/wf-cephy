@@ -749,9 +749,10 @@ class OrdisCompanionApp(QWidget):
         self.add_chat_bubble('세팔론 오디스', self.diagnoser.adopt_new_riven(res), is_user=False)
 
     def _save_build_message(self, res):
-        if self.diagnoser.save_scanned_build(res):
+        build = self.diagnoser.save_scanned_build(res)
+        if build:
             weapon = res['w_meta'].get('kr_name') or res['w_meta']['name']
-            return f"💾 {weapon} 빌드를 저장했습니다."
+            return f"💾 {weapon} 빌드를 저장했습니다." + (" 입력하신 리벤 옵션도 함께 저장했습니다." if build.get('riven') else "")
         return "ℹ️ 무기를 확인하지 못해 빌드를 저장하지 않았습니다. 무기 이름을 알려 주시면 저장할 수 있습니다."
 
     def _delete_build(self, weapon):

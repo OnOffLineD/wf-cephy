@@ -25,8 +25,20 @@ except ImportError:
 
 from scripts.wf_data_indexer import WFDataIndexer
 from scripts.jamo_matcher import match_mods_jamo
-from scripts.build_store import BuildStore, GRID_SLOTS, RIVEN_MOD, canonical_slot, slot_order
+from scripts.build_store import BuildStore, GRID_SLOTS, RIVEN_MOD, canonical_slot, is_riven_name, slot_order
 from scripts.riven_reroll_reader import STAT_DISPLAY, looks_like_reroll_screen, read_reroll_screen
+
+
+def looks_like_riven_card(slot_text: str) -> bool:
+    """On the Korean client only riven names are in Latin letters (코린트 Crita-armatox).
+
+    OCR splits such names across lines, so a name pattern can't be relied on. One pass can also
+    produce a stray Latin word, so the word has to appear in at least two passes.
+    """
+    if not re.search(r'[가-힣]', slot_text):
+        return False
+    passes = [p for p in slot_text.split('|||')]
+    return sum(1 for p in passes if re.search(r'(?<![A-Za-z])[A-Za-z][a-z]{3,}', p)) >= 2
 
 class ScreenModAnalyzer:
 
@@ -50,6 +62,8 @@ class ScreenModAnalyzer:
         self.preferred_ocr = preferred_ocr
         self.indexer = WFDataIndexer()
         self.build_store = BuildStore()
+        # Riven values entered before the build is confirmed, kept until it is saved.
+        self.entered_rivens: Dict[str, Dict[str, float]] = {}
         self.pending_screenshot = None
         self.incarnon_traits = self._load_incarnon_traits()
         try:
@@ -387,7 +401,8 @@ class ScreenModAnalyzer:
                     any(kw in s_text.lower() for kw in ['리벤', 'riven', 'critatak', '크리타탁']) or
                     (has_hyphen_affix and (has_weapon_name or any(kw in s_text.lower() for kw in riven_affixes))) or
                     has_two_stat_riven or
-                    (has_weapon_name and any(kw in s_text.lower() for kw in riven_affixes))
+                    (has_weapon_name and any(kw in s_text.lower() for kw in riven_affixes)) or
+                    looks_like_riven_card(s_text)
                 )
 
                 if is_riven:
@@ -454,23 +469,10 @@ class ScreenModAnalyzer:
                 briefing = inferred_note + briefing
                 review_msg = inferred_note + review_msg
 
+            self.entered_rivens.pop(w_meta['name'], None)
             if riven_name:
-                non_riven_mods = [m for m in unique_mod_entries if m.get('name') != 'Riven Mod']
-                base_metrics_without_riven = self.calculate_comprehensive_metrics(w_meta, left_stats=left_stats, mod_objs=non_riven_mods, riven_stats=None)
-                self.pending_riven_context = {
-                    "w_meta": w_meta,
-                    "left_stats": left_stats,
-                    "mod_objs": unique_mod_entries,
-                    "riven_name": riven_name,
-                    "base_metrics": base_metrics_without_riven
-                }
-                briefing += (
-                    f"\n\n🔮 **[세팔론 오디스 - 리벤 모드 감지 알림]**\n"
-                    f"오퍼레이터님! 슬롯에서 **장착된 리벤 모드**를 포착했습니다!\n"
-                    f"리벤 모드는 플레이어마다 고유 옵션 수치(치확/치피/피해/멀티샷 등)가 천차만별입니다.\n"
-                    f"💬 **리벤 수치가 어떻게 되나요?** 채팅창에 바로 입력(예: `치확 150 치피 120` 또는 `피해 165 멀샷 90`)하시거나,\n"
-                    f"📸 리벤 모드 팝업 창을 캡처(`F9` 또는 `Ctrl+V`)해 주시면 리벤 적용 전후 정밀 DPS를 즉시 재계산해 드리겠습니다!"
-                )
+                self._await_riven_values(w_meta, left_stats, unique_mod_entries, riven_name)
+                briefing += self._riven_notice()
 
             self.last_diagnosis_result = {
                 'weapon': w_meta['name'],
@@ -499,6 +501,25 @@ class ScreenModAnalyzer:
                 "mod_objs": unique_mod_entries,
                 "raw_ocr": full_text
             }
+
+    def _await_riven_values(self, w_meta: Dict[str, Any], left_stats: Optional[Dict[str, float]], mods: List[Dict[str, Any]], riven_name: str) -> None:
+        self.pending_riven_context = {
+            "w_meta": w_meta,
+            "left_stats": left_stats,
+            "mod_objs": mods,
+            "riven_name": riven_name,
+            "base_metrics": self.calculate_comprehensive_metrics(w_meta, left_stats=left_stats, mod_objs=mods, riven_stats=None)
+        }
+
+    @staticmethod
+    def _riven_notice() -> str:
+        return (
+            f"\n\n🔮 **[세팔론 오디스 - 리벤 모드 감지 알림]**\n"
+            f"오퍼레이터님! 슬롯에서 **장착된 리벤 모드**를 포착했습니다!\n"
+            f"리벤 모드는 플레이어마다 고유 옵션 수치(치확/치피/피해/멀티샷 등)가 천차만별입니다.\n"
+            f"💬 **리벤 수치가 어떻게 되나요?** 채팅창에 바로 입력(예: `치확 150 치피 120` 또는 `피해 165 멀샷 90`)하시거나,\n"
+            f"📸 리벤 모드 팝업 창을 캡처(`F9` 또는 `Ctrl+V`)해 주시면 리벤 적용 전후 정밀 DPS를 즉시 재계산해 드리겠습니다!"
+        )
 
     def format_ordis_briefing(self, w_meta: Dict[str, Any], detected_mods: List[str], metrics: Dict[str, Any]) -> str:
         weapon_display = f"{w_meta.get('name', '')} ({w_meta.get('kr_name', '')})" if w_meta.get('kr_name') else w_meta.get('name', '')
@@ -1087,6 +1108,8 @@ class ScreenModAnalyzer:
             if saved.get('panel_has_riven'):
                 saved['panel_riven'] = riven_stats
             self.build_store.save_build(saved)
+        else:
+            self.entered_rivens[w_meta_ctx['name']] = riven_stats
         return {
             'success': True,
             'is_riven_report': True,
@@ -1277,7 +1300,7 @@ class ScreenModAnalyzer:
         seen = set()
         for mod in self.indexer.mods_index.values():
             name = mod.get("name")
-            if not name or name in seen: continue
+            if not name or name in seen or is_riven_name(name): continue
             if mod.get('is_pvp') or 'pvpmods' in str(mod.get('uniqueName', '')).lower() or mod.get('conclave'):
                 continue
             m_type = str(mod.get("type", "")).lower()
@@ -1693,6 +1716,10 @@ class ScreenModAnalyzer:
             'panel_removed': [],
             'riven': None,
         }
+        entered = self.entered_rivens.pop(w_meta['name'], None)
+        if entered and build['panel_has_riven']:
+            build['riven'] = entered
+            build['panel_riven'] = entered
         self.build_store.save_build(build)
         return build
 
@@ -1747,13 +1774,18 @@ class ScreenModAnalyzer:
         for slot, name in edits.items():
             if slot == 'arcane' or not name:
                 continue
-            if name == RIVEN_MOD:
+            if is_riven_name(name):
                 mods.append({'name': RIVEN_MOD, 'kr_name': '리벤 모드', 'slot_name': slot, 'slot_index': slot_order(slot)})
             else:
                 mods.append(dict(self.indexer.mods_index.get(name.lower()) or {'name': name}, slot_name=slot, slot_index=slot_order(slot)))
         mods.sort(key=lambda m: m['slot_index'])
-        if not any(m['name'] == RIVEN_MOD for m in mods):
+        has_riven = any(m['name'] == RIVEN_MOD for m in mods)
+        if has_riven:
+            # A riven added by hand needs its values asked for, just like one the scan found.
+            self._await_riven_values(w_meta, res.get('stats'), mods, '리벤 모드')
+        else:
             self.clear_pending_riven()
+            self.entered_rivens.pop(w_meta['name'], None)
 
         metrics = self.calculate_comprehensive_metrics(w_meta, left_stats=res.get('stats'), mod_objs=mods)
         arcane = self._arcane_info(edits.get('arcane')) if 'arcane' in edits else metrics.get('arcane') or (res.get('metrics') or {}).get('arcane')
@@ -1766,8 +1798,8 @@ class ScreenModAnalyzer:
             detected_mods=formatted,
             recognized_mod_count=len(formatted),
             equipped_slot_count=len(formatted),
-            message=self.format_ordis_briefing(w_meta, formatted, metrics),
-            review_message=self.format_mod_review_briefing(w_meta, formatted, equipped_slot_count=len(formatted)),
+            message=self.format_ordis_briefing(w_meta, formatted, metrics) + (self._riven_notice() if has_riven else ""),
+            review_message=self.format_mod_review_briefing(w_meta, formatted, equipped_slot_count=len(formatted), riven_name='리벤 모드' if has_riven else None),
             calculation_breakdown=self.format_calculation_breakdown(w_meta, mods, metrics),
         )
         return res

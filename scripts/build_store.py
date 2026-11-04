@@ -11,6 +11,11 @@ GRID_SLOTS = ["R1_C1", "R1_C2", "R1_C3", "R1_C4", "R2_C1", "R2_C2", "R2_C3", "R2
 RIVEN_MOD = "Riven Mod"
 
 
+def is_riven_name(name: Optional[str]) -> bool:
+    """The codex lists blank entries such as 'Shotgun Riven Mod'; every roll is still just a riven."""
+    return bool(name) and str(name).lower().endswith("riven mod")
+
+
 def slot_order(slot: str) -> int:
     """Top-left to bottom-right. The stance has no element, and Exilus is considered after the grid."""
     if slot in GRID_SLOTS:
@@ -56,11 +61,22 @@ class BuildStore:
         data["builds"][build["weapon"].lower()] = build
         self._save(data)
 
+    @staticmethod
+    def _normalized(build: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        # Older saves could hold a codex riven entry as an ordinary mod.
+        if build:
+            for slot, name in build.get("slots", {}).items():
+                if is_riven_name(name) and name != RIVEN_MOD:
+                    build["slots"][slot] = RIVEN_MOD
+                    build["panel_has_riven"] = True
+        return build
+
     def get_build(self, weapon: str) -> Optional[Dict[str, Any]]:
-        return self._load()["builds"].get(weapon.lower())
+        return self._normalized(self._load()["builds"].get(weapon.lower()))
 
     def list_builds(self) -> List[Dict[str, Any]]:
-        return sorted(self._load()["builds"].values(), key=lambda b: b.get("saved_at", ""), reverse=True)
+        builds = [self._normalized(b) for b in self._load()["builds"].values()]
+        return sorted(builds, key=lambda b: b.get("saved_at", ""), reverse=True)
 
     def latest_build(self) -> Optional[Dict[str, Any]]:
         builds = self.list_builds()
