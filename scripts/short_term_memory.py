@@ -1,6 +1,11 @@
 import threading
 from typing import List
 
+# Measured on the bundled model: Korean prompts cost about 0.6 tokens per character.
+TOKENS_PER_CHAR = 0.6
+# Enough to follow up on a reply; long reports and tables would crowd out the guide context.
+MAX_PROMPT_REPLY_CHARS = 240
+
 class ShortTermMemory:
     def __init__(self, mode: str = '4k'):
         self.mode = mode
@@ -30,20 +35,24 @@ class ShortTermMemory:
         return time.time()
 
     def _prune_turns(self):
-        while self._estimate_total_tokens() > self.token_budget:
+        while self.turns and self._estimate_total_tokens() > self.token_budget:
             self.turns.pop(0)
 
+    @staticmethod
+    def _prompt_reply(bot: str) -> str:
+        reply = "\n".join(line for line in bot.splitlines() if not line.startswith("📎"))
+        return reply[:MAX_PROMPT_REPLY_CHARS].strip()
+
     def _estimate_total_tokens(self) -> int:
-        total_tokens = 0
-        for user, bot, _ in self.turns:
-            total_tokens += len(user.split()) + len(bot.split())
-        return total_tokens
+        # Word counts badly undercount Korean, which let the prompt overflow the model's context.
+        chars = sum(len(user) + len(self._prompt_reply(bot)) for user, bot, _ in self.turns)
+        return int(chars * TOKENS_PER_CHAR)
 
     def get_context_for_prompt(self) -> str:
         with self.lock:
             context = ""
             for user, bot, _ in self.turns:
-                context += f"User: {user}\nOrdis: {bot}\n"
+                context += f"User: {user}\nOrdis: {self._prompt_reply(bot)}\n"
             return context.strip()
 
     def get_recent_keywords(self) -> List[str]:

@@ -11,7 +11,7 @@
    - DPS, 치명타, 속성 합성, 방어력 계산은 파이썬 엔진이 맡고, LLM은 오디스 페르소나의 잡담과 위키 기반 공략 해설만 담당합니다.
 2. **3단계 채팅 라우팅**
    - **잡담**: 인사, 피로 호소 등에는 오디스 말투로 짧게 답합니다. 숙제 의도를 감지하면 등록 버튼을 띄우고, `완료`·`삭제`·`추가` 명령을 처리합니다.
-   - **공략**: 보스, 속성, 퀘스트, 파밍 질문은 `rules/wiki_docs/`를 검색해 요약합니다.
+   - **공략**: 보스, 속성, 퀘스트 질문은 `rules/wiki_docs/`를 검색해 풀어서 답하고 근거 문서를 표시합니다. 드롭 위치는 `drops_all.json`에서 바로 답합니다. 자료에 없으면 없다고 말하고, 그 질문을 로컬 로그(`logs/guide-misses.jsonl`)에 남깁니다.
    - **스크린샷 진단**: `F9`, `Alt+Q`, `PrtSc`, `Ctrl+V`로 받은 모딩 화면에서 무기, 패널 수치, 장착 모드를 읽어 리포트합니다.
 3. **값이 불확실하면 추측하지 않습니다**
    - 라벨이 확인된 패널 값만 쓰고, 없으면 코덱스와 모드로 계산하며 그 사실을 리포트에 표시합니다.
@@ -27,7 +27,7 @@
 | **슬롯 탐지** | `ultralytics` YOLOv8n | `models/slot_detector.pt`. 모드·빈 슬롯, 무기 헤더, 아케인, 리벤 슬롯 탐지 |
 | **OCR** | `winocr`, `Pillow` | Windows OCR. 슬롯과 패널을 여러 전처리로 읽어 결합 |
 | **퍼지 매칭** | `rapidfuzz`, 자모 분해 | 한글 자모 단위 비교로 OCR 오타 복원 |
-| **위키 검색** | 키워드 점수 검색 | `rules/wiki_docs/` 재귀 인덱싱, 한국어 조사 제거. 클래스 이름은 `ChromaRAGRetriever`지만 벡터 검색은 쓰지 않습니다 |
+| **위키 검색** | 글자 조각(2~3자) BM25 | `rules/wiki_docs/` 재귀 인덱싱. 띄어쓰기·조사에 강하고 은어는 `data/guide_aliases.json`으로 연결. 벡터 DB는 쓰지 않습니다 |
 | **월드 상태** | `api.warframestat.us` | 시터스, 두비리, 출격, 집정관, 바로 키티어, 주간 인카논. 실패 시 마지막 값과 시터스 추정치 표시 |
 | **테스트** | `pytest`, `scripts/probe.py` | 사용자 데이터와 분리된 테스트, 커밋 훅의 3개 게이트 |
 
@@ -112,8 +112,9 @@
 * **`scripts/survival_evaluator.py`**, **`scripts/synergy_planner.py`**: EHP와 레벨캡 시너지 계산.
 
 ### 4.4. 채팅
-* **`scripts/llm_orchestrator.py`** `LLMOrchestrator`: 대기 중인 진단 처리 → 의도 분류 → 공략 또는 잡담. 서버가 없으면 위키 원문이나 준비된 대사로 답합니다.
-* **`scripts/chroma_rag_retriever.py`**: 위키 문단 점수 검색, 무기·워프레임 팩트 카드.
+* **`scripts/llm_orchestrator.py`** `LLMOrchestrator`: 대기 중인 진단 처리 → 의도 분류 → 드롭 표, 공략 또는 잡담. 서버가 없으면 위키 원문이나 준비된 대사로 답합니다. 자료에 없는 숫자가 든 답변 줄은 지웁니다.
+* **`scripts/guide_retriever.py`** `GuideRetriever`: 위키 문단 BM25 검색, 무기·워프레임 팩트 카드. 질문의 핵심 단어를 충분히 담지 못한 문단은 결과에서 뺍니다. 평가 질문은 `tests/fixtures/guide_questions.json`입니다.
+* **`scripts/drop_lookup.py`** `DropIndex`: 아이템별 드롭 위치와 성유물 보상 조회. 확률만 있어 시간당 효율은 판단하지 않습니다.
 * **`scripts/short_term_memory.py`**, **`scripts/persona_manager.py`**, **`scripts/emotion_parser.py`**: 대화 기억, 성격 모드, 감정 태그 파싱.
 * **`scripts/layered_pet_renderer.py`**: 감정과 말하기 애니메이션 렌더링.
 

@@ -7,8 +7,9 @@ import os
 import random
 
 from scripts.build_store import BuildStore
-from scripts.chroma_rag_retriever import ChromaRAGRetriever
-from scripts.path_config import get_path
+from scripts.drop_lookup import DROP_QUESTION, DropIndex
+from scripts.guide_retriever import GuideRetriever
+from scripts.path_config import get_path, get_user_data_path
 from scripts.short_term_memory import ShortTermMemory
 from scripts.persona_manager import PersonaManager
 from scripts.emotion_parser import EmotionParser
@@ -17,7 +18,7 @@ MOOD_INSTRUCTION = "답변 맨 첫머리에 반드시 현재 감정을 [MOOD:tac
 # Always about Ordis or the app itself.
 SMALLTALK_ABOUT_ORDIS = (
     '작동중', '작동 중', '살아있', '켜져', '상태 어때', '오디스 상태', '너 살아', '너 작동', '시스템 상태', '함선 상태', '특이사항', '함선',
-    '자장가', '옥타비아', '인덱싱', '대화', '말투', '구분', '똑같', '변주', '인식률', '자연스럽', '챗봇'
+    '자장가', '옥타비아', '인덱싱', '대화', '말투', '똑같', '변주', '인식률', '자연스럽', '챗봇'
 )
 # Casual only when the message has no game topic: "누구 잡아야 샤드 나와?" is a question.
 SMALLTALK_CASUAL = ('안녕', '반가', '피곤', '배고', '밥', '식사', '고마', '감사', '수고', '심심', '졸려', '누구', '빵')
@@ -30,6 +31,25 @@ BUILD_MODS = re.compile(r'(모드|리벤|아케인|빌드|세팅)\s*(뭐|뭘|알
 BUILD_DAMAGE = re.compile(r'(dps|화력|데미지|대미지|딜)\s*(이|은|는)?\s*(얼마|몇|나와|알려|뭐|어때)|얼마나\s*나와', re.I)
 BUILD_PRONOUN = re.compile(r'그\s*무기|그거|방금|아까|마지막')
 BUILD_LEAD_DEFAULT = "오퍼레이터님, 저장된 기록을 찾아왔습니다."
+DROP_LEAD = "오퍼레이터님, 드롭 표를 확인했습니다."
+NO_DATA_REPLY = (
+    "[MOOD:worried] 오퍼레이터님, 그 내용은 아직 제 공략 자료에 없습니다. "
+    "추측으로 말씀드렸다가 틀리면 전장에서 곤란해지니, 위키나 커뮤니티에서 한 번 확인해 주십시오. 답하지 못한 질문은 기록해 두겠습니다."
+)
+GUIDE_MAX_CHUNKS = 3
+GUIDE_MAX_CONTEXT_CHARS = 2400
+GUIDE_MIN_RELATIVE_SCORE = 0.5
+# Another doc must score close to the best one, or it only drags in an unrelated topic.
+GUIDE_MIN_RELATIVE_SCORE_OTHER_DOC = 0.8
+QUESTION_WORDS = ('?', '뭐', '뭘', '무슨', '어떤', '어디', '어떻게', '어케', '언제', '왜', '얼마', '몇', '알려', '추천', '설명', '방법', '법')
+GUIDE_KEYWORDS = (
+    '무기', '추천', '티어', '출격', '스펙', '성유물', '렐릭', '드랍', '패턴', '약점', '스토리', '퀘스트', '선행', '공략', '기믹', '보스', '파밍',
+    '오버가드', '엑시무스', '아콜', '어콜', '프로핏', '테랄', '3랄', '삼돌', '익스플로이터', '로팔', '집정관', '아콘', '뉴워', '두번째꿈', '갈챔', '곱연산', '속성',
+    '두비리', '강길', '스틸패스', '스틸 패스', '강철의 길', '모딩', '세팅', '레이텀', '토리드', '펠락스', '펜모어', '인카논', '부식', '바이러스', '생존', '이동방어', '방어',
+    '섬멸', '포획', '도청', '첩보', '구출', '감청', '교란', '네트라셀', '아르키메디아', '미션', '샤드', '엔도', '포르마', '크레딧', '쿠바', '오로킨', '리벤',
+    '레일잭', '아크윙', '낚시', '길드', '초보', '뉴비', '방깎', '방깍', '인페', '코퍼스', '그리니어', '센티언트',
+)
+TODO_MARKERS = ('돌아야', '해야', '가야', '잡아야', '깨야', '파밍해야', '사야', '돌거야', '갈거야', '할거야', '돌자', '가자', '잡을래', '잡으러', '가볼까', '시작할게', '출발', '달릴거', '숙제', '클리어', '완료', '다 했', '다했', '끝냈')
 
 class LLMOrchestrator:
     def __init__(self,
@@ -39,6 +59,7 @@ class LLMOrchestrator:
         self.model_path = get_path(model_path) if not os.path.isabs(model_path) else model_path
         self.llama_server_url = llama_server_url
         self._rag_retriever = None
+        self.drop_index = DropIndex()
         self.diagnoser = diagnoser
         self.runner = None
         self.context_size = 4096
@@ -49,7 +70,7 @@ class LLMOrchestrator:
     @property
     def rag_retriever(self):
         if self._rag_retriever is None:
-            self._rag_retriever = ChromaRAGRetriever()
+            self._rag_retriever = GuideRetriever()
         return self._rag_retriever
 
     @rag_retriever.setter
@@ -136,45 +157,80 @@ class LLMOrchestrator:
             ]
             return random.choice(witty_responses)
 
+    @staticmethod
+    def _guide_context_chunks(chunks: list) -> list:
+        """Keeps chunks close to the best one, within what the 4k context can hold next to the prompt."""
+        top_score = chunks[0].get('score', 0)
+        top_doc = chunks[0].get('doc_title')
+        kept, used = [], 0
+        for chunk in chunks[:GUIDE_MAX_CHUNKS]:
+            text = chunk.get('content') or chunk.get('text') or ''
+            floor = GUIDE_MIN_RELATIVE_SCORE if chunk.get('doc_title') == top_doc else GUIDE_MIN_RELATIVE_SCORE_OTHER_DOC
+            if chunk.get('score', 0) < top_score * floor or (kept and used + len(text) > GUIDE_MAX_CONTEXT_CHARS):
+                continue
+            kept.append(chunk)
+            used += len(text)
+        return kept
+
+    @staticmethod
+    def _answer_shape(query: str) -> str:
+        if re.search(r'어디|장소|위치', query):
+            return "장소부터 말하고, 가는 조건이나 준비물이 데이터에 있으면 덧붙이세요."
+        if re.search(r'어떻게|어케|방법|법\b|잡|깨|공략', query):
+            return "무엇을 해야 하는지부터 말하고, 순서가 있으면 '먼저, 그다음'처럼 차례대로 설명하세요."
+        return "질문에 필요한 만큼만 2~5문장으로 답하세요."
+
+    @staticmethod
+    def _without_invented_numbers(answer: str, context: str, query: str) -> str:
+        """Drops lines quoting numbers the sources never gave; a wrong figure looks just as plausible as a right one."""
+        known = set(re.findall(r'\d+(?:\.\d+)?', context + query))
+        kept = [line for line in answer.splitlines() if set(re.findall(r'\d+(?:\.\d+)?', line)) <= known]
+        return "\n".join(kept).strip()
+
+    @staticmethod
+    def _source_line(chunks: list) -> str:
+        names = []
+        for chunk in chunks:
+            # The bracketed English and version notes make the line too long for a chat bubble.
+            name = re.sub(r'\s*\([^)]*\)', '', chunk.get('doc_title') or chunk.get('title', '')).strip()
+            if name not in names:
+                names.append(name)
+        return "📎 근거: " + " / ".join(names)
+
     def chat_guide(self, user_query: str) -> str:
             # Check for reload commands
             if any(keyword in user_query for keyword in ['/리로드', '공략 리로드', '공략 새로고침']):
                 self.rag_retriever.build_index(force_rebuild=True)
                 return '오퍼레이터님! rules/wiki_docs 공략 데이터베이스를 최신 상태로 리로드 완료했습니다!'
 
-            # Retrieve chunks from RAG retriever
-            chunks = self.rag_retriever.retrieve(user_query, top_k=2)
+            chunks = self.rag_retriever.retrieve(user_query, top_k=GUIDE_MAX_CHUNKS)
             if not chunks:
-                return self.chat_smalltalk(user_query)
+                return NO_DATA_REPLY
 
-            # Filter out weak second chunk if top chunk is decisively stronger
-            if len(chunks) > 1 and chunks[0].get('score', 0) >= chunks[1].get('score', 0) * 2:
-                top_chunks = [chunks[0]]
-            else:
-                top_chunks = chunks[:2]
+            top_chunks = self._guide_context_chunks(chunks)
+            context_text = "\n\n".join([f"[{c.get('doc_title') or c.get('title', '')} - {c.get('section', '')}]\n{c.get('content') or c.get('text') or ''}" for c in top_chunks])
 
-            # Format context_text
-            context_text = "\n\n".join([f"[{c.get('title', '')} - {c.get('section', '')}]\n{c.get('content') or c.get('text') or ''}" for c in top_chunks])
-
-            # Get conversation context from memory
             conversation_context = self.memory.get_context_for_prompt()
             conversation_context_text = f"[최근 대화 기록]\n{conversation_context}\n\n" if conversation_context else ""
 
-            # Get active persona prompt
             persona_prompt = self._persona_prompt() or "충성스러운 집사"
 
-            # Construct system_prompt based on active persona
             system_prompt = (
                 f"당신은 세팔론 오디스입니다. 성격 및 어조 지침: {persona_prompt}\n"
-                f"{MOOD_INSTRUCTION} 오퍼레이터의 질문에 대해 [참고 데이터]에서 추출된 사실을 2~4줄의 간결한 한국어로 요약하세요. "
-                "동일한 문장이나 불릿을 절대로 반복하지 마십시오. 8-mod 빌드는 요청받지 않는 한 생성하지 마십시오."
+                f"{MOOD_INSTRUCTION}\n"
+                "답변 규칙:\n"
+                "- 질문의 답을 첫 문장에서 바로 말하세요.\n"
+                f"- {self._answer_shape(user_query)}\n"
+                "- [참고 데이터]에 있는 사실만 쓰세요. 데이터에 없는 이름이나 숫자는 절대 지어내지 말고, 답이 데이터에 없으면 없다고 말하세요.\n"
+                "- 약점과 저항을 바꿔 말하지 마세요. 저항 속성은 피해야 할 속성입니다.\n"
+                "- 데이터를 그대로 복사하지 말고 오퍼레이터에게 말하듯 풀어 쓰세요. 제목, 표, 마크다운 기호는 쓰지 마세요.\n"
+                "- 같은 내용을 반복하지 마세요. 8-mod 빌드는 요청받지 않는 한 생성하지 마세요."
             )
 
-            # Build user_prompt
-            user_prompt = f"오퍼레이터 질문: {user_query}\n\n{conversation_context_text}[참고 데이터]:\n{context_text}\n\n세팔론 오디스의 친절하고 정확한 답변:"
+            user_prompt = f"{conversation_context_text}[참고 데이터]:\n{context_text}\n\n오퍼레이터 질문: {user_query}\n\n세팔론 오디스의 답변:"
 
-            # Call LLM
-            response = self._call_llm(system_prompt, user_prompt, temperature=0.55)
+            source_line = self._source_line(top_chunks)
+            response = self._call_llm(system_prompt, user_prompt, temperature=0.2)
             if response:
                 # Deduplicate repeated lines
                 cleaned_lines = []
@@ -186,21 +242,44 @@ class LLMOrchestrator:
                         cleaned_lines.append(line)
                     elif not stripped:
                         cleaned_lines.append(line)
-                return "\n".join(cleaned_lines).strip()
+                answer = self._without_invented_numbers("\n".join(cleaned_lines), context_text, user_query)
+                if answer and re.sub(r'\[MOOD:[^\]]*\]', '', answer).strip():
+                    return f"{answer}\n\n{source_line}"
 
-            # Fallback when LLM call fails
-            if top_chunks[0].get('score', 0) >= 3.0:
-                ordis_headers = [
-                    '📖 [세팔론 오디스 가이드]',
-                    '🔧 [세팔론 오디스 조언]',
-                    '🛡️ [세팔론 오디스 보안]',
-                    '🚀 [세팔론 오디스 전략]'
-                ]
-                summary_header = random.choice(ordis_headers)
-                summary_content = "\n\n".join([f"- {c.get('content') or c.get('text') or ''}" for c in top_chunks])
-                return f"{summary_header}\n\n{summary_content}"
-            else:
-                return self.chat_smalltalk(user_query)
+            # Without a usable model answer, the best source section is still correct and short enough to read.
+            ordis_headers = [
+                '📖 [세팔론 오디스 가이드]',
+                '🔧 [세팔론 오디스 조언]',
+                '🛡️ [세팔론 오디스 보안]',
+                '🚀 [세팔론 오디스 전략]'
+            ]
+            best = top_chunks[0]
+            return f"{random.choice(ordis_headers)}\n\n{best.get('content') or best.get('text') or ''}\n\n{self._source_line(top_chunks[:1])}"
+
+    def _log_unanswered(self, query: str):
+        """Local record of what the docs lack, so new guide cards follow real questions."""
+        try:
+            path = get_user_data_path('logs', 'guide-misses.jsonl')
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, 'a', encoding='utf-8') as f:
+                f.write(json.dumps({'at': time.strftime('%Y-%m-%dT%H:%M:%S'), 'query': query}, ensure_ascii=False) + "\n")
+        except OSError:
+            pass
+
+    def _drop_reply(self, query: str, doc_hits: list) -> Optional[Dict[str, Any]]:
+        body = self.drop_index.answer_relic(query)
+        if not body:
+            asked = self.drop_index.resolve_item(query)[0]
+            # A guide titled after the item explains how to get it better than a table does.
+            if asked and any(re.sub(r'\s', '', asked.lower()) in re.sub(r'\s', '', c.get('doc_title', '').lower()) for c in doc_hits):
+                return None
+            body = self.drop_index.answer(query)
+        if not body:
+            return None
+        # A fixed lead: given a free sentence here, the model made up farming advice the table doesn't support.
+        report = f"{DROP_LEAD}\n\n{body}"
+        self.memory.add_turn(query, report)
+        return {'type': 'DROP_INFO', 'report': report, 'mood': 'tactical', 'intensity': 1}
 
     def chat(self, user_query: str) -> Dict[str, Any]:
             # 1. Check for memory commands
@@ -269,14 +348,20 @@ class LLMOrchestrator:
                 if recent_kws:
                     search_query = f"{user_query} {' '.join(recent_kws[:2])}"
 
-            retrieved = self.rag_retriever.retrieve(search_query, top_k=2)
+            retrieved = self.rag_retriever.retrieve(search_query, top_k=GUIDE_MAX_CHUNKS)
             top_score = retrieved[0].get('score', 0.0) if retrieved else 0.0
 
             # Classify intent
             intent = self.classify_intent(user_query, top_score)
 
-            # Decision logic: Guide vs Smalltalk
-            if intent == 'GUIDE' and retrieved:
+            # Decision logic: Drop tables, then guide docs, then an honest "not in my data"
+            if intent == 'GUIDE':
+                doc_hits = [c for c in retrieved if c.get('type') != 'weapon_spec']
+                drop_reply = self._drop_reply(user_query, doc_hits)
+                if drop_reply:
+                    return drop_reply
+                if not retrieved:
+                    self._log_unanswered(user_query)
                 report = self.chat_guide(search_query)
                 res_type = 'GUIDE'
             else:
@@ -393,26 +478,27 @@ class LLMOrchestrator:
         if any(k in q_lower for k in SMALLTALK_ABOUT_ORDIS):
             return 'SMALLTALK'
 
-        todo_markers = [
-            '돌아야', '해야', '가야', '잡아야', '깨야', '파밍해야', '사야', '돌거야', '갈거야', '할거야', '돌자', '가자', '잡을래', '잡으러', '가볼까', '시작할게', '출발', '달릴거', '숙제', '클리어', '완료', '다 했', '다했', '끝냈'
-        ]
-        question_markers = ['?', '뭐야', '뭔가', '무슨', '어디', '어떻게', '알려줘', '추천', '설명', '방법']
-        if any(m in q_lower for m in todo_markers) and not any(q in q_lower for q in question_markers):
+        is_question = any(q in q_lower for q in QUESTION_WORDS)
+        if any(m in q_lower for m in TODO_MARKERS) and not is_question:
             return 'TODO'
-    
-        guide_keywords = [
-            '무기', '추천', '티어', '출격', '스펙', '성유물', '드랍', '패턴', '약점', '스토리', '퀘스트', '선행', '공략', '기믹', '보스', '파밍', '오버가드', '엑시무스', '아콜', '프로핏', '테랄', '3랄', '익스플로이터', '로팔', '집정관', '아콘', '뉴워', '두번째꿈', '갈챔', '곱연산', '속성', '두비리', '강길', '모딩', '세팅', '레이텀', '토리드', '펠락스', '펜모어', '인카논', '부식', '바이러스', '생존', '이동방어', '방어', '섬멸', '포획', '도청', '첩보', '구출', '감청', '교란', '네트라셀', '아르키메디아', '미션', '샤드', '공략'
-        ]
-        has_guide_kw = any(kw in q_lower for kw in guide_keywords)
+
+        has_guide_kw = any(kw in q_lower for kw in GUIDE_KEYWORDS)
+        # Search only returns chunks that cover the question, so any score means the docs answer it.
+        has_answer = rag_top_score > 0
+        names_drop_item = bool(DROP_QUESTION.search(q_lower) and self.drop_index.resolve_item(q_lower)[0])
 
         # '하이' must stand alone: it also starts names like 하이드로이드.
         is_greeting = re.search(r'(^|\s)하이($|[\s!~.,])', q_lower) is not None
-        if not has_guide_kw and (is_greeting or any(k in q_lower for k in SMALLTALK_CASUAL)):
+        if not (has_guide_kw or names_drop_item) and (is_greeting or any(k in q_lower for k in SMALLTALK_CASUAL)):
             return 'SMALLTALK'
 
-        if rag_top_score < 2.0 and not has_guide_kw:
+        # A game question goes to the guide path even without docs, which then says the data is missing.
+        if has_guide_kw or names_drop_item or (has_answer and is_question):
+            return 'GUIDE'
+        # Nothing left to go on: casual remarks stay casual without spending a model call.
+        if not has_answer and not is_question:
             return 'SMALLTALK'
-    
+
         try:
             payload = {
                 "messages": [
@@ -434,10 +520,10 @@ class LLMOrchestrator:
                         return 'TODO'
                     elif 'SMALLTALK' in content_upper:
                         return 'SMALLTALK'
-                    elif 'GUIDE' in content_upper and rag_top_score >= 2.0:
+                    elif 'GUIDE' in content_upper:
                         return 'GUIDE'
         except Exception:
             pass
-    
-        return 'GUIDE' if (has_guide_kw and rag_top_score >= 2.0) or rag_top_score >= 4.0 else 'SMALLTALK'
+
+        return 'GUIDE' if has_answer else 'SMALLTALK'
 

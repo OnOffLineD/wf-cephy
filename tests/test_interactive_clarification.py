@@ -47,8 +47,8 @@ def test_orchestrator_interactive_chat_routing():
     assert analyzer.has_pending_diagnosis() is False
 
     def test_supporter_bot_upgrades():
-        # Test ChromaRAGRetriever hot-reloading and retrieval
-        retriever = ChromaRAGRetriever()
+        # Test GuideRetriever hot-reloading and retrieval
+        retriever = GuideRetriever()
         # Simulate file modification
         with open(os.path.join(retriever.wiki_dir, 'test_file.md'), 'w', encoding='utf-8') as f:
             f.write("# Test Header\nSome content here.")

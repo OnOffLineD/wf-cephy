@@ -87,7 +87,7 @@ WarframeOptimizer/
 │   └── project_profile.json     # 빌드/테스트 명령어, 로컬 모델(gemma4:e2b, num_ctx: 2048) 정의
 ├── data/                        # 워프레임 코덱스 데이터
 │   ├── raw_wfcd/                # 무기, 모드 JSON 원본 데이터
-│   └── chroma_db/               # RAG 벡터 저장소 (자동 생성)
+│   └── guide_aliases.json       # 공략 검색 은어 사전
 ├── models/                      # 로컬 LLM GGUF 모델 보관함
 │   └── google_gemma-4-E2B-it-Q4_K_M.gguf  # 최신 Gemma 4 E2B 단독 모델 (구형 gemma-2-2b 영구 삭제됨)
 ├── rules/wiki_docs/             # RAG 인게임 지식 기반 문서들
@@ -98,7 +98,8 @@ WarframeOptimizer/
 │   ├── desktop_companion.py     # 카카오톡 스타일 메인 GUI & 이벤트 체크리스트
 │   ├── screen_mod_analyzer.py   # 적응형 3단계 앵커링 OCR & 화력 진단 엔진
 │   ├── llm_orchestrator.py      # 질문/플랜 엄격 분기 & Gemma 4 E2B 오케스트레이터
-│   ├── chroma_rag_retriever.py  # 위키 문서 RAG 색인 및 단어 경계 검색기
+│   ├── guide_retriever.py       # 위키 문서 글자 조각 BM25 검색기
+│   ├── drop_lookup.py           # 아이템 드롭 위치·성유물 보상 조회
 │   ├── wf_data_indexer.py       # 무기/모드 퍼지 매칭 및 메타데이터 인덱서
 │   ├── damage_simulator.py      # 실전 DPS/치명타/상태이상/연속기 계산기
 │   ├── pipeline_runner.py       # Antigravity 로컬 모델 패치/생성 자동화 파이프라인

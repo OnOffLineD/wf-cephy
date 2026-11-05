@@ -11,7 +11,8 @@
   - `scripts/desktop_companion.py`: PyQt6 기반의 세팔론 오르디스 데스크톱 펫 및 카카오톡 스타일 UI.
   - `scripts/llm_orchestrator.py`: 3-Tier 엄격 대화 라우팅 및 LLM 추론 오케스트레이션.
   - `scripts/world_state_tracker.py`: Cetus 주기, Duviri 기분, 출격(Sortie) 등 실시간 월드 상태 추적.
-  - `scripts/chroma_rag_retriever.py`: Warframe 위키 및 공략 문서 벡터 검색 RAG 엔진.
+  - `scripts/guide_retriever.py`: Warframe 위키 및 공략 문서 글자 조각 BM25 검색 엔진.
+  - `scripts/drop_lookup.py`: 아이템 드롭 위치와 성유물 보상 조회.
   - `tests/`: 40개 이상의 단위 및 통합 테스트 스위트.
 
 ## 2. Key Entities & Data Models
