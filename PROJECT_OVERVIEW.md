@@ -112,7 +112,7 @@
 * **`scripts/survival_evaluator.py`**, **`scripts/synergy_planner.py`**: EHP와 레벨캡 시너지 계산.
 
 ### 4.4. 채팅
-* **`scripts/llm_orchestrator.py`** `LLMOrchestrator`: 대기 중인 진단 처리 → 의도 분류 → 드롭 표, 공략 또는 잡담. 서버가 없으면 위키 원문이나 준비된 대사로 답합니다. 자료에 없는 숫자가 든 답변 줄은 지웁니다.
+* **`scripts/llm_orchestrator.py`** `LLMOrchestrator`: 대기 중인 진단 처리 → 의도 분류(키워드 게이트 + `INTENT_GRAMMAR` 1-Token GBNF 분류) → 도메인별 도구 필터링 및 동적 GBNF 문법 조립(`select_domain_tools()`, `build_gbnf_tool_grammar()`, `resolve_domain_tool()`) → 드롭 표, 공략 또는 잡담. 서버가 없으면 위키 원문이나 준비된 대사로 답합니다. 자료에 없는 숫자가 든 답변 줄은 지웁니다.
 * **`scripts/guide_retriever.py`** `GuideRetriever`: 위키 문단 BM25 검색, 무기·워프레임 팩트 카드. 질문의 핵심 단어를 충분히 담지 못한 문단은 결과에서 뺍니다. 평가 질문은 `tests/fixtures/guide_questions.json`입니다.
 * **`scripts/drop_lookup.py`** `DropIndex`: 아이템별 드롭 위치와 성유물 보상 조회. 확률만 있어 시간당 효율은 판단하지 않습니다.
 * **`scripts/short_term_memory.py`**, **`scripts/persona_manager.py`**, **`scripts/emotion_parser.py`**: 대화 기억, 성격 모드, 감정 태그 파싱.
@@ -122,7 +122,7 @@
 * **`scripts/world_state_tracker.py`** `WorldStateTracker`
   * `fetch_live_events()`: 5개 항목을 병렬로 받고, 실패한 항목은 마지막 값을 씁니다.
   * `format_world_events()`: 현황 탭 HTML.
-  * `process_chat_todo_command()`: `출격 완료`, `집정관 삭제`, `강철의 길 순회로 할 일 추가`. 대상이 불분명한 명령은 아무것도 바꾸지 않습니다.
+  * `process_chat_todo_command()`, `execute_todo_tool()`: `출격 완료`, `집정관 삭제`, `강철의 길 순회로 할 일 추가` 및 GBNF로 추출된 정형 도구 호출(`add_todo`, `complete_todo`, `delete_todo`)을 실행합니다. 대상이 불분명한 명령은 아무것도 바꾸지 않습니다.
   * 저장은 임시 파일 교체 방식이고, 손상된 파일은 `.corrupt-날짜`로 보관합니다.
 
 ---

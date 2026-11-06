@@ -401,3 +401,65 @@ class WorldStateTracker:
                 }
 
         return None
+
+    def plan_todo_tool(self, tool_call: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Checks a model's tool call without changing anything.
+
+        Returns the tool, the cleaned task name and, for complete/delete, the existing item it names.
+        None when the call is malformed or names no item, so the caller can ask or fall back instead.
+        """
+        if not isinstance(tool_call, dict):
+            return None
+        tool = tool_call.get("tool")
+        args = tool_call.get("args") or {}
+        raw_task = args.get("task", "") if isinstance(args, dict) else ""
+        if tool not in ("add_todo", "complete_todo", "delete_todo") or not isinstance(raw_task, str):
+            return None
+        task_name = self._clean_task_name(raw_task)
+        if len(task_name) < 2:
+            return None
+        item = None
+        if tool != "add_todo":
+            item = self._find_item(self.load_checklist(), task_name)
+            if item is None:
+                return None
+        return {"tool": tool, "task": task_name, "item": item}
+
+    def execute_todo_tool(self, tool_call: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """[Step 2 연동] GBNF 문법으로 추출된 정형 도구 호출(JSON)을 안전하게 실행합니다."""
+        plan = self.plan_todo_tool(tool_call)
+        if plan is None:
+            return None
+        tool, task_name = plan["tool"], plan["task"]
+
+        if tool == "add_todo":
+            self.add_custom_item(task_name)
+            return {
+                "action": "ADD",
+                "task": task_name,
+                "message": f"📌 오퍼레이터님! [{task_name}] 항목을 새 숙제로 추가했습니다!",
+            }
+        elif tool == "complete_todo":
+            items = self.load_checklist()
+            item = self._find_item(items, task_name)
+            if item is None:
+                return None
+            item["done"] = True
+            self.save_checklist(items)
+            return {
+                "action": "COMPLETE",
+                "task": item["text"],
+                "message": f"✅ 오퍼레이터님! [{item['text']}] 숙제 완료 체크해 두었습니다! 수고하셨습니다!",
+            }
+        elif tool == "delete_todo":
+            item = self._find_item(self.load_checklist(), task_name)
+            if item is None:
+                return None
+            self.delete_item(item["id"])
+            return {
+                "action": "DELETE",
+                "task": item["text"],
+                "message": f"🗑️ 오퍼레이터님! [{item['text']}] 항목을 숙제 목록에서 삭제했습니다.",
+            }
+        return None
+

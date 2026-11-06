@@ -304,6 +304,7 @@ class OrdisCompanionApp(QWidget):
     chat_reply_signal = pyqtSignal(str, str, bool, object)
     world_events_signal = pyqtSignal(str)
     pet_update_signal = pyqtSignal(str, int, object, object, int)
+    checklist_changed_signal = pyqtSignal()
 
     def __init__(self):
         super().__init__()
@@ -313,9 +314,11 @@ class OrdisCompanionApp(QWidget):
         self.diagnoser = ScreenModAnalyzer()
         self.tracker = WorldStateTracker(name_translator=self._translate_game_name)
         self.orchestrator.diagnoser = self.diagnoser
+        self.orchestrator.todo_tracker = self.tracker
         self.auto_todo_enabled = True
         self.init_ui()
         self.chat_reply_signal.connect(self.add_chat_bubble)
+        self.checklist_changed_signal.connect(self.refresh_checklist_ui)
         self.world_events_signal.connect(self.lbl_events.setText)
         self.pet_update_signal.connect(self._apply_pet_update)
         self.setup_global_hotkeys()
@@ -663,6 +666,11 @@ class OrdisCompanionApp(QWidget):
                     self._pending_mod_review = res['data']
                     self.chat_reply_signal.emit("세팔론 오디스", res['data'].get('review_message', reply_text), False, self._review_action(res['data']))
                     return
+                if res.get('type') == 'TODO_DONE':
+                    self.checklist_changed_signal.emit()
+                    action_obj = None
+                if res.get('type') == 'TODO_CONFIRM':
+                    action_obj = self._todo_confirm_action(res)
                 if res.get('type') == 'BUILD_DELETE_CONFIRM':
                     action_obj = {'buttons': [('🗑️ 삭제', lambda w=res['weapon']: self._delete_build(w), True)]}
                 if res.get('type') == 'RIVEN_CLARIFIED':
@@ -675,6 +683,17 @@ class OrdisCompanionApp(QWidget):
                 self.chat_reply_signal.emit("세팔론 오디스", f"글리치 발생: {e}", False, None)
 
         threading.Thread(target=get_response, daemon=True).start()
+
+    def _todo_confirm_action(self, res):
+        if res.get('tool') == 'delete_todo':
+            return {'buttons': [('🗑️ 삭제', lambda i=res['item_id'], t=res['task']: self._delete_todo(i, t), True)]}
+        # The existing add button: one click adds it and marks itself done.
+        return {'todo': res['task']}
+
+    def _delete_todo(self, item_id: str, task: str):
+        self.tracker.delete_item(item_id)
+        self.refresh_checklist_ui()
+        self.add_chat_bubble('세팔론 오디스', f"🗑️ [{task}] 항목을 숙제 목록에서 삭제했습니다.", is_user=False)
 
     def on_smart_add_todo(self, task_text: str):
         self.tracker.add_custom_item(task_text)

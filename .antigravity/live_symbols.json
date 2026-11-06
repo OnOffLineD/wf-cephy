@@ -67,5 +67,20 @@
   "riven_quick_dialog": "scripts/riven_quick_dialog.py",
   "test_riven_diagnosis_workflow": "tests/test_riven_diagnosis_workflow.py",
   "WarframeDamageEngine": "scripts/warframe_damage_engine.py",
-  "warframe_damage_engine": "scripts/warframe_damage_engine.py"
+  "warframe_damage_engine": "scripts/warframe_damage_engine.py",
+  "MorphingTabBar": "scripts/morphing_tab_bar.py",
+  "morphing_tab_bar": "scripts/morphing_tab_bar.py",
+  "PersonaManager": "scripts/persona_dialog.py",
+  "persona_manager": "scripts/persona_manager.py",
+  "OrdisPersonaDialog": "scripts/persona_dialog.py",
+  "persona_dialog": "scripts/persona_dialog.py",
+  "LayeredPetRenderer": "scripts/layered_pet_renderer.py",
+  "layered_pet_renderer": "scripts/layered_pet_renderer.py",
+  "EmotionParser": "scripts/emotion_parser.py",
+  "emotion_parser": "scripts/emotion_parser.py",
+  "test_ocr_benchmark": "tests/test_ocr_benchmark.py",
+  "damage_formulas": "scripts/damage_formulas.py",
+  "test_damage_formulas": "tests/test_damage_formulas.py",
+  "test_formula_vs_game": "tests/test_formula_vs_game.py",
+  "test_elements": "tests/test_elements.py"
 }

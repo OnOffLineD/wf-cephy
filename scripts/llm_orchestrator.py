@@ -15,7 +15,18 @@ from scripts.persona_manager import PersonaManager
 from scripts.emotion_parser import EmotionParser
 from scripts.update_game_data import GameDataUpdater, format_report
 
-MOOD_INSTRUCTION = "답변 맨 첫머리에 반드시 현재 감정을 [MOOD:tactical|proud|worried|happy|glitch] 중 하나의 태그로 쓰세요."
+MOOD_INSTRUCTION = (
+    "답변 맨 첫머리에 반드시 현재 감정과 감정 정도(1=약, 2=중, 3=강)를 "
+    "[MOOD:tactical|proud|worried|happy|glitch:1|2|3] 형식의 태그로 쓰세요."
+)
+
+# 대화/잡담 생성 시 맨 앞의 [MOOD:감정:강도(1~3)] 헤더만 GBNF로 고정하고, 뒤따르는 본문은 자유로운 자연어를 허용
+CHAT_MOOD_GRAMMAR = (
+    'root ::= "[MOOD:" mood ":" intensity "] " text\n'
+    'mood ::= "tactical" | "proud" | "worried" | "happy" | "glitch" | "sad" | "angry" | "thinking" | "idle"\n'
+    'intensity ::= "1" | "2" | "3"\n'
+    'text ::= [^\\x00]+'
+)
 # Always about Ordis or the app itself.
 SMALLTALK_ABOUT_ORDIS = (
     '작동중', '작동 중', '살아있', '켜져', '상태 어때', '오디스 상태', '너 살아', '너 작동', '시스템 상태', '함선 상태', '특이사항', '함선',
@@ -52,6 +63,63 @@ GUIDE_KEYWORDS = (
 )
 TODO_MARKERS = ('돌아야', '해야', '가야', '잡아야', '깨야', '파밍해야', '사야', '돌거야', '갈거야', '할거야', '돌자', '가자', '잡을래', '잡으러', '가볼까', '시작할게', '출발', '달릴거', '숙제', '클리어', '완료', '다 했', '다했', '끝냈')
 
+# [Step 1] 1-Token 도메인 분류를 위한 GBNF 문법 제약 (출력 토큰을 3가지 도메인 중 하나로만 강제)
+INTENT_GRAMMAR = 'root ::= "GUIDE" | "SMALLTALK" | "TODO"'
+INTENT_LABELS = ('GUIDE', 'SMALLTALK', 'TODO')
+# A 2B model can't guess what bare labels mean, so each gets a definition and a few examples.
+INTENT_PROMPT = (
+    "사용자 메시지를 아래 셋 중 하나로 분류하고 그 단어만 답하라.\n"
+    "GUIDE: 워프레임 게임 공략, 아이템 파밍처, 보스, 미션, 장비, 시스템에 대한 질문\n"
+    "TODO: 사용자가 게임 숙제를 하겠다고 하거나, 끝냈다고 하거나, 목록에서 빼달라고 하는 말\n"
+    "SMALLTALK: 인사, 기분, 일상 이야기, 오디스에게 하는 말\n"
+    "예시:\n"
+    '"넥스 시스템 어디서 얻어?" -> GUIDE\n'
+    '"레일잭 처음인데 뭐부터 해?" -> GUIDE\n'
+    '"이따 저녁 먹고 나이트웨이브 해야겠다" -> TODO\n'
+    '"아까 서킷 다 돌고 왔어" -> TODO\n'
+    '"오늘 날씨 진짜 덥다" -> SMALLTALK\n'
+    '"오디스 너 오늘 귀엽네" -> SMALLTALK'
+)
+# Words that point back at the last topic; the latest keywords from memory fill them in.
+TOOL_PRONOUNS = ('거기서', '그거', '그 무기', '거긴', '그 미션', '그 보스', '거기는', '이거', '방금', '아까')
+
+# [Step 2] 도메인별 동적 필터링 도구 레지스트리
+DOMAIN_TOOLS: Dict[str, Dict[str, Dict[str, Any]]] = {
+    "TODO": {
+        "add_todo": {"desc": "새로운 할 일/숙제를 추가", "args": ["task"]},
+        "complete_todo": {"desc": "기존 할 일/숙제를 완료 체크", "args": ["task"]},
+        "delete_todo": {"desc": "할 일/숙제를 목록에서 삭제", "args": ["task"]},
+    },
+    "GUIDE": {
+        "search_wiki": {"desc": "워프레임 공략 위키 및 기믹 검색", "args": ["query"]},
+        "lookup_drop": {"desc": "아이템 및 성유물 드롭 위치 조회", "args": ["item"]},
+    },
+    "SMALLTALK": {},
+}
+
+
+TOOL_ARG_MAX_CHARS = 40
+
+
+def build_gbnf_tool_grammar(tools: Dict[str, Dict[str, Any]]) -> str:
+    """선별된 도구마다 자기 인자만 허용하는 GBNF 문법을 조립합니다.
+
+    도구별로 규칙을 따로 두어야 search_wiki가 lookup_drop의 item까지 출력하는 일이 없습니다.
+    """
+    if not tools:
+        return 'root ::= "{}"'
+    # GBNF rule names allow letters, digits and '-', not '_'.
+    rule = {name: "call-" + re.sub(r'[^A-Za-z0-9]', '-', name) for name in tools}
+    lines = ['root ::= "{" ws "\\"tool\\":" ws ( ' + " | ".join(rule.values()) + ' ) ws "}"']
+    for name, meta in tools.items():
+        args = meta.get("args") or ["task"]
+        args_rule = ' "," ws '.join(f'"\\"{k}\\":" ws string' for k in args)
+        lines.append(f'{rule[name]} ::= "\\"{name}\\"" "," ws "\\"args\\":" ws "{{" ws {args_rule} ws "}}"')
+    # Bounded so a rambling model can't run out of tokens mid-string and leave broken JSON.
+    lines.append(f'string ::= "\\"" [^"\\\\\\r\\n]{{1,{TOOL_ARG_MAX_CHARS}}} "\\""')
+    lines.append("ws ::= [ \\t\\n]{0,2}")
+    return "\n".join(lines)
+
 class LLMOrchestrator:
     def __init__(self,
                  model_path: str = "models/google_gemma-4-E2B-it-Q4_K_M.gguf", 
@@ -63,6 +131,8 @@ class LLMOrchestrator:
         self.drop_index = DropIndex()
         self.diagnoser = diagnoser
         self.runner = None
+        # The app's WorldStateTracker; without it a TODO message is answered as smalltalk.
+        self.todo_tracker = None
         self.context_size = 4096
         self.memory = ShortTermMemory(mode='4k')
         self.persona_manager = PersonaManager()
@@ -82,7 +152,13 @@ class LLMOrchestrator:
         active = self.persona_manager.get_active_persona()
         return active.get("prompt", "") if isinstance(active, dict) else (active or "")
 
-    def _call_llm(self, system_prompt: str, user_prompt: str, temperature: float = 0.5) -> Optional[str]:
+    def _call_llm(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        temperature: float = 0.5,
+        grammar: Optional[str] = CHAT_MOOD_GRAMMAR,
+    ) -> Optional[str]:
         # Convert system_prompt to string if it's a dict
         if isinstance(system_prompt, dict):
             system_prompt = system_prompt.get("prompt") or str(system_prompt)
@@ -109,6 +185,8 @@ class LLMOrchestrator:
                 "temperature": temperature,
                 "stream": False
             }
+            if grammar:
+                payload["grammar"] = grammar
             res = requests.post(self.llama_server_url, json=payload, timeout=35)
             if res.status_code == 200:
                 data = res.json()
@@ -358,8 +436,7 @@ class LLMOrchestrator:
 
             # Retrieve chunks (with pronoun context enrichment)
             search_query = user_query
-            pronouns = ['거기서', '그거', '그 무기', '거긴', '그 미션', '그 보스', '거기는']
-            if any(p in user_query for p in pronouns):
+            if any(p in user_query for p in TOOL_PRONOUNS):
                 recent_kws = self.memory.get_recent_keywords()
                 if recent_kws:
                     search_query = f"{user_query} {' '.join(recent_kws[:2])}"
@@ -369,6 +446,11 @@ class LLMOrchestrator:
 
             # Classify intent
             intent = self.classify_intent(user_query, top_score)
+
+            if intent == 'TODO':
+                todo_reply = self._todo_reply(user_query)
+                if todo_reply:
+                    return todo_reply
 
             # Decision logic: Drop tables, then guide docs, then an honest "not in my data"
             if intent == 'GUIDE':
@@ -398,6 +480,36 @@ class LLMOrchestrator:
                 'vfx': parsed.get('vfx'),
                 'raw_report': report
             }
+
+    def _todo_reply(self, query: str) -> Optional[Dict[str, Any]]:
+        """[Step 2] Turns a TODO message into a checklist change.
+
+        Only ticking an item that already exists happens at once. Adding and deleting come back as
+        a question with a button: a wrong guess there leaves junk in the list or loses an item.
+        None when nothing usable came out, so the message is answered as smalltalk instead.
+        """
+        tracker = self.todo_tracker
+        if tracker is None:
+            return None
+        plan = tracker.plan_todo_tool(self.resolve_domain_tool('TODO', query))
+        if plan is None:
+            return None
+
+        if plan['tool'] == 'complete_todo':
+            done = tracker.execute_todo_tool({'tool': 'complete_todo', 'args': {'task': plan['task']}})
+            if not done:
+                return None
+            reply = {'type': 'TODO_DONE', 'report': done['message'], 'action': done['action'], 'mood': 'happy', 'intensity': 2}
+        elif plan['tool'] == 'delete_todo':
+            name = plan['item']['text']
+            reply = {'type': 'TODO_CONFIRM', 'tool': 'delete_todo', 'item_id': plan['item']['id'], 'task': name,
+                     'report': f"[{name}] 항목을 숙제 목록에서 삭제할까요? 삭제하려면 아래 버튼을 눌러 주십시오.",
+                     'mood': 'worried', 'intensity': 1}
+        else:
+            reply = {'type': 'TODO_CONFIRM', 'tool': 'add_todo', 'task': plan['task'],
+                     'report': f"[{plan['task']}] 항목을 숙제로 추가할까요?", 'mood': 'thinking', 'intensity': 1}
+        self.memory.add_turn(query, reply['report'])
+        return reply
 
     def _weapon_in_query(self, query: str) -> Optional[Dict[str, Any]]:
         tokens = re.findall(r'[가-힣a-zA-Z0-9]+', query)
@@ -515,31 +627,79 @@ class LLMOrchestrator:
         if not has_answer and not is_question:
             return 'SMALLTALK'
 
+        # [Step 1] 1-Token 도메인 분류 (초단문 프롬프트 + GBNF 문법 제약으로 1단어 생성 후 즉시 종료)
         try:
             payload = {
                 "messages": [
-                    {"role": "system", "content": "사용자의 입력이 워프레임 게임 공략/기믹/모딩/파밍 정보를 묻는 질문이면 GUIDE, 오늘 할 일/숙제/미션 수행 계획이나 완료 보고이면 TODO, 일상 대화/인사/농담/봇에 대한 피드백이면 SMALLTALK라고만 한 단어로 답하세요."},
-                    {"role": "user", "content": user_query}
+                    {"role": "system", "content": INTENT_PROMPT},
+                    {"role": "user", "content": f'"{user_query}" ->'},
                 ],
+                "grammar": INTENT_GRAMMAR,
                 "temperature": 0.0,
-                "max_tokens": 10,
-                "stream": False
+                "max_tokens": 4,
+                "stream": False,
             }
             res = requests.post(self.llama_server_url, json=payload, timeout=5)
             if res.status_code == 200:
                 data = res.json()
                 choices = data.get("choices", [])
                 if choices:
-                    content = choices[0].get("message", {}).get("content", "").strip()
-                    content_upper = content.upper()
-                    if 'TODO' in content_upper:
-                        return 'TODO'
-                    elif 'SMALLTALK' in content_upper:
-                        return 'SMALLTALK'
-                    elif 'GUIDE' in content_upper:
-                        return 'GUIDE'
+                    content = choices[0].get("message", {}).get("content", "").strip().upper()
+                    if content in INTENT_LABELS:
+                        return content
         except Exception:
             pass
 
         return 'GUIDE' if has_answer else 'SMALLTALK'
+
+    @staticmethod
+    def select_domain_tools(domain: str) -> Dict[str, Dict[str, Any]]:
+        """[Step 2-1] 도메인 분류 결과에 해당하는 도구만 압축 선별하여 반환합니다."""
+        return dict(DOMAIN_TOOLS.get(domain.upper(), {}))
+
+    def resolve_domain_tool(self, domain: str, user_query: str) -> Optional[Dict[str, Any]]:
+        """[Step 2-2] 선별된 도메인 도구들과 동적 GBNF 문법만을 사용하여 정형 JSON 도구 호출을 추출합니다."""
+        tools = self.select_domain_tools(domain)
+        if not tools:
+            return None
+
+        grammar = build_gbnf_tool_grammar(tools)
+        tool_lines = "\n".join(f"- {name}({', '.join(meta.get('args', []))}): {meta.get('desc', '')}" for name, meta in tools.items())
+        enriched_query = user_query
+        if any(p in user_query for p in TOOL_PRONOUNS):
+            recent_kws = self.memory.get_recent_keywords()
+            if recent_kws:
+                enriched_query = f"[최근 키워드: {', '.join(recent_kws[:2])}] {user_query}"
+        payload = {
+            "messages": [
+                {
+                    "role": "system",
+                    "content": (
+                        "사용자의 요청을 처리할 도구를 고르고 인자를 JSON으로 답하라. "
+                        "인자에는 대상 이름만 짧게 쓰고 조사나 시간 표현은 빼라.\n"
+                        f"사용 가능 도구:\n{tool_lines}"
+                    ),
+                },
+                {"role": "user", "content": enriched_query},
+            ],
+            "grammar": grammar,
+            "temperature": 0.0,
+            "max_tokens": 64,
+            "stream": False,
+        }
+        try:
+            res = requests.post(self.llama_server_url, json=payload, timeout=5)
+            if res.status_code == 200:
+                choices = res.json().get("choices", [])
+                if choices:
+                    raw = choices[0].get("message", {}).get("content", "").strip()
+                    parsed = json.loads(raw)
+                    tool = parsed.get("tool") if isinstance(parsed, dict) else None
+                    args = parsed.get("args") if tool in tools else None
+                    if isinstance(args, dict) and set(args) == set(tools[tool].get("args", [])):
+                        return parsed
+        except Exception:
+            pass
+        return None
+
 
