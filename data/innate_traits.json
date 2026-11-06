@@ -10,5 +10,11 @@
       "slash": {"label": "베기 휠: 상태이상 확률 +100%", "status": 1.0}
     },
     "wheel_note": "The wheel follows the physical type with the highest total mod bonus; with no physical mods there is no wheel buff. Status +100% matches the wiki (30% shown as 60%); attack speed +40% is assumed to add like a mod: unverified."
+  },
+  "coda bubonico": {
+    "kr_name": "코다 부보니코",
+    "source": "https://wiki.warframe.com/w/Coda_Bubonico",
+    "notes": ["주 사격 연사 속도는 30%에서 시작해 7발째에 최대가 됩니다. DPS는 최대 연사 기준입니다."],
+    "notes_note": "Information only: the listed fire rate is the ramped-up maximum, so no stat is changed."
   }
 }

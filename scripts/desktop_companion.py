@@ -27,7 +27,7 @@ try:
     from PyQt6.QtWidgets import (
         QApplication, QWidget, QLabel, QVBoxLayout, QHBoxLayout,
         QLineEdit, QPushButton, QTextEdit, QScrollArea, QFrame,
-        QCheckBox, QMenu, QSplitter, QStackedWidget, QDialog, QInputDialog
+        QCheckBox, QMenu, QSplitter, QStackedWidget, QDialog, QInputDialog, QGridLayout
     )
 except ImportError:
     from PySide6.QtCore import (
@@ -38,12 +38,13 @@ except ImportError:
     from PySide6.QtWidgets import (
         QApplication, QWidget, QLabel, QVBoxLayout, QHBoxLayout,
         QLineEdit, QPushButton, QTextEdit, QScrollArea, QFrame,
-        QCheckBox, QMenu, QSplitter, QStackedWidget, QDialog, QInputDialog
+        QCheckBox, QMenu, QSplitter, QStackedWidget, QDialog, QInputDialog, QGridLayout
     )
 
 from scripts.llm_orchestrator import LLMOrchestrator
 from scripts.world_state_tracker import WorldStateTracker
 from scripts.screen_mod_analyzer import ScreenModAnalyzer
+from scripts.innate_traits import BONUS_ELEMENTS, BONUS_MAX
 from scripts.embedded_llm_runner import EmbeddedLLMRunner
 from scripts.damage_breakdown_dialog import DamageBreakdownDialog
 from scripts.riven_quick_dialog import RivenQuickInputDialog
@@ -249,6 +250,8 @@ class ChatBubble(QWidget):
                     self._think_timer.start(350)
                 for label, callback, once in self.action_todo.get('buttons', []):
                     self._add_action_button(bubble_col, label, callback, once)
+                if self.action_todo.get('button_grid'):
+                    self._add_button_grid(bubble_col, self.action_todo['button_grid'])
                 if self.action_todo.get('type') == 'MOD_REVIEW' and callable(self.action_todo.get('on_confirm')):
                     btn_conf = QPushButton('✅ 인식 일치 - 데미지 계산 실행')
                     btn_conf.setStyleSheet('QPushButton { background: #059669; color: white; padding: 8px 14px; border-radius: 6px; font-weight: bold; font-size: 12px; margin-top: 6px; } QPushButton:hover { background: #10b981; }')
@@ -288,6 +291,36 @@ class ChatBubble(QWidget):
 
         button.clicked.connect(on_click)
         bubble_col.addWidget(button)
+
+    def _add_button_grid(self, bubble_col, grid):
+        """One choice from several short options, packed into rows so it doesn't take over the chat."""
+        box = QWidget()
+        layout = QGridLayout(box)
+        layout.setContentsMargins(0, 4, 0, 0)
+        layout.setHorizontalSpacing(4)
+        layout.setVerticalSpacing(4)
+        columns = max(1, int(grid.get('columns', 4)))
+        row = 0
+        if grid.get('title'):
+            title = QLabel(grid['title'])
+            title.setStyleSheet('color: #94a3b8; font-size: 11px; font-weight: bold;')
+            layout.addWidget(title, 0, 0, 1, columns)
+            row = 1
+        buttons = []
+
+        def choose(callback):
+            # A choice is made once; the other options no longer apply.
+            for b in buttons:
+                b.setEnabled(False)
+            callback()
+
+        for i, (label, callback) in enumerate(grid.get('buttons', [])):
+            button = QPushButton(label)
+            button.setStyleSheet('QPushButton { background: #1e293b; color: #e2e8f0; border: 1px solid #334155; padding: 5px 4px; border-radius: 6px; font-weight: bold; font-size: 11px; } QPushButton:hover { background: #334155; } QPushButton:disabled { color: #64748b; }')
+            button.clicked.connect(lambda _=False, cb=callback: choose(cb))
+            buttons.append(button)
+            layout.addWidget(button, row + i // columns, i % columns)
+        bubble_col.addWidget(box)
 
     def _handle_add(self, btn):
         if self.on_add_todo and self.action_todo:
@@ -744,6 +777,14 @@ class OrdisCompanionApp(QWidget):
             'on_confirm': lambda r=res: self.on_confirm_mod_review(r),
             'buttons': [('✏️ 슬롯 수정', lambda r=res: self.open_build_editor(r), False)],
         }
+        if res.get('needs_bonus_element'):
+            # Most players fuse the bonus to the 60% cap; any other value is typed in chat.
+            action['button_grid'] = {
+                # The question above already says other values go in chat ("자성 45").
+                'title': f"🧪 보너스 속성 ({BONUS_MAX * 100:g}%)",
+                'columns': 4,
+                'buttons': [(kr, lambda r=res, el=el: self._set_bonus_element(r, el, BONUS_MAX)) for el, kr in BONUS_ELEMENTS.items()],
+            }
         if res.get('has_pending_riven') or self.diagnoser.has_pending_riven():
             action['has_pending_riven'] = True
             action['on_open_riven_dialog'] = self.open_riven_quick_dialog
@@ -916,8 +957,15 @@ class OrdisCompanionApp(QWidget):
         self.tracker.delete_item(item_id)
         self.refresh_checklist_ui()
 
+    def _set_bonus_element(self, res, element: str, fraction: float):
+        self.diagnoser.apply_bonus_element(res, element, fraction)
+        self._pending_mod_review = res
+        self.add_chat_bubble('세팔론 오디스', res['review_message'], is_user=False, action_todo=self._review_action(res))
+
     def on_confirm_mod_review(self, res):
             self._pending_mod_review = None
+            # The result is out now; a later "화염 60" is chat, not an answer to this scan.
+            self.diagnoser.clear_pending_bonus()
             message = f"{res.get('message', '')}\n\n{self._save_build_message(res)}"
             self.add_chat_bubble('세팔론 오디스', message, is_user=False, action_todo=self._result_action(res))
 

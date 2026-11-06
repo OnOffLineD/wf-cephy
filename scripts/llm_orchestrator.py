@@ -390,6 +390,16 @@ class LLMOrchestrator:
             if user_query.startswith('/데이터'):
                 return {'type': 'system', 'report': self._data_command(user_query), 'action_items': []}
 
+            # An adversary weapon's Valence Bonus. Only a bare "자성 45"-style answer counts, so other chat passes through.
+            if self.diagnoser and hasattr(self.diagnoser, 'has_pending_bonus') and self.diagnoser.has_pending_bonus():
+                bonus_res = self.diagnoser.resume_pending_bonus(user_query)
+                if bonus_res and bonus_res.get('success'):
+                    data = bonus_res['data']
+                    self.memory.add_turn(user_query, data['review_message'])
+                    return {'type': 'DIAGNOSIS_CLARIFIED', 'report': data['review_message'], 'data': data}
+                if bonus_res:
+                    return {'type': 'CLARIFICATION_FAILED', 'report': bonus_res['message']}
+
             # 2. Handle pending riven
             if hasattr(self, 'diagnoser') and self.diagnoser and hasattr(self.diagnoser, 'has_pending_riven') and self.diagnoser.has_pending_riven():
                 if any(w in user_query for w in ['취소', '그만', '안해', '닫아', 'stop', 'cancel']):

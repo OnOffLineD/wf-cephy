@@ -41,6 +41,10 @@ class WarframeDamageEngine:
             rate = (1.0 + sum(m.get('reload_speed', 0.0) for m in mods) + r_reload) / base_reload
         return max(1.0, mag), 1.0 / max(rate, 0.01)
 
+    @staticmethod
+    def _valence(stats: Optional[Dict[str, float]]) -> float:
+        return sum(v for k, v in (stats or {}).items() if k.startswith('valence_'))
+
     def _physical_bonus(self, w_meta: Dict[str, Any], values: Dict[str, float]) -> float:
         attacks = w_meta.get('attacks') or []
         dist = attacks[0].get('damage') if attacks and isinstance(attacks[0].get('damage'), dict) else {}
@@ -88,7 +92,7 @@ class WarframeDamageEngine:
         # Wiki arsenal total: physical mods scale by the weapon's share of that type, in the elemental bracket.
         mod_elem += self._physical_bonus(w_meta, mod_phys)
         r_elem += self._physical_bonus(w_meta, r_phys)
-        mod_elem += sum(v for k, v in left.items() if k.startswith('valence_'))
+        mod_elem += self._valence(left)
 
         base_cc = float(w_meta.get('crit_chance', 0.1))
         if base_cc > 1.0:
@@ -179,7 +183,7 @@ class WarframeDamageEngine:
             "ms_extra_pct": ms_extra,
             "used_panel_total": used_panel_total,
             "effective_fire_rate": efr,
-            "innate": describe_innate(w_meta, mod_objs)
+            "innate": describe_innate(w_meta, mod_objs, left)
         }
 
         # Panel type rows don't include a riven that is added on top of them.
@@ -239,6 +243,7 @@ class WarframeDamageEngine:
         mod_dmg = sum(mod.get('damage', 0.0) for mod in mod_objs if mod.get('name') != 'Riven Mod')
         mod_elem =sum(mod.get('elemental_damage', 0.0) for mod in mod_objs if mod.get('name') != 'Riven Mod')
         mod_elem += self._physical_bonus(w_meta, {k: sum(mod.get(k, 0.0) for mod in mod_objs if mod.get('name') != 'Riven Mod') for k in ('slash', 'impact', 'puncture')})
+        mod_elem += self._valence(left_stats)
 
         r_dmg = riven_stats.get('damage', 0.0) or riven_stats.get('base_damage', 0.0)
         r_ms = riven_stats.get('multishot', 0.0)
@@ -306,8 +311,10 @@ class WarframeDamageEngine:
         mod_dmg = sum(mod.get('damage', 0.0) for mod in mods) + (rv.get('damage', 0.0) or rv.get('base_damage', 0.0))
         mod_elem = sum(mod.get('elemental_damage', 0.0) for mod in mods) + rv.get('elemental_damage', 0.0)
         mod_elem += self._physical_bonus(w_meta, {k: sum(mod.get(k, 0.0) for mod in mods) + rv.get(k, 0.0) for k in ('slash', 'impact', 'puncture')})
+        # The Valence Bonus shares the elemental bucket, so a buff there is measured against it too.
+        mod_elem += self._valence(left_stats)
 
-        buff_dmg = float(arc.get('damage_per_stack') or 0) * stacks
+        buff_dmg =float(arc.get('damage_per_stack') or 0) * stacks
         buff_elem = float(arc.get('elemental_per_stack') or 0) * stacks
         buff_ms = buff_cc = buff_cd = 0.0
     
@@ -454,10 +461,13 @@ class WarframeDamageEngine:
                     sequence.append((k, rv[k] * base_total))
     
             innate = {k: v for k, v in base.items() if k in ALL}
+            # An impact Valence Bonus adds impact, so it joins the physical rows instead of the elements.
+            valence_phys = {}
             for k, v in left.items():
                 if k.startswith('valence_'):
                     el = k[len('valence_'):]
-                    innate[el] = innate.get(el, 0.0) + v * base_total
+                    target = valence_phys if el in PHYS else innate
+                    target[el] = target.get(el, 0.0) + v * base_total
             combined = combine_elements(sequence, innate)
     
             mod_dmg = sum(m.get('damage', 0.0) for m in mods if m.get('name') != 'Riven Mod') + (rv.get('damage', 0.0) or rv.get('base_damage', 0.0))
@@ -465,9 +475,9 @@ class WarframeDamageEngine:
     
             types = {}
             for t in PHYS:
-                if base.get(t):
+                if base.get(t) or valence_phys.get(t):
                     bonus = sum(m.get(t, 0.0) for m in mods) + rv.get(t, 0.0)
-                    types[t] = base[t] * (1.0 + bonus) * factor
+                    types[t] = (base.get(t, 0.0) * (1.0 + bonus) + valence_phys.get(t, 0.0)) * factor
     
             for t, v in combined['types'].items():
                 types[t] = v * factor

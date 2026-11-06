@@ -27,6 +27,7 @@ from scripts.wf_data_indexer import WFDataIndexer
 from scripts.jamo_matcher import match_mods_jamo
 from scripts.build_store import BuildStore, GRID_SLOTS, RIVEN_MOD, canonical_slot, is_riven_name, slot_order
 from scripts.riven_reroll_reader import STAT_DISPLAY, looks_like_reroll_screen, read_reroll_screen
+from scripts.innate_traits import BONUS_ELEMENTS, BONUS_MAX, BONUS_MIN, bonus_in, is_adversary, parse_bonus_answer, set_bonus
 
 
 def looks_like_riven_card(slot_text: str) -> bool:
@@ -64,6 +65,9 @@ class ScreenModAnalyzer:
         self.build_store = BuildStore()
         # Riven values entered before the build is confirmed, kept until it is saved.
         self.entered_rivens: Dict[str, Dict[str, float]] = {}
+        # Valence Bonus the player told us per adversary weapon, reused for later scans this session.
+        self.bonus_elements: Dict[str, Tuple[str, float]] = {}
+        self.pending_bonus: Optional[Dict[str, Any]] = None
         self.pending_screenshot = None
         self.incarnon_traits = self._load_incarnon_traits()
         try:
@@ -170,6 +174,8 @@ class ScreenModAnalyzer:
                 return f"[OCR Error] {str(e)}"
 
     def diagnose_screenshot(self, image_input, forced_weapon_meta=None) -> Dict[str, Any]:
+            # A question about the previous scan's bonus no longer applies once a new screen arrives.
+            self.pending_bonus = None
             if isinstance(image_input, str):
                 if os.path.exists(image_input):
                     img = Image.open(image_input)
@@ -363,6 +369,9 @@ class ScreenModAnalyzer:
                 self.pending_screenshot = None
 
             left_stats = self.extract_left_panel_stats(img, full_text=full_text)
+            if left_stats is None:
+                left_stats = {}
+            bonus_note = self._resolve_bonus(w_meta, left_stats)
 
             category = (w_meta.get("category") or "").lower()
             from scripts.jamo_matcher import CATEGORY_MAPPING, decompose_hangul
@@ -486,7 +495,7 @@ class ScreenModAnalyzer:
                 'equipped_slot_count': slot_res.get('equipped_slot_count', 0)
             }
 
-            return {
+            result = {
                 "success": True,
                 "weapon": w_meta['name'],
                 "stats": left_stats,
@@ -501,6 +510,90 @@ class ScreenModAnalyzer:
                 "mod_objs": unique_mod_entries,
                 "raw_ocr": full_text
             }
+            if bonus_note:
+                result["message"] += bonus_note
+                result["review_message"] += bonus_note
+            if bonus_note == self._bonus_question(w_meta):
+                result["needs_bonus_element"] = True
+                self.pending_bonus = result
+            return result
+
+    def _resolve_bonus(self, w_meta: Dict[str, Any], stats: Dict[str, float]) -> str:
+        """Fills in an adversary weapon's Valence Bonus and returns the line telling the player where it came from.
+
+        The panel wins; otherwise a value the player gave earlier this session; otherwise we ask.
+        """
+        self.pending_bonus = None
+        if not is_adversary(w_meta):
+            return ""
+        name = w_meta.get('kr_name') or w_meta['name']
+        seen = bonus_in(stats)
+        if seen:
+            self.bonus_elements[w_meta['name']] = seen
+            return ""
+        known = self.bonus_elements.get(w_meta['name'])
+        if known:
+            set_bonus(stats, *known)
+            return (f"\n\n🧪 **[보너스 속성]** {name}의 보너스 속성은 지난번에 알려주신 "
+                    f"**{BONUS_ELEMENTS[known[0]]} {known[1] * 100:g}%**로 계산했습니다. 바뀌었다면 `자성 45`처럼 다시 알려 주십시오.")
+        return self._bonus_question(w_meta)
+
+    @staticmethod
+    def _bonus_question(w_meta: Dict[str, Any]) -> str:
+        name = w_meta.get('kr_name') or w_meta['name']
+        return (f"\n\n🧪 **[보너스 속성 확인]** {name}은(는) 대적자 무기라 보너스 속성이 붙어 있는데, 패널에서 읽지 못했습니다.\n"
+                f"💬 **보너스 속성과 수치가 어떻게 되나요?** 아래 버튼을 누르시거나 `자성 45`처럼 입력해 주십시오 "
+                f"(충격·화염·냉기·전기·독성·자성·방사능, {BONUS_MIN * 100:g}~{BONUS_MAX * 100:g}%). 알려주시기 전까지는 계산에 넣지 않습니다.")
+
+    def has_pending_bonus(self) -> bool:
+        return self.pending_bonus is not None
+
+    def clear_pending_bonus(self) -> None:
+        self.pending_bonus = None
+
+    def resume_pending_bonus(self, user_input: str) -> Optional[Dict[str, Any]]:
+        """Applies a chat answer to the waiting scan. None when the message isn't an answer at all."""
+        if not self.has_pending_bonus():
+            return None
+        parsed = parse_bonus_answer(user_input)
+        if not parsed:
+            return None
+        element, fraction = parsed
+        if fraction is None:
+            fraction = BONUS_MAX
+        if not BONUS_MIN - 1e-9 <= fraction <= BONUS_MAX + 1e-9:
+            return {'success': False, 'message': f"보너스 속성 수치는 {BONUS_MIN * 100:g}~{BONUS_MAX * 100:g}% 사이입니다. 다시 한 번 알려 주십시오 (예: `자성 45`)."}
+        return {'success': True, 'data': self.apply_bonus_element(self.pending_bonus, element, fraction)}
+
+    def apply_bonus_element(self, res: Dict[str, Any], element: str, fraction: float) -> Dict[str, Any]:
+        """Sets the scan's Valence Bonus, remembers it for this weapon and recalculates the review."""
+        w_meta = res['w_meta']
+        stats = res.setdefault('stats', {})
+        # In place: a waiting riven question holds the same stats and must see the bonus too.
+        set_bonus(stats, element, fraction)
+        self.bonus_elements[w_meta['name']] = (element, fraction)
+        self.pending_bonus = None
+        if self.has_pending_riven() and self.pending_riven_context.get('w_meta', {}).get('name') == w_meta['name']:
+            ctx = self.pending_riven_context
+            ctx['base_metrics'] = self.calculate_comprehensive_metrics(w_meta, left_stats=ctx['left_stats'], mod_objs=ctx['mod_objs'], riven_stats=None)
+
+        mods = res.get('mod_objs') or []
+        metrics = self.calculate_comprehensive_metrics(w_meta, left_stats=stats, mod_objs=mods)
+        arcane = (res.get('metrics') or {}).get('arcane')
+        metrics['arcane'] = arcane
+        if w_meta.get('category') != 'Warframe':
+            metrics['full_stack'] = self.damage_engine.compute_full_stack(w_meta, left_stats=stats, mod_objs=mods, arcane=arcane if arcane and arcane.get('modeled') else None)
+        formatted = res.get('detected_mods') or []
+        has_riven = any(m.get('name') == RIVEN_MOD for m in mods)
+        note = f"\n\n🧪 **[보너스 속성]** {BONUS_ELEMENTS[element]} {fraction * 100:g}%를 반영했습니다."
+        res.update(
+            metrics=metrics,
+            needs_bonus_element=False,
+            message=self.format_ordis_briefing(w_meta, formatted, metrics) + (self._riven_notice() if self.has_pending_riven() else "") + note,
+            review_message=self.format_mod_review_briefing(w_meta, formatted, equipped_slot_count=res.get('equipped_slot_count', len(formatted)), riven_name='리벤 모드' if has_riven else None) + note,
+            calculation_breakdown=self.format_calculation_breakdown(w_meta, mods, metrics),
+        )
+        return res
 
     def _await_riven_values(self, w_meta: Dict[str, Any], left_stats: Optional[Dict[str, float]], mods: List[Dict[str, Any]], riven_name: str) -> None:
         self.pending_riven_context = {
