@@ -1,0 +1,78 @@
+# orchestra.toml - read from the MAIN checkout only. The builder works in a
+# worktree and cannot weaken these settings (.orchestra/** is always protected).
+
+[project]
+base_branch   = ""                       # "" = whatever HEAD is when you run
+worktree_root = "../{repo}-worktrees"    # keep OUTSIDE the repo
+branch_prefix = "orch/"
+auto_merge    = false                    # true = merge right after APPROVED
+strip_api_keys = true                    # remove *_API_KEY so CLIs use subscriptions
+
+# Commands run once in a fresh worktree (dependency restore, codegen, caches...).
+setup = [
+  # "pip install -e .",
+]
+
+[builder]
+# Prompt goes to stdin unless an argument contains {prompt}.
+# Verify flags against `claude --help` for your installed version.
+cmd = ["claude", "-p", "--output-format", "json",
+       "--permission-mode", "acceptEdits", "--max-turns", "40",
+       "--allowedTools", "Read,Edit,Write,Glob,Grep,Bash(git status:*),Bash(git diff:*),Bash(python:*),Bash(pytest:*)"]
+resume_args = ["--resume", "{session_id}"]   # [] to always start fresh
+output = "claude-json"                     # "claude-json" (session resume) | "text"
+timeout_sec = 1800
+
+[verify]
+# Gates run by the dispatcher itself, in the worktree, in order, stop at first failure.
+# They live here (not in the repo) so the builder cannot weaken them.
+gates = [
+  "python -m compileall -q scripts",
+  "python scripts/probe.py",
+]
+timeout_sec = 1200
+
+[scope]
+# Always forbidden for the builder in addition to the task's own `forbid`.
+protected = [
+  ".orchestra/**",
+  ".git/**",
+  "assets/**",
+  "rules/**",
+  "tests/fixtures/**",
+]
+default_max_files = 5
+default_max_diff_lines = 300
+
+[limits]
+max_attempts = 3          # builder runs per round (1 + 2 self-fix retries)
+max_review_rounds = 2     # reviewer rejections that trigger ESCALATED (2 = one revise allowed)
+
+[reviewer]
+# "manual"  : stop at READY_FOR_REVIEW, the orchestrator agent reads REVIEW.md and
+#             calls `orchestra.py verdict <ID> PASS|FAIL --notes ...`
+mode = "manual"
+cmd = []
+timeout_sec = 900
+
+# Named overrides, used with `orchestra.py --profile <name> run ...`.
+[profiles.local.builder]
+cmd = ["codex", "exec", "--oss", "--full-auto", "{prompt}"]
+resume_args = []
+output = "text"
+timeout_sec = 3600
+
+[profiles.local.limits]
+max_attempts = 4
+
+[tier1]
+# `orchestra.py check`: in-place fast track for tiny edits. Exceeding any of these
+# means ESCALATE -> write a task and use `run`.
+max_files = 1
+max_diff_lines = 20
+risk_patterns = [
+  "eval\\(|exec\\(",
+  "subprocess|os\\.system",
+  "DROP\\s+TABLE|DELETE\\s+FROM",
+  "(?i)password|secret|api[_-]?key",
+]

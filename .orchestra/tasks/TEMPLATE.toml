@@ -1,0 +1,37 @@
+# Task packet. Written by the orchestrator (CEO), never by the builder.
+id    = "T-000"
+title = "template"
+tier  = 2
+
+goal = """
+One concrete outcome. What must be true when this is done.
+"""
+
+[scope]
+allow = [
+  # "src/billing/**",          # files the builder may write (glob, repo-relative, "/")
+]
+forbid = [
+  # "src/billing/legacy/**",
+]
+max_files = 3
+max_diff_lines = 200
+
+[context]
+# Pointers, not code. Graph/grep output goes here as hints; the builder may read anything.
+hints = [
+  # "src/billing/invoice.py: Invoice.total() computes tax twice when discount > 0",
+]
+
+[acceptance]
+# Write these BEFORE building. Concrete input -> expected output.
+cases = [
+  # "Invoice(100, discount=10, tax=0.1).total() == 99.0",
+]
+# Task-specific commands, run after the global gates (by the dispatcher).
+commands = [
+  # "python -m pytest -q tests/test_invoice.py",
+]
+
+[limits]
+# max_attempts = 3
