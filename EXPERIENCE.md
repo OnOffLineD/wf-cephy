@@ -76,3 +76,15 @@
 - **해결책**:
   - 드롭 답변은 고정 문장과 표로만 구성하고, 공략 답변은 자료에 없는 숫자가 든 줄을 제거하며 근거 문서를 표시
 - **교훈**: 사실을 표로 답할 수 있으면 모델을 거치지 않는다. 다만 숫자 외의 잘못된 문장은 걸러내지 못하므로 소형 모델의 오독 위험은 남는다
+
+### [2026-11-07] UI/UX 2도 HUD 글리프 및 고무줄 텐션 모핑 버튼 전면 도입 (T-UI-1 ~ T-UI-3)
+- **발견/문제**:
+  1. 기존 MorphingTabBar가 탭 전환 시 setStyleSheet로 볼드 폰트를 토글하면서 레이아웃 재계산 전에 geometry()를 읽어 인디케이터가 어긋나는 버그가 있었음.
+  2. 버튼 텍스트에 유니코드 이모지('💬', '🖥️', '🎭' 등)가 직접 박혀 있어 디자인 품질이 낮고 시각적 통일성이 결여됨.
+  3. Windows Frameless + WA_TranslucentBackground 환경에서는 무거운 QGraphicsEffect 대신 QPainter 직접 렌더링이 60fps를 유지하는 정석임.
+  4. Worktree 디스패처 게이트에 3분 이상 걸리는 OCR 정확도 벤치마크(	est_ocr_benchmark.py)가 포함되어 있으면 빌더의 신속한 단위 검증을 방해하므로, 신속 게이트(probe.py)와 성능/데이터셋 벤치마크는 분리해야 함.
+- **해결/규칙**:
+  1. 나노 바나나(Gemini 2.5 Flash Image)로 2도(Neon Cyan #00e5ff + White) 텐노 글리프 8종을 생성하여 ssets/icons/에 128x128 투명 PNG로 배치.
+  2. scripts/hud_widgets.py에 HudButton 구현: 기본 32px 콤팩트 알약 -> 호버 시 부드러운 너비 언폴딩 + 텐노 조준 브래킷('⌐ ¬') 페이드인 + 클릭 리플 + 비지 회전 호 연출.
+  3. scripts/morphing_tab_bar.py에 고무줄 텐션 모핑(앞 테두리 190ms OutCubic, 뒤 테두리 310ms OutQuint) 도입 및 폰트 메트릭 사전 캐싱으로 지오메트리 불변화 달성.
+  4. 컴패니언 앱(desktop_companion.py)의 7개 버튼 및 탭 바를 전면 교체하여 이모지 100% 제거 완료.

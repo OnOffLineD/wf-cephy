@@ -1,0 +1,5 @@
+- 2026-11-07 01:03:23 T-UI-1 ESCALATED (attempts 3, review rounds 0)
+- 2026-11-07 01:21:54 T-UI-2 READY_FOR_REVIEW (attempts 1, review rounds 0)
+- 2026-11-07 01:22:16 T-UI-2 verdict PASS -> APPROVED
+- 2026-11-07 01:22:26 T-UI-2 MERGED
+- 2026-11-07 01:34:10 T-UI-3 BUILDER_ERROR (attempts 1, review rounds 0)
