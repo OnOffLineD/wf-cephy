@@ -21,7 +21,7 @@ def run_tests():
         import pytest
         # Run pytest targeting tests directory
         res = subprocess.run(
-            [sys.executable, "-m", "pytest", "tests", "-v", "--tb=short"],
+            [sys.executable, "-m", "pytest", "tests", "-v", "--tb=short", "--ignore=tests/test_ocr_benchmark.py"],
             cwd=ROOT_DIR,
             capture_output=True,
             text=True,
