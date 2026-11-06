@@ -1,0 +1,14 @@
+{
+  "coda motovore": {
+    "kr_name": "코다 모토보어",
+    "source": "https://wiki.warframe.com/w/Coda_Motovore",
+    "physical_mod_multiplier": 6.0,
+    "physical_mod_multiplier_note": "Checked against an arsenal panel: Auger Strike + Jugulus Barbs (+210% puncture) showed puncture 1,133.2 = 83.325 x (1 + 2.1 x 6). Riven physical stats are not multiplied here: unverified.",
+    "wheel": {
+      "impact": {"label": "충격 휠: 공격 속도 +40%", "fire_rate": 0.4},
+      "puncture": {"label": "관통 휠: 사거리 +1.5m", "range": 1.5},
+      "slash": {"label": "베기 휠: 상태이상 확률 +100%", "status": 1.0}
+    },
+    "wheel_note": "The wheel follows the physical type with the highest total mod bonus; with no physical mods there is no wheel buff. Status +100% matches the wiki (30% shown as 60%); attack speed +40% is assumed to add like a mod: unverified."
+  }
+}

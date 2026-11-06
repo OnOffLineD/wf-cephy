@@ -1,7 +1,13 @@
 import math
 from typing import Dict, Any, Optional, List
 
+from scripts.innate_traits import apply_innate_traits, describe as describe_innate
+
 class WarframeDamageEngine:
+    def _prepare_mods(self, w_meta: Dict[str, Any], mods: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Mods as the weapon applies them: set bonuses first, then the weapon's innate trait."""
+        return apply_innate_traits(w_meta, self._apply_mod_sets(mods))
+
     def sanitize_left_stats(self, left_stats: Dict[str, float], base_damage: float, is_melee: bool = False) -> Dict[str, float]:
         sanitized_stats = left_stats.copy()
     
@@ -44,9 +50,9 @@ class WarframeDamageEngine:
     def compute_metrics(self, w_meta: Dict[str, Any], left_stats: Optional[Dict[str, float]] = None, mod_objs: Optional[List[Dict[str, Any]]] = None, riven_stats: Optional[Dict[str, float]] = None, riven_in_panel: bool = False) -> Dict[str, Any]:
         from scripts.damage_formulas import effective_fire_rate, shooting_proportion, bleed_tick
 
-        mod_objs = self._apply_mod_sets(mod_objs or [])
+        mod_objs = self._prepare_mods(w_meta, mod_objs or [])
         mod_dmg = sum(mod.get('damage', 0.0) for mod in mod_objs if mod.get('name') != 'Riven Mod')
-        mod_ms = sum(mod.get('multishot', 0.0) for mod in mod_objs if mod.get('name') != 'Riven Mod')
+        mod_ms =sum(mod.get('multishot', 0.0) for mod in mod_objs if mod.get('name') != 'Riven Mod')
         mod_cc = sum(mod.get('crit_chance', 0.0) for mod in mod_objs if mod.get('name') != 'Riven Mod')
         mod_cd = sum(mod.get('crit_damage', 0.0) for mod in mod_objs if mod.get('name') != 'Riven Mod')
         mod_fr = sum(mod.get('fire_rate', 0.0) for mod in mod_objs if mod.get('name') != 'Riven Mod')
@@ -172,7 +178,8 @@ class WarframeDamageEngine:
             "ms_max_pellets": ms_max,
             "ms_extra_pct": ms_extra,
             "used_panel_total": used_panel_total,
-            "effective_fire_rate": efr
+            "effective_fire_rate": efr,
+            "innate": describe_innate(w_meta, mod_objs)
         }
 
         # Panel type rows don't include a riven that is added on top of them.
@@ -228,9 +235,9 @@ class WarframeDamageEngine:
         if not out or not riven_stats:
             return out
     
-        mod_objs = self._apply_mod_sets(mod_objs or [])
+        mod_objs = self._prepare_mods(w_meta, mod_objs or [])
         mod_dmg = sum(mod.get('damage', 0.0) for mod in mod_objs if mod.get('name') != 'Riven Mod')
-        mod_elem = sum(mod.get('elemental_damage', 0.0) for mod in mod_objs if mod.get('name') != 'Riven Mod')
+        mod_elem =sum(mod.get('elemental_damage', 0.0) for mod in mod_objs if mod.get('name') != 'Riven Mod')
         mod_elem += self._physical_bonus(w_meta, {k: sum(mod.get(k, 0.0) for mod in mod_objs if mod.get('name') != 'Riven Mod') for k in ('slash', 'impact', 'puncture')})
 
         r_dmg = riven_stats.get('damage', 0.0) or riven_stats.get('base_damage', 0.0)
@@ -282,7 +289,7 @@ class WarframeDamageEngine:
     def compute_full_stack(self, w_meta: Dict[str, Any], left_stats: Optional[Dict[str, float]] = None, mod_objs: Optional[List[Dict[str, Any]]] = None, arcane: Optional[Dict[str, Any]] = None, combo_mult: float = 12.0, status_types: int = 3, riven_stats: Optional[Dict[str, float]] = None) -> Dict[str, Any]:
         from scripts.damage_formulas import average_crit_mult, effective_fire_rate, weak_point_multiplier
     
-        mods = [m for m in self._apply_mod_sets(mod_objs or []) if m.get('name') != 'Riven Mod']
+        mods = [m for m in self._prepare_mods(w_meta, mod_objs or []) if m.get('name') != 'Riven Mod']
         rv = riven_stats or {}
         base = self.compute_metrics(w_meta, left_stats=left_stats, mod_objs=mods, riven_stats=rv)
         is_melee = w_meta.get('category') == 'Melee'
@@ -424,8 +431,8 @@ class WarframeDamageEngine:
             ms_factor = 1.0 if is_melee else final_ms / base_ms
     
             rv = riven_stats or {}
-            mods = self._apply_mod_sets(mod_objs or [])
-            ordered = sorted(mods, key=lambda m: m.get('slot_index', 1000))
+            mods = self._prepare_mods(w_meta, mod_objs or [])
+            ordered =sorted(mods, key=lambda m: m.get('slot_index', 1000))
             order_known = all('slot_index' in m for m in mods if any(m.get(e) for e in ALL))
     
             riven_elements = [k for k in rv if k in ALL][::-1]

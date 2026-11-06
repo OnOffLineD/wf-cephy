@@ -578,6 +578,10 @@ class ScreenModAnalyzer:
             lines.append(f"\n🌀 **[고유 특성: 회전 에너지 디스크 (Energy Disk)]**:")
             lines.append(f"• **슬라이드 강공격 투사체 피해**: 약 `{ed.get('damage', 0):,.0f}` (지속 회전 다단히트)")
 
+        if metrics.get("innate"):
+            lines.append(f"\n🧬 **[고유 특성]**:")
+            lines.extend(f"• {line}" for line in metrics["innate"])
+
         if metrics.get("radial"):
             rad = metrics["radial"]
             if is_melee:
