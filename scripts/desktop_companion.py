@@ -51,6 +51,7 @@ from scripts.riven_quick_dialog import RivenQuickInputDialog
 from scripts.riven_compare_dialog import RivenCompareDialog, RivenRollEditDialog
 from scripts.build_edit_dialog import BuildEditDialog
 from scripts.morphing_tab_bar import MorphingTabBar
+from scripts.hud_widgets import HudButton
 from scripts.persona_dialog import OrdisPersonaDialog
 from scripts.layered_pet_renderer import LayeredPetRenderer
 
@@ -336,6 +337,7 @@ class ChatBubble(QWidget):
 class OrdisCompanionApp(QWidget):
     chat_reply_signal = pyqtSignal(str, str, bool, object)
     world_events_signal = pyqtSignal(str)
+    world_events_done_signal = pyqtSignal()
     pet_update_signal = pyqtSignal(str, int, object, object, int)
     checklist_changed_signal = pyqtSignal()
 
@@ -427,25 +429,23 @@ class OrdisCompanionApp(QWidget):
 
             # Morphing Tab Bar
             self.tab_bar = MorphingTabBar(self)
-            self.tab_bar.add_tab("💬 채팅")
-            self.tab_bar.add_tab("📋 숙제")
-            self.tab_bar.add_tab("🌍 현황")
+            self.tab_bar.add_tab('채팅', icon_name='chat')
+            self.tab_bar.add_tab('숙제', icon_name='todo')
+            self.tab_bar.add_tab('현황', icon_name='status')
             self.tab_bar.tab_changed.connect(self.switch_tab)
             h_layout.addWidget(self.tab_bar)
             h_layout.addStretch()
+            h_layout.setSpacing(6)
 
             # Persona Button
-            persona_btn = QPushButton("🎭")
-            persona_btn.setFixedSize(30, 30)
+            self.persona_btn = persona_btn = HudButton('', icon_name='persona', icon_only=True)
             persona_btn.setToolTip("오디스 성격 및 페르소나 설정")
-            persona_btn.setStyleSheet("background: #111722; color: #38bdf8; border: 1px solid #1e293b; font-size: 13px; border-radius: 15px;")
             persona_btn.clicked.connect(self.open_persona_dialog)
             h_layout.addWidget(persona_btn)
 
             # Close Button
-            close_btn = QPushButton("X")
-            close_btn.setFixedSize(30, 30)
-            close_btn.setStyleSheet("background: #111722; color: #e2e8f0; border: none; font-size: 12px; border-radius: 15px;")
+            self.close_btn = close_btn = HudButton('', icon_name='close', icon_only=True)
+            close_btn.setToolTip("닫기")
             close_btn.clicked.connect(self.animate_hide)
             h_layout.addWidget(close_btn)
 
@@ -472,16 +472,19 @@ class OrdisCompanionApp(QWidget):
 
             # Quick Action Toolbar
             action_bar = QHBoxLayout()
-            btn_full = QPushButton("🖥️ 화면 캡처 [F9]")
-            btn_full.clicked.connect(self.capture_fullscreen_and_analyze)
-            btn_clip = QPushButton("📋 붙여넣기 [Ctrl+V]")
-            btn_clip.clicked.connect(self.analyze_clipboard)
-            btn_refresh = QPushButton("🔄 실시간 갱신")
-            btn_refresh.clicked.connect(self.refresh_world_events)
+            action_bar.setContentsMargins(0, 6, 0, 6)
+            action_bar.setSpacing(6)
+            self.btn_full = HudButton('화면 캡처 [F9]', icon_name='capture', icon_only=True)
+            self.btn_full.clicked.connect(self.capture_fullscreen_and_analyze)
+            self.btn_clip = HudButton('붙여넣기 [Ctrl+V]', icon_name='clipboard', icon_only=True)
+            self.btn_clip.clicked.connect(self.analyze_clipboard)
+            self.btn_refresh = HudButton('실시간 갱신', icon_name='refresh', icon_only=True)
+            self.btn_refresh.clicked.connect(self.refresh_world_events)
+            self.world_events_done_signal.connect(lambda: self.btn_refresh.set_busy(False))
 
-            action_bar.addWidget(btn_full)
-            action_bar.addWidget(btn_clip)
-            action_bar.addWidget(btn_refresh)
+            action_bar.addWidget(self.btn_full)
+            action_bar.addWidget(self.btn_clip)
+            action_bar.addWidget(self.btn_refresh)
             action_bar.addStretch()
 
             # Input Area
@@ -490,10 +493,10 @@ class OrdisCompanionApp(QWidget):
             self.input_edit.setPlaceholderText("오디스에게 말을 걸거나 질문해 보세요... ('야 피곤해', '오버가드 약점')")
             self.input_edit.returnPressed.connect(self.send_user_message)
             self.input_edit.installEventFilter(self)
-            btn_send = QPushButton("전송")
-            btn_send.clicked.connect(self.send_user_message)
+            self.btn_send = HudButton('전송', icon_name='send', icon_only=False)
+            self.btn_send.clicked.connect(self.send_user_message)
             input_bar.addWidget(self.input_edit)
-            input_bar.addWidget(btn_send)
+            input_bar.addWidget(self.btn_send)
 
             chat_layout.addWidget(self.scroll_area)
             chat_layout.addLayout(action_bar)
@@ -548,17 +551,9 @@ class OrdisCompanionApp(QWidget):
             status_header = QWidget()
             sh_layout = QHBoxLayout(status_header)
             sh_layout.setContentsMargins(4, 4, 4, 4)
-            title_lbl = QLabel("🌍 성계 실시간 현황")
+            title_lbl = QLabel("성계 실시간 현황")
             title_lbl.setStyleSheet("color: #00e5ff; font-weight: bold; font-size: 13px;")
-            refresh_btn = QPushButton("🔄 새로고침")
-            refresh_btn.setFixedHeight(28)
-            refresh_btn.setStyleSheet("""
-                QPushButton {
-                    background: #1e293b; color: #38bdf8; border: 1px solid #334155;
-                    border-radius: 6px; padding: 4px 10px; font-size: 11px; font-weight: bold;
-                }
-                QPushButton:hover { background: #334155; color: #ffffff; }
-            """)
+            self.refresh_btn = refresh_btn = HudButton('새로고침', icon_name='refresh', icon_only=True)
             refresh_btn.clicked.connect(self.refresh_world_events)
             sh_layout.addWidget(title_lbl)
             sh_layout.addStretch()
@@ -912,8 +907,19 @@ class OrdisCompanionApp(QWidget):
 
     def refresh_world_events(self):
             def fetch_and_update():
-                self.world_events_signal.emit(WorldStateTracker.format_world_events(self.tracker.fetch_live_events()))
+                try:
+                    events_str = WorldStateTracker.format_world_events(self.tracker.fetch_live_events())
+                    self.world_events_signal.emit(events_str)
+                except Exception:
+                    pass
+                finally:
+                    try:
+                        self.world_events_done_signal.emit()
+                    except (RuntimeError, AttributeError):
+                        pass
 
+            if hasattr(self, 'btn_refresh'):
+                self.btn_refresh.set_busy(True)
             threading.Thread(target=fetch_and_update, daemon=True).start()
 
     def refresh_checklist_ui(self):

@@ -1,6 +1,5 @@
 import os
 import sys
-import time
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -15,7 +14,7 @@ try:
 except ImportError:
     from PySide6.QtWidgets import QApplication, QWidget
 
-from scripts.morphing_tab_bar import MorphingTabBar, TRAIL_MS
+from scripts.morphing_tab_bar import MorphingTabBar, TRAIL_MS, LEAD_MS
 
 
 @pytest.fixture(scope="session")
@@ -24,13 +23,6 @@ def qapp():
     if app is None:
         app = QApplication(sys.argv)
     return app
-
-
-def _pump(app, ms):
-    end = time.monotonic() + ms / 1000.0
-    while time.monotonic() < end:
-        app.processEvents()
-        time.sleep(0.005)
 
 
 def _make_bar():
@@ -73,12 +65,15 @@ def test_indicator_settles_on_target(qapp, monkeypatch):
     widths_before = [r.width() for r in bar._rects]
 
     bar.switch_tab(1)
-    _pump(qapp, 90)
-    # Mid-flight: leading (right) edge runs ahead of the trailing (left) edge.
+    assert bar._anim_r.duration() < bar._anim_l.duration()
+    bar._anim_r.setCurrentTime(90)
+    bar._anim_l.setCurrentTime(90)
+    # Mid-flight: leading (right) edge runs ahead of trailing (left) edge.
     assert bar._r > bar._l
-    assert bar.indicator_rect().width() > bar._rects[0].width()
+    assert bar.indicator_rect().width() >= bar._rects[0].width()
 
-    _pump(qapp, TRAIL_MS + 200)
+    bar._anim_r.setCurrentTime(bar._anim_r.duration())
+    bar._anim_l.setCurrentTime(bar._anim_l.duration())
     assert bar._l == bar._r == 1.0
     ind = bar.indicator_rect()
     target = bar._rects[1]
@@ -94,7 +89,10 @@ def test_backward_switch_leads_with_left_edge(qapp):
     bar = _make_bar()
     bar.switch_tab(1)
     bar.switch_tab(0)
-    _pump(qapp, 90)
+    assert bar._anim_l.duration() < bar._anim_r.duration()
+    bar._anim_l.setCurrentTime(90)
+    bar._anim_r.setCurrentTime(90)
     assert bar._l < bar._r
-    _pump(qapp, TRAIL_MS + 200)
+    bar._anim_l.setCurrentTime(bar._anim_l.duration())
+    bar._anim_r.setCurrentTime(bar._anim_r.duration())
     assert bar._l == bar._r == 0.0

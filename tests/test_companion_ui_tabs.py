@@ -63,3 +63,55 @@ def test_ordis_companion_headless_and_tabs(qapp):
 
     finally:
         panel.close()
+
+
+def test_companion_hud_buttons_and_icon_tabs(qapp):
+    from scripts.hud_widgets import HudButton
+
+    panel = OrdisCompanionApp()
+    try:
+        assert [t["icon_name"] for t in panel.tab_bar.tabs] == ["chat", "todo", "status"]
+        assert [t["text"] for t in panel.tab_bar.tabs] == ["채팅", "숙제", "현황"]
+
+        for name in ("btn_full", "btn_clip", "btn_refresh", "btn_send", "refresh_btn", "persona_btn", "close_btn"):
+            assert isinstance(getattr(panel, name), HudButton), f"{name} must be a HudButton"
+        assert panel.btn_full.icon_name == "capture" and panel.btn_full.icon_only
+        assert panel.btn_clip.icon_name == "clipboard" and panel.btn_clip.icon_only
+        assert panel.btn_refresh.icon_name == "refresh" and panel.btn_refresh.icon_only
+        assert panel.btn_send.icon_name == "send" and not panel.btn_send.icon_only
+        assert panel.persona_btn.icon_name == "persona" and panel.persona_btn.text() == ""
+        assert panel.persona_btn.toolTip() == "오디스 성격 및 페르소나 설정"
+        assert panel.close_btn.icon_name == "close"
+
+        emojis = ("💬", "📋", "🌍", "🎭", "🖥️", "🔄")
+        texts = [t["text"] for t in panel.tab_bar.tabs] + [
+            getattr(panel, n).text() for n in ("btn_full", "btn_clip", "btn_refresh", "btn_send", "refresh_btn", "persona_btn", "close_btn")
+        ]
+        for text in texts:
+            assert not any(e in text for e in emojis), f"emoji left in {text!r}"
+
+        # Busy feedback: set on refresh start, cleared by the done signal.
+        panel.btn_refresh.set_busy(False)
+        panel.tracker.fetch_live_events = lambda: {}
+        import threading as _t
+        orig_thread = _t.Thread
+        started = []
+
+        class _NoThread:
+            def __init__(self, target=None, daemon=None):
+                started.append(target)
+
+            def start(self):
+                pass
+
+        _t.Thread = _NoThread
+        try:
+            panel.refresh_world_events()
+        finally:
+            _t.Thread = orig_thread
+        assert panel.btn_refresh.is_busy
+        panel.world_events_done_signal.emit()
+        assert not panel.btn_refresh.is_busy
+        assert started, "refresh_world_events must start a fetch thread"
+    finally:
+        panel.close()

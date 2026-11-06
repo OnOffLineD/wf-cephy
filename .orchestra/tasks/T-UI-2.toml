@@ -1,0 +1,57 @@
+# Task packet T-UI-2
+id    = "T-UI-2"
+title = "고무줄 텐션 모핑 인디케이터 및 2도 탭 바 리팩토링"
+tier  = 2
+
+goal = """
+scripts/morphing_tab_bar.py의 MorphingTabBar를 QPainter 직접 렌더링 및 고무줄 텐션(비대칭 좌우 보간) 모핑 인디케이터로 전면 리팩토링하고, tests/test_morphing_tab_bar.py로 단위 검증한다.
+1. 고무줄 텐션(Elastic Stretch) 모핑 인디케이터:
+   - 탭 이동 시 진행 방향의 앞선 테두리는 빠르게(약 180~200ms OutCubic), 뒤따르는 테두리는 부드럽게(약 300~320ms OutQuint) 이동하여 고무줄처럼 늘어났다 감기는 유기적 모핑 구현.
+   - float 기반 상태 변수(self._l, self._r)를 QVariantAnimation으로 보간하여 valueChanged -> self.update()로 부드러운 60fps 재렌더링.
+2. 2도 HUD 캡슐 및 컬러 트랜지션:
+   - 인디케이터: 어두운 반투명 캡슐 채움 + 1.5px 시안(#00e5ff) HUD 테두리 + 하단 미세 액센트 라인.
+   - 탭 아이콘 및 텍스트:
+     * add_tab(text, icon_name=None) 인터페이스 지원. icon_name 전달 시 assets/icons/<name>.png를 로드하거나 HUD 2도 글리프 표시.
+     * 활성 탭: 선명한 네온 시안(#00e5ff) 및 볼드 텍스트(#ffffff)
+     * 비활성 탭: 차분한 실버/화이트(#94a3b8 / rgba(226, 232, 240, 0.6))
+3. 렌더링 최적화 및 안정성:
+   - 탭 전환 시 setStyleSheet()를 절대 호출하지 않음 (기존의 지오메트리 어긋남 및 깜빡임 원천 차단).
+   - 탭 영역 및 라벨 너비는 고정/캐싱하여 애니메이션 도중 레이아웃 흔들림 방지.
+   - 기존 public API(add_tab, switch_tab, tab_changed signal) 100% 하위 호환 유지.
+4. 단위 테스트 (tests/test_morphing_tab_bar.py):
+   - QT_QPA_PLATFORM=offscreen 환경에서 헤드리스 검증.
+   - add_tab 및 switch_tab 동작 확인, tab_changed 시그널 방출 확인.
+   - switch_tab(1) 전환 완료 후 인디케이터 좌표 정합성 확인.
+"""
+
+[scope]
+allow = [
+  "scripts/morphing_tab_bar.py",
+  "tests/test_morphing_tab_bar.py"
+]
+forbid = [
+  "scripts/desktop_companion.py"
+]
+max_files = 2
+max_diff_lines = 350
+
+[context]
+hints = [
+  "scripts/hud_widgets.py: HUD_CYAN, HUD_BG, load_icon_pixmap (재사용 가능한 2도 에셋 및 색상 상수)",
+  "assets/icons/: chat.png, todo.png, status.png (128x128 2도 투명 PNG)",
+  "tests/test_companion_ui_tabs.py: 기존 탭 바 연동 테스트 (호환성 유지 필수)"
+]
+
+[acceptance]
+cases = [
+  "bar.add_tab('채팅', icon_name='chat'); bar.add_tab('숙제', icon_name='todo') 정상 추가",
+  "bar.switch_tab(1) 호출 시 tab_changed(1) 시그널 정상 방출",
+  "애니메이션 완료 후 _l == _r == 1.0 (정확한 인디케이터 안착)",
+  "setStyleSheet 호출 없이 QPainter로 렌더링 유지"
+]
+commands = [
+  "python -m pytest tests/test_morphing_tab_bar.py tests/test_companion_ui_tabs.py -v"
+]
+
+[limits]
+max_attempts = 3
