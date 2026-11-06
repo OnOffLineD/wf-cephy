@@ -5,12 +5,14 @@ import re
 from collections import defaultdict
 from typing import Any, Dict, List, Optional, Tuple
 
+from scripts.game_catalog import GameCatalog
 from scripts.path_config import get_path
 
 DROP_QUESTION = re.compile(r'어디|파밍|드랍|드롭|나와|나오|얻|구해|구하|떨어|떨궈|먹어|벌어')
 BEST_QUESTION = re.compile(r'좋|제일|최고|효율|추천|빨리')
 RELIC_NAME = re.compile(r'(axi|neo|meso|lith|requiem|액시|네오|메소|리스|레퀴엠)\s*([a-z]\d+)', re.I)
 ITEM_COUNT = re.compile(r'^(?:(\d+)X\s+)?(?:([\d,]+)\s+)?(.+)$')
+RELIC_REWARD = re.compile(r'^((?:axi|neo|meso|lith|requiem) \S+) relic')
 MIN_AUTO_NAME_LENGTH = 3
 MAX_MISSIONS = 5
 MAX_OTHERS = 3
@@ -66,6 +68,7 @@ class DropIndex:
         self._rows: Optional[Dict[str, List[Dict[str, Any]]]] = None
         self._names: Dict[str, Tuple[str, List[str]]] = {}
         self._relics: Dict[str, Dict[str, Any]] = {}
+        self._obtainable: set = set()
 
     def _read(self, name: str) -> Any:
         try:
@@ -78,8 +81,7 @@ class DropIndex:
         if self._rows is not None:
             return
         rows: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
-        vaulted = {r['name']: bool(r.get('vaulted')) for r in self._read('Relics.json') or []}
-        self._relics = {r['name'].lower().replace(' ', ''): r for r in self._read('Relics.json') or []}
+        self._relics = {}
 
         def add(raw_name, chance, kind, place, **extra):
             if not raw_name or chance is None:
@@ -113,8 +115,9 @@ class DropIndex:
             if relic.get('state') != 'Intact':
                 continue
             name = f"{relic.get('tier')} {relic.get('relicName')}"
+            self._relics[name.lower().replace(' ', '')] = {'name': name, 'rewards': relic.get('rewards', [])}
             for item in relic.get('rewards', []):
-                add(item.get('itemName'), item.get('chance'), 'relic', name, vaulted=vaulted.get(name, False))
+                add(item.get('itemName'), item.get('chance'), 'relic', name)
         for table in drops.get('enemyModTables', []):
             enemy_chance = float(table.get('enemyModDropChance') or 100)
             for item in table.get('mods', []):
@@ -127,6 +130,8 @@ class DropIndex:
             add(item.get('itemName'), item.get('chance'), 'special', '출격(Sortie)')
 
         self._rows = dict(rows)
+        # A relic is obtainable if the current drop tables still award it, which no vault flag can go stale on.
+        self._obtainable = {match.group(1) for match in map(RELIC_REWARD.match, self._rows) if match}
         self._names = self._build_names()
 
     def _build_names(self) -> Dict[str, Tuple[str, List[str]]]:
@@ -140,6 +145,9 @@ class DropIndex:
         for arcane in self._read('weapon_arcanes.json') or []:
             if arcane.get('kr_name') and arcane.get('name'):
                 names.setdefault(re.sub(r'\s', '', arcane['kr_name'].lower()), (arcane['kr_name'], [arcane['name']]))
+        for entry in GameCatalog().entries:
+            if entry.get('en') and len(entry.get('ko', '')) >= MIN_AUTO_NAME_LENGTH:
+                names.setdefault(re.sub(r'\s', '', entry['ko'].lower()), (entry['ko'], [entry['en']]))
         return names
 
     def resolve_item(self, query: str) -> Tuple[str, List[str]]:
@@ -186,8 +194,8 @@ class DropIndex:
         relic = self._relics.get(f"{tier}{match.group(2).lower()}")
         if not relic:
             return None
-        state = '단종됨' if relic.get('vaulted') else '획득 가능'
-        rewards = "\n".join(f"• {r.get('item')} ({r.get('type')})" for r in relic.get('rewards', []))
+        state = '획득 가능' if relic['name'].lower() in self._obtainable else '단종됨'
+        rewards = "\n".join(f"• {r.get('itemName')} ({r.get('rarity')}, {_chance_text(float(r.get('chance') or 0))})" for r in relic['rewards'])
         return f"{relic['name']} 성유물 ({state}) 보상 목록:\n{rewards}"
 
     def answer(self, query: str) -> Optional[str]:
@@ -212,8 +220,8 @@ class DropIndex:
                 lines.append(f"[{label}]")
                 lines += [self._row_line(r) for r in self._best_per_place(by_kind[kind])[:MAX_OTHERS]]
         if by_kind['relic']:
-            relics = {r['place']: r for r in by_kind['relic']}
-            open_relics = sorted(name for name, r in relics.items() if not r.get('vaulted'))
+            relics = {r['place'] for r in by_kind['relic']}
+            open_relics = sorted(name for name in relics if name.lower() in self._obtainable)
             examples = f" (예: {', '.join(open_relics[:MAX_OTHERS])})" if open_relics else ''
             lines.append(f"[성유물] 전체 {len(relics)}종 중 획득 가능 {len(open_relics)}종{examples}")
         if BEST_QUESTION.search(query):

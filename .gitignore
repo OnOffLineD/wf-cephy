@@ -28,6 +28,7 @@ graphify-out/cache/
 
 # Runtime logs and recovered user data
 data/logs/
+data/game_data_state.json
 data/*.corrupt-*
 data/user_builds.json*
 

@@ -16,6 +16,7 @@ if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
 from scripts.path_config import get_path, get_user_data_path
+from scripts.update_game_data import GameDataUpdater
 
 try:
     from PyQt6.QtCore import (
@@ -322,6 +323,18 @@ class OrdisCompanionApp(QWidget):
     def _translate_game_name(self, name: str) -> str:
         meta = self.diagnoser.indexer.weapons_index.get(name.lower()) or {}
         return meta.get("kr_name") or name
+
+    def check_game_data_in_background(self):
+        # Only announces: new stats change damage results, so applying them stays the user's call.
+        def check():
+            updater = GameDataUpdater()
+            try:
+                if updater.due_for_check() and updater.check()['has_update']:
+                    self.chat_reply_signal.emit("세팔론 오디스", "오퍼레이터님, 새 게임 데이터가 공개되었습니다. `/데이터 갱신`이라고 입력하시면 받아 오겠습니다.", False, None)
+            except Exception as e:
+                print(f"[WARN] Game data check failed: {e}")
+
+        threading.Thread(target=check, daemon=True).start()
 
     def start_llm_in_background(self):
         # Can download a 3GB model on first run, so it must never block the UI thread.
@@ -1087,5 +1100,6 @@ if __name__ == "__main__":
     sys.excepthook = lambda *exc_info: handle_uncaught_exception(*exc_info, panel=panel)
     app.aboutToQuit.connect(panel.llm_runner.stop_server)
     panel.start_llm_in_background()
+    panel.check_game_data_in_background()
     panel.show()
     sys.exit(app.exec())

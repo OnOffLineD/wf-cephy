@@ -6,6 +6,7 @@ import re
 from collections import Counter, defaultdict
 from typing import Any, Dict, List, Tuple
 
+from scripts.game_catalog import KIND_LABELS, GameCatalog
 from scripts.path_config import get_path
 from scripts.wf_data_indexer import WFDataIndexer
 
@@ -33,7 +34,9 @@ FILLER_WORDS = {
 WEAK_WORDS = {'공략', '추천', '미션', '팁', '설명', '워프레임', '가이드', '정보', '질문', '수단', '종류', '시작', '패턴', '속성'}
 PARTICLE = re.compile(r'(한테|에게|에서|으로|이랑|부터|까지|인데|이야|은|는|이|가|을|를|에|의|로|와|과|도|만|랑|야)$')
 # These ask about the item itself, so its card outranks any guide text.
-SPEC_QUESTION = re.compile(r'스펙|공략|정보|체력|실드|방어력|에너지|치명|치확|연사|빌드')
+SPEC_QUESTION = re.compile(r'스펙|공략|정보|체력|실드|방어력|에너지|치명|치확|연사|빌드|설명|어빌리티|능력|패시브')
+# "X 뭐야?" asks about the item, unless a guide is already titled after X.
+WHAT_IS_QUESTION = re.compile(r'뭐야|뭔가|뭐임|효과|무슨')
 
 
 def _compact(text: str) -> str:
@@ -71,6 +74,7 @@ class GuideRetriever:
         self.data_dir = get_path(data_dir) if not os.path.isabs(data_dir) else data_dir
         self.wiki_dir = get_path(wiki_dir) if not os.path.isabs(wiki_dir) else wiki_dir
         self.indexer = WFDataIndexer(data_dir=self.data_dir)
+        self.catalog = GameCatalog()
         self.phrase_aliases, self.word_aliases = self._load_aliases(get_path(aliases_path) if not os.path.isabs(aliases_path) else aliases_path)
         self.documents: List[Dict[str, Any]] = []
         self._postings: Dict[str, Dict[int, float]] = {}
@@ -219,7 +223,11 @@ class GuideRetriever:
         word_runs = [''.join(required[i:i + size]) for size in (3, 2, 1) for i in range(len(required) - size + 1)]
         meta = next((m for m in map(self.indexer.match_weapon_strict, word_runs) if m), None)
         if not meta:
-            return {}
+            entry = self.catalog.find(required)
+            if not entry:
+                return {}
+            title = f"{KIND_LABELS.get(entry.get('kind'), '항목')} 정보: {entry.get('ko')} ({entry.get('en')})"
+            return {'type': 'weapon_spec', 'title': title, 'doc_title': title, 'section': '공식 데이터', 'text': GameCatalog.card_text(entry)}
         kr_name = meta.get('kr_name', '')
         name_display = f"{meta['name']} ({kr_name})" if kr_name else meta['name']
         if meta.get('category') == 'Warframe':
@@ -242,6 +250,9 @@ class GuideRetriever:
                 f"- 연사력: {meta.get('fire_rate')}\n"
                 f"- 상태이상 확률: {round(float(meta.get('status_chance', 0)) * 100, 1)}%"
             )
+        official = self.catalog.by_name.get(_compact(meta['name']))
+        if official:
+            card = "\n".join([card] + GameCatalog.details(official))
         return {'type': 'weapon_spec', 'title': title, 'doc_title': title, 'section': '팩트 카드', 'text': card}
 
     def retrieve(self, query: str, top_k: int = 3) -> List[Dict[str, Any]]:
@@ -253,7 +264,10 @@ class GuideRetriever:
         card = self._fact_card(required)
         if card:
             top = hits[0]['score'] if hits else 0.0
-            if SPEC_QUESTION.search(query) or not hits:
+            # "효과" in "X 효과 뭐야" is the question, not the subject: it must not tie X to a doc titled "상태이상 효과".
+            subject = [word for word in required if not WHAT_IS_QUESTION.search(word)]
+            guide_about_it = bool(hits) and any(word in _compact(hits[0]['doc_title']) for word in subject)
+            if SPEC_QUESTION.search(query) or not hits or (WHAT_IS_QUESTION.search(query) and not guide_about_it):
                 hits.insert(0, {**card, 'score': top + 1.0})
             else:
                 hits.insert(1, {**card, 'score': hits[0]['score']})

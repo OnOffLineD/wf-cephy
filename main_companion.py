@@ -27,6 +27,7 @@ def main():
     sys.excepthook = lambda *exc_info: handle_uncaught_exception(*exc_info, panel=panel)
     app.aboutToQuit.connect(panel.llm_runner.stop_server)
     panel.start_llm_in_background()
+    panel.check_game_data_in_background()
 
     # Floating pet widget (shown by default)
     pet = DesktopPet(asset_dir=os.path.join(ROOT_DIR, "assets", "character"))

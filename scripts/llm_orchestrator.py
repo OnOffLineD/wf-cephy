@@ -13,6 +13,7 @@ from scripts.path_config import get_path, get_user_data_path
 from scripts.short_term_memory import ShortTermMemory
 from scripts.persona_manager import PersonaManager
 from scripts.emotion_parser import EmotionParser
+from scripts.update_game_data import GameDataUpdater, format_report
 
 MOOD_INSTRUCTION = "답변 맨 첫머리에 반드시 현재 감정을 [MOOD:tactical|proud|worried|happy|glitch] 중 하나의 태그로 쓰세요."
 # Always about Ordis or the app itself.
@@ -256,6 +257,18 @@ class LLMOrchestrator:
             best = top_chunks[0]
             return f"{random.choice(ordis_headers)}\n\n{best.get('content') or best.get('text') or ''}\n\n{self._source_line(top_chunks[:1])}"
 
+    def _data_command(self, query: str) -> str:
+        updater = GameDataUpdater()
+        try:
+            if '확인' in query:
+                return "새 게임 데이터가 있습니다. `/데이터 갱신`으로 받을 수 있습니다." if updater.check()['has_update'] else "게임 데이터가 이미 최신입니다."
+            report = updater.update()
+        except Exception as e:
+            return f"게임 데이터를 갱신하지 못했습니다. 기존 데이터는 그대로입니다. ({e})"
+        self._rag_retriever = None
+        self.drop_index = DropIndex()
+        return f"{format_report(report)}\n• 스크린샷 진단에는 앱을 다시 시작하면 반영됩니다."
+
     def _log_unanswered(self, query: str):
         """Local record of what the docs lack, so new guide cards follow real questions."""
         try:
@@ -295,6 +308,9 @@ class LLMOrchestrator:
                         return {'type': 'system', 'report': report, 'action_items': []}
                     else:
                         return {'type': 'system', 'report': '올바른 모드를 지정해 주세요 (예: /컨텍스트 4k, /메모리 2k).', 'action_items': []}
+
+            if user_query.startswith('/데이터'):
+                return {'type': 'system', 'report': self._data_command(user_query), 'action_items': []}
 
             # 2. Handle pending riven
             if hasattr(self, 'diagnoser') and self.diagnoser and hasattr(self.diagnoser, 'has_pending_riven') and self.diagnoser.has_pending_riven():

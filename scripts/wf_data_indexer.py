@@ -22,7 +22,7 @@ class WFDataIndexer:
                 except Exception:
                     pass
 
-            files = ['Primary.json', 'Secondary.json', 'Melee.json', 'Warframes.json', 'Mods.json', 'weapon_arcanes.json']
+            files = ['Primary.json', 'Secondary.json', 'Melee.json', 'Arch-Gun.json', 'Arch-Melee.json', 'Warframes.json', 'Mods.json', 'weapon_arcanes.json']
             for file in files:
                 file_path = os.path.join(self.data_dir, file)
                 if os.path.exists(file_path):
