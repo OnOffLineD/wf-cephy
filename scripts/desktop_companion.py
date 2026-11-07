@@ -124,7 +124,14 @@ class DesktopPet(QWidget):
         # Zero-touch in-game input -> pet motion (polls only while Warframe is foreground)
         self.input_listener = GameInputListener(parent=self)
         self.input_listener.motion_event_signal.connect(self.avatar.apply_motion_action)
-        self.input_listener.start()
+        try:
+            from scripts.persona_manager import PersonaManager
+            motion_enabled = PersonaManager().get_motion_enabled()
+        except Exception:
+            motion_enabled = True
+        self.input_listener.enabled = motion_enabled
+        if motion_enabled:
+            self.input_listener.start()
 
         # Initial bottom-right placement
         self.move_to_home()
@@ -133,6 +140,11 @@ class DesktopPet(QWidget):
         # Keep the old on-screen anchor (right edge -40, bottom -80) for the larger 160x180 canvas
         screen = QApplication.primaryScreen().geometry()
         self.move(screen.width() - 40 - self.avatar.width(), screen.height() - 80 - self.avatar.height())
+
+    def set_motion_enabled(self, enabled: bool):
+        self.input_listener.set_enabled(enabled)
+        if not enabled:
+            self.avatar.set_mood("idle")
 
     def set_mood(self, mood="idle", intensity=1, vfx=None, secondary_mood=None):
         if hasattr(self.avatar, 'set_mood'):
@@ -1235,6 +1247,7 @@ class OrdisCompanionApp(QWidget):
         old_model = pm.get_model_path()
         old_ctx = pm.get_context_size()
         old_gpu = pm.get_gpu_layers()
+        old_motion = pm.get_motion_enabled()
 
         dlg = OrdisPersonaDialog(pm, parent=self)
         if dlg.exec() == QDialog.DialogCode.Accepted:
@@ -1250,6 +1263,17 @@ class OrdisCompanionApp(QWidget):
                 f"오퍼레이터님! 오디스의 성격 모드가 [{persona.get('name', '설정 완료')}] 모드로 설정되었습니다!",
                 is_user=False
             )
+
+            new_motion = pm.get_motion_enabled()
+            pet = getattr(self, 'pet', None)
+            if new_motion != old_motion and pet is not None and hasattr(pet, 'set_motion_enabled'):
+                pet.set_motion_enabled(new_motion)
+                self.add_chat_bubble(
+                    "세팔론 오디스",
+                    "🎮 인게임 입력 연동 펫 모션이 활성화되었습니다." if new_motion
+                    else "🛑 인게임 입력 연동 펫 모션이 비활성화되었습니다. 키 감지 폴링과 타이머가 완전히 정지되었습니다.",
+                    is_user=False
+                )
 
             if model_changed:
                 model_name = os.path.basename(new_model)

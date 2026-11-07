@@ -46,13 +46,24 @@ class GameInputListener(QObject):
         super().__init__(parent)
         self.force_active_for_test = force_active_for_test
         self.paused = False
+        self.enabled = True
         self._held = {action: False for action in ACTION_KEYS}
         self.timer = QTimer(self)
         self.timer.setInterval(interval_ms)
         self.timer.timeout.connect(self.poll)
 
     def start(self):
-        self.timer.start()
+        if self.enabled:
+            self.timer.start()
+
+    def set_enabled(self, enabled: bool):
+        """OFF = zero-trace: timer stopped, held state released, poll() makes no user32 calls."""
+        self.enabled = bool(enabled)
+        if self.enabled:
+            self.timer.start()
+        else:
+            self.timer.stop()
+            self._release_all()
 
     def pause(self):
         self.paused = True
@@ -60,6 +71,8 @@ class GameInputListener(QObject):
 
     def resume(self):
         self.paused = False
+        if self.enabled and not self.timer.isActive():
+            self.timer.start()
 
     def is_game_active(self) -> bool:
         return self.force_active_for_test or "warframe" in _get_foreground_title().lower()
@@ -72,6 +85,8 @@ class GameInputListener(QObject):
                 self.motion_event_signal.emit(action, False)
 
     def poll(self):
+        if not self.enabled:
+            return
         if self.paused:
             return
         if not self.is_game_active():

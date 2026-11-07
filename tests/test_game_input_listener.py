@@ -71,6 +71,50 @@ def test_pause_releases_held_and_blocks_detection(qapp, pressed):
     assert set(lst.events[2:]) == {("d", True), ("jump", True)}
 
 
+def test_game_input_listener_disabled_stops_timer_and_no_api_calls(qapp, monkeypatch):
+    calls = {"key": 0, "fg": 0}
+
+    def fake_key(vk):
+        calls["key"] += 1
+        return -32768 if vk == 0x57 else 0
+
+    def fake_fg():
+        calls["fg"] += 1
+        return "Warframe"
+
+    monkeypatch.setattr(gil, "_get_async_key_state", fake_key)
+    monkeypatch.setattr(gil, "_get_foreground_title", fake_fg)
+    lst = make_listener()
+    lst.start()
+    assert lst.timer.isActive()
+    lst.poll()
+    assert lst.events == [("w", True)]
+
+    released = []
+    orig_release = lst._release_all
+    monkeypatch.setattr(lst, "_release_all", lambda: (released.append(1), orig_release()))
+    lst.set_enabled(False)
+    assert lst.enabled is False
+    assert lst.timer.isActive() is False
+    assert released == [1]
+    assert lst.events == [("w", True), ("w", False)]  # pet settles back to rest
+
+    calls["key"] = calls["fg"] = 0
+    for _ in range(5):
+        lst.poll()
+    lst.start()
+    lst.resume()
+    assert lst.timer.isActive() is False
+    assert calls == {"key": 0, "fg": 0}
+    assert lst.events == [("w", True), ("w", False)]
+
+    lst.set_enabled(True)
+    assert lst.timer.isActive()
+    lst.poll()
+    assert calls["key"] > 0 and lst.events[-1] == ("w", True)
+    lst.timer.stop()
+
+
 def test_chat_panel_show_pauses_and_hide_resumes(qapp, monkeypatch):
     from scripts.desktop_companion import OrdisCompanionApp
     monkeypatch.setattr(OrdisCompanionApp, "refresh_world_events", lambda self: None)
