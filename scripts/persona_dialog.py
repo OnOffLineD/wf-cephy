@@ -148,6 +148,7 @@ class OrdisPersonaDialog(FramelessDialog):
 
         # 2. Tabs Widget: Tab 1 = Persona, Tab 2 = Local Model & Engine
         self.tab_widget = QTabWidget()
+        self.tab_widget.setIconSize(QSize(18, 18))
         card_layout.addWidget(self.tab_widget)
 
         # -------------------------------------------------------------
@@ -164,14 +165,18 @@ class OrdisPersonaDialog(FramelessDialog):
         banner_layout = QHBoxLayout(banner_frame)
         banner_layout.setContentsMargins(8, 6, 8, 6)
         banner_layout.setSpacing(12)
+        banner_layout.setAlignment(Qt.AlignmentFlag.AlignVCenter)
 
-        # Logo Image
+        # Logo Image (vertically centered with the banner text)
         logo_lbl = QLabel()
         logo_pix = load_icon_pixmap("ordis_logo")
         if logo_pix and not logo_pix.isNull():
             logo_lbl.setPixmap(logo_pix.scaled(56, 56, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
         logo_lbl.setFixedSize(58, 58)
-        banner_layout.addWidget(logo_lbl)
+        logo_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.banner_layout = banner_layout
+        self.banner_logo_lbl = logo_lbl
+        banner_layout.addWidget(logo_lbl, alignment=Qt.AlignmentFlag.AlignVCenter)
 
         # Title + Description in banner
         text_col = QVBoxLayout()
@@ -230,7 +235,7 @@ class OrdisPersonaDialog(FramelessDialog):
         self.edit_custom.setFixedHeight(75)
         pt_layout.addWidget(self.edit_custom)
 
-        self.tab_widget.addTab(persona_tab, "🎭 성격 및 페르소나")
+        self.tab_widget.addTab(persona_tab, self._tab_icon("persona"), "성격 및 페르소나")
 
         # -------------------------------------------------------------
         # TAB 2: 로컬 모델 & LLM 엔진 설정
@@ -370,7 +375,7 @@ class OrdisPersonaDialog(FramelessDialog):
         mt_layout.addLayout(gpu_box)
 
         mt_layout.addStretch()
-        self.tab_widget.addTab(model_tab, "로컬 모델 & 엔진")
+        self.tab_widget.addTab(model_tab, self._tab_icon("model"), "로컬 모델 & 엔진")
 
         # -------------------------------------------------------------
         # 3. Bottom Action Buttons (Save & Apply / Cancel)
@@ -448,6 +453,14 @@ class OrdisPersonaDialog(FramelessDialog):
         target_btn = mode_map.get(current_mode, self.radio_random)
         target_btn.setChecked(True)
         self.on_mode_changed()
+
+    @staticmethod
+    def _tab_icon(icon_name) -> QIcon:
+        """Cyan HUD glyph from assets/icons as a tab QIcon (empty QIcon if missing)."""
+        pix = load_icon_pixmap(icon_name)
+        if pix and not pix.isNull():
+            return QIcon(pix)
+        return QIcon()
 
     def _make_section_header(self, icon_name, text, top_margin=0):
         """Build a HUD section header: glyph icon from assets/icons + cyan title label."""

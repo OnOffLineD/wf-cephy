@@ -139,19 +139,30 @@ class FramelessDialog(QDialog):
             super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):
-        # Always end the drag, then re-activate so child widgets accept clicks at once.
+        # End the drag and let Qt finish normal release handling. No forced
+        # activateWindow()/raise_() here: it fights DWM focus and froze clicks.
+        was_dragging = not self._drag_pos.isNull()
         self._drag_pos = QPoint()
-        if event.button() == Qt.MouseButton.LeftButton:
+        super().mouseReleaseEvent(event)
+        if was_dragging and event.button() == Qt.MouseButton.LeftButton:
             event.accept()
-            if self.isVisible():
-                self.activateWindow()
-                self.raise_()
-        else:
-            super().mouseReleaseEvent(event)
 
     def bind_drag_events(self, widget: QWidget):
-        """Route a container widget's mouse events to this dialog's drag handlers."""
-        widget.mousePressEvent = self.mousePressEvent
+        """Route a container widget's mouse events to this dialog's drag handlers.
+
+        Presses over interactive child widgets (buttons, tabs, spin boxes, radio
+        buttons...) are ignored so those children keep receiving hover/click
+        events; only bare margins (and passive labels) start a drag.
+        """
+        def press(event):
+            if event.button() == Qt.MouseButton.LeftButton:
+                child = widget.childAt(event.position().toPoint())
+                if child is not None and child is not widget and not isinstance(child, QLabel):
+                    event.ignore()
+                    return
+            self.mousePressEvent(event)
+
+        widget.mousePressEvent = press
         widget.mouseMoveEvent = self.mouseMoveEvent
         widget.mouseReleaseEvent = self.mouseReleaseEvent
 

@@ -270,3 +270,42 @@ def test_settings_dialog_hud_icons_and_no_emojis(qapp):
         assert not dlg.ctx_preset_buttons[8192].isChecked()
         dlg.context_size_spin.setValue(3000)
         assert not any(b.isChecked() for b in dlg.ctx_preset_buttons.values())
+
+
+def test_settings_tabs_use_hud_icons_and_banner_logo_centered(qapp):
+    with tempfile.TemporaryDirectory() as tmpdir:
+        dlg = OrdisPersonaDialog(persona_manager=SettingsManager(config_path=os.path.join(tmpdir, "s.json")))
+        tabs = dlg.tab_widget
+        assert tabs.count() == 2
+        assert tabs.tabText(0) == "성격 및 페르소나"
+        assert tabs.tabText(1) == "로컬 모델 & 엔진"
+        for i in range(tabs.count()):
+            assert not tabs.tabIcon(i).isNull()
+            assert "🎭" not in tabs.tabText(i)
+        assert tabs.iconSize().width() == 18 and tabs.iconSize().height() == 18
+
+        # Banner logo is vertically centered within the banner row
+        assert bool(dlg.banner_logo_lbl.alignment() & Qt.AlignmentFlag.AlignVCenter)
+        assert bool(dlg.banner_layout.alignment() & Qt.AlignmentFlag.AlignVCenter)
+        item = dlg.banner_layout.itemAt(dlg.banner_layout.indexOf(dlg.banner_logo_lbl))
+        assert bool(item.alignment() & Qt.AlignmentFlag.AlignVCenter)
+
+
+def test_card_press_over_child_widget_is_not_hijacked(qapp):
+    with tempfile.TemporaryDirectory() as tmpdir:
+        dlg = SettingsDialog(persona_manager=SettingsManager(config_path=os.path.join(tmpdir, "s.json")))
+        dlg.move(QPoint(100, 100))
+        dlg.show()
+        qapp.processEvents()
+        card = dlg.main_card
+        tab_pos = dlg.tab_widget.mapTo(card, QPoint(10, 10))
+        assert card.childAt(tab_pos) not in (None, card)
+        btn, mod = Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier
+        press = QMouseEvent(QMouseEvent.Type.MouseButtonPress, QPointF(tab_pos), QPointF(500.0, 500.0), btn, btn, mod)
+        card.mousePressEvent(press)
+        assert not press.isAccepted()
+        assert dlg._drag_pos.isNull()
+        start = dlg.pos()
+        card.mouseMoveEvent(QMouseEvent(QMouseEvent.Type.MouseMove, QPointF(tab_pos), QPointF(600.0, 600.0), btn, btn, mod))
+        assert dlg.pos() == start
+        dlg.close()
