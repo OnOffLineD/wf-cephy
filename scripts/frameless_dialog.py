@@ -126,6 +126,15 @@ class FramelessDialog(QDialog):
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
+            # Prefer the OS-native move (Qt6 startSystemMove): DWM owns the drag, so
+            # no release can be lost and no _drag_pos can get stuck.
+            wh = self.windowHandle()
+            if wh and hasattr(wh, "startSystemMove"):
+                self._drag_pos = QPoint()
+                if wh.startSystemMove():
+                    event.accept()
+                    return
+            # Fallback (no native window yet / headless platform): software move.
             self._drag_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
             event.accept()
         else:

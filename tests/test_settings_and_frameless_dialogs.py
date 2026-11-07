@@ -182,7 +182,7 @@ def test_frameless_dialog_stays_on_top(qapp):
     assert bool(DamageBreakdownDialog().windowFlags() & Qt.WindowType.WindowStaysOnTopHint) is True
 
 
-@pytest.mark.parametrize("drag_source", ["header", "card"])
+@pytest.mark.parametrize("drag_source", ["header"])  # card drag removed in T-UI-10
 def test_settings_buttons_clickable_after_drag(qapp, drag_source):
     try:
         from PyQt6.QtTest import QTest
@@ -309,3 +309,52 @@ def test_card_press_over_child_widget_is_not_hijacked(qapp):
         card.mouseMoveEvent(QMouseEvent(QMouseEvent.Type.MouseMove, QPointF(tab_pos), QPointF(600.0, 600.0), btn, btn, mod))
         assert dlg.pos() == start
         dlg.close()
+
+
+def test_header_uses_system_move_and_card_does_not_drag(qapp, monkeypatch):
+    try:
+        from PyQt6.QtTest import QTest
+        from PyQt6.QtWidgets import QFrame, QDialog
+    except ImportError:
+        from PySide6.QtTest import QTest
+        from PySide6.QtWidgets import QFrame, QDialog
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        sm = SettingsManager(config_path=os.path.join(tmpdir, "s.json"))
+        dlg = SettingsDialog(persona_manager=sm)
+        dlg.move(QPoint(100, 100))
+        dlg.show()
+        qapp.processEvents()
+        wh = dlg.windowHandle()
+        assert wh is not None and hasattr(wh, "startSystemMove") is True
+
+        # Header press delegates to the native move when the platform supports it.
+        calls = []
+        monkeypatch.setattr(type(wh), "startSystemMove", lambda self: calls.append(1) or True)
+        header = dlg.findChild(QFrame, "framelessHeader")
+        btn, nob, mod = Qt.MouseButton.LeftButton, Qt.MouseButton.NoButton, Qt.KeyboardModifier.NoModifier
+        press = QMouseEvent(QMouseEvent.Type.MouseButtonPress, QPointF(5.0, 5.0), QPointF(120.0, 120.0), btn, btn, mod)
+        header.mousePressEvent(press)
+        assert calls == [1] and press.isAccepted() and dlg._drag_pos.isNull()
+        header.mouseReleaseEvent(QMouseEvent(QMouseEvent.Type.MouseButtonRelease, QPointF(5.0, 5.0),
+                                             QPointF(180.0, 160.0), btn, nob, mod))
+        assert dlg._drag_pos.isNull()
+        monkeypatch.undo()
+
+        # main_card no longer hijacks mouse events: pressing/moving on it never drags.
+        start = dlg.pos()
+        card = dlg.main_card
+        card.mousePressEvent(QMouseEvent(QMouseEvent.Type.MouseButtonPress, QPointF(3.0, 3.0), QPointF(103.0, 103.0), btn, btn, mod))
+        card.mouseMoveEvent(QMouseEvent(QMouseEvent.Type.MouseMove, QPointF(80.0, 80.0), QPointF(180.0, 180.0), btn, btn, mod))
+        assert dlg.pos() == start and dlg._drag_pos.isNull()
+
+        # Child widgets inside the card consume their own clicks.
+        QTest.mouseClick(dlg.radio_caretaker, Qt.MouseButton.LeftButton)
+        assert dlg.radio_caretaker.isChecked()
+        fired = []
+        dlg.btn_save.clicked.connect(lambda: fired.append("save"))
+        QTest.mouseClick(dlg.btn_save, Qt.MouseButton.LeftButton)
+        assert fired == ["save"]
+        assert dlg.result() == QDialog.DialogCode.Accepted
+        assert sm.get_mode() == "caretaker"
+        assert not dlg.isVisible()
