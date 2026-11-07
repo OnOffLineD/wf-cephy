@@ -132,9 +132,9 @@
     "semantic_hash": "b429a7a5ec064164881604004dd22b48"
   },
   "scripts/desktop_companion.py": {
-    "mtime": 1794059816.103,
-    "seen": 1794059987.9751272,
-    "ast_hash": "37b5b8de31602c359b3500102db95db2",
+    "mtime": 1794068334.537,
+    "seen": 1794068494.0018518,
+    "ast_hash": "5d91e43d8e09adbd26cf78186780bd57",
     "semantic_hash": ""
   },
   "scripts/embedded_llm_runner.py": {
@@ -390,9 +390,9 @@
     "semantic_hash": "d7604ed05213ec59f9be2e4ddcec80db"
   },
   "tests/test_companion_ui_tabs.py": {
-    "mtime": 1794028711.938,
-    "seen": 1794029471.1295493,
-    "ast_hash": "d2abdde7bdeb6bcc3ebe7083ee5c388c",
+    "mtime": 1794068334.556,
+    "seen": 1794068494.0247006,
+    "ast_hash": "b6b77eeee9cad42f19d50653a8cdd316",
     "semantic_hash": ""
   },
   "tests/test_riven_diagnosis_workflow.py": {
@@ -906,9 +906,9 @@
     "semantic_hash": ""
   },
   "PROGRESS.md": {
-    "mtime": 1794048867.28,
-    "seen": 1794049018.9442773,
-    "ast_hash": "50e424ed97bdc00bb204e6814bc1797b",
+    "mtime": 1794064675.876,
+    "seen": 1794067461.6831396,
+    "ast_hash": "e49c01912d519fb1e56d125dd9f0d972",
     "semantic_hash": ""
   },
   "harness/GLOBAL_EXPERIENCE.md": {
@@ -1182,9 +1182,9 @@
     "semantic_hash": ""
   },
   "data/guide_aliases.json": {
-    "mtime": 1794028708.95,
-    "seen": 1794029471.1138387,
-    "ast_hash": "024d70498aa8d323dc14e53a6cfb108c",
+    "mtime": 1794067433.55,
+    "seen": 1794067461.6099262,
+    "ast_hash": "f67b3718b7429530cbbe0ea4d758a97e",
     "semantic_hash": ""
   },
   "scripts/drop_lookup.py": {
@@ -1206,9 +1206,9 @@
     "semantic_hash": ""
   },
   "tests/test_guide_search.py": {
-    "mtime": 1794028712.272,
-    "seen": 1794029471.1299736,
-    "ast_hash": "6e794b6ac67bdae9e205827d904eb0b9",
+    "mtime": 1794067433.627,
+    "seen": 1794067461.6632047,
+    "ast_hash": "6c9e7e4bbf598f480f3baed14877b2cb",
     "semantic_hash": ""
   },
   "data/raw_wfcd/Arch-Gun.json": {
@@ -1326,9 +1326,9 @@
     "semantic_hash": ""
   },
   ".orchestra/PROGRESS.md": {
-    "mtime": 1794059815.709,
-    "seen": 1794059988.013072,
-    "ast_hash": "b02fe56b1e69974eda7782ca0ac5a625",
+    "mtime": 1794068337.359,
+    "seen": 1794068494.0443327,
+    "ast_hash": "84b1fa5bc90d55d45097af1c9bb0a337",
     "semantic_hash": ""
   },
   ".orchestra/prompts/builder.md": {
@@ -1767,6 +1767,24 @@
     "mtime": 1794033785.064,
     "seen": 1794043103.6356869,
     "ast_hash": "12589b5e5aff6a1eef85846a786b08c9",
+    "semantic_hash": ""
+  },
+  "rules/wiki_docs/game_modes/endgame_progression_guide.md": {
+    "mtime": 1794067433.568,
+    "seen": 1794067461.7036073,
+    "ast_hash": "ed90bb44a52dff9f7eeba123f58d4f7d",
+    "semantic_hash": ""
+  },
+  "rules/wiki_docs/game_settings/official_game_settings.md": {
+    "mtime": 1794067433.59,
+    "seen": 1794067461.7046313,
+    "ast_hash": "4e4e22c04b94d61ce3b545204fc7af3f",
+    "semantic_hash": ""
+  },
+  "rules/wiki_docs/quests_and_story/official_lore_and_factions.md": {
+    "mtime": 1794067433.606,
+    "seen": 1794067461.7117164,
+    "ast_hash": "74566a2911cb34e1bfce18aa201bde69",
     "semantic_hash": ""
   }
 }

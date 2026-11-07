@@ -16,22 +16,23 @@
 | **Phase 3** | Desktop Companion UI (PyQt6) & World State Tracker | `AGENT_UI`, `AGENT_QA` | **COMPLETED** | UI Tab & Tracker Tests PASS |
 | **Phase 4** | 3-Tier Chat Routing & Ordis LLM Orchestration (1-Token GBNF + Dynamic Tool Grammar) | `AGENT_CORE`, `AGENT_QA` | **COMPLETED** | Chat Intent, GBNF Grammar & Memory Tests PASS |
 | **Phase 5** | Unified Settings, Frameless Dialog Architecture & Pet Motion Safety Hard-Lock | `AGENT_UI`, `AGENT_CORE`, `AGENT_QA` | **COMPLETED** | T-PET-3 Full Suite (518 tests passed) & `probe.py` 3-Gate PASS |
+| **Phase 6** | Official Game Settings/Lore RAG & Saved Build Vault (2x4 Grid) UI | `AGENT_CORE`, `AGENT_UI`, `AGENT_QA` | **COMPLETED** | T-RAG-1 & T-BUILD-TAB-1 Full Suite (534 tests passed) & `probe.py` 3-Gate PASS |
 
 ---
 
 ## 2. Active Inter-Agent Packets
 ```yaml
 @[AGENT_PACKET]
-from: AGENT_CORE
+from: AGENT_UI
 to: AGENT_SCRIBE
-phase: PHASE_5
+phase: PHASE_6
 status: PASSED
-graphify_nodes: ["GameInputListener", "DesktopPet", "SettingsManager", "OrdisPersonaDialog"]
-touched_files: ["scripts/game_input_listener.py", "scripts/persona_dialog.py", "scripts/persona_manager.py", "scripts/desktop_companion.py", "tests/test_game_input_listener.py", "tests/test_settings_and_frameless_dialogs.py"]
+graphify_nodes: ["OrdisCompanionApp", "MorphingTabBar", "BuildStore", "GuideRetriever"]
+touched_files: ["scripts/desktop_companion.py", "rules/wiki_docs/game_settings/official_game_settings.md", "rules/wiki_docs/quests_and_story/official_lore_and_factions.md", "rules/wiki_docs/game_modes/endgame_progression_guide.md", "data/guide_aliases.json", "tests/test_companion_ui_tabs.py", "tests/test_guide_search.py"]
 git_commit_ref: "master"
 payload:
-  task: "Implemented 3-layer zero-trace hard blocking (timer stop, 0 API calls, state flush) for in-game motion with dynamic settings hot-toggle"
-  verification: "pytest (518 tests passed 100%) and probe.py 3-gate verification passed"
+  task: "Implemented official Korean game settings/lore/endgame guide RAG docs and added 4th '빌드' vault tab with 2x4 visual grid and action buttons"
+  verification: "pytest (534 tests passed 100%) and probe.py 3-gate verification passed"
   issue: "none"
 @[/AGENT_PACKET]
 ```
