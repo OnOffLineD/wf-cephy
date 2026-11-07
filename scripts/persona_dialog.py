@@ -1,42 +1,103 @@
+import os
 import sys
 from typing import Optional
 
 try:
     from PyQt6.QtWidgets import (
         QDialog, QRadioButton, QButtonGroup, QTextEdit, QPushButton,
-        QVBoxLayout, QHBoxLayout, QLabel, QFrame, QApplication
+        QVBoxLayout, QHBoxLayout, QLabel, QFrame, QApplication,
+        QTabWidget, QWidget, QLineEdit, QFileDialog, QSpinBox, QComboBox
     )
-    from PyQt6.QtCore import Qt
+    from PyQt6.QtCore import Qt, QPoint, QSize
+    from PyQt6.QtGui import QIcon, QPixmap
 except ImportError:
     from PySide6.QtWidgets import (
         QDialog, QRadioButton, QButtonGroup, QTextEdit, QPushButton,
-        QVBoxLayout, QHBoxLayout, QLabel, QFrame, QApplication
+        QVBoxLayout, QHBoxLayout, QLabel, QFrame, QApplication,
+        QTabWidget, QWidget, QLineEdit, QFileDialog, QSpinBox, QComboBox
     )
-    from PySide6.QtCore import Qt
+    from PySide6.QtCore import Qt, QPoint, QSize
+    from PySide6.QtGui import QIcon, QPixmap
 
 from scripts.persona_manager import PersonaManager, DEFAULT_PRESETS
+from scripts.hud_widgets import load_icon_pixmap, ICON_DIR
+from scripts.path_config import get_path
 
 class OrdisPersonaDialog(QDialog):
+    """WF-Companion Settings & Cephalon Ordis Persona Customization Dialog.
+    Frameless, draggable, and themed for Warframe dark HUD aesthetics.
+    """
     def __init__(self, persona_manager: Optional[PersonaManager] = None, parent=None):
         super().__init__(parent)
         self.persona_manager = persona_manager or PersonaManager()
+        self._drag_pos = QPoint()
         self.init_ui()
 
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._drag_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+            event.accept()
+        else:
+            super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if event.buttons() == Qt.MouseButton.LeftButton and hasattr(self, '_drag_pos') and not self._drag_pos.isNull():
+            self.move(event.globalPosition().toPoint() - self._drag_pos)
+            event.accept()
+        else:
+            super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        self._drag_pos = QPoint()
+        super().mouseReleaseEvent(event)
+
     def init_ui(self):
-        self.setWindowTitle("세팔론 오디스 성격 및 페르소나 설정")
-        self.setFixedSize(480, 560)
-        self.setWindowFlags(self.windowFlags() & ~Qt.WindowType.WindowContextHelpButtonHint)
+        self.setWindowTitle("워프레임 컴패니언 설정 (Settings)")
+        self.setFixedSize(540, 680)
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
 
         self.setStyleSheet("""
             QDialog {
+                background: transparent;
+            }
+            QFrame#mainCard {
                 background-color: #0c1017;
                 border: 1.5px solid #00d2ff;
-                border-radius: 16px;
+                border-radius: 18px;
                 color: #e2e8f0;
             }
             QLabel {
                 color: #e2e8f0;
                 font-size: 12px;
+            }
+            QTabWidget::pane {
+                border: 1px solid rgba(0, 210, 255, 0.25);
+                border-radius: 10px;
+                background: rgba(14, 20, 31, 0.7);
+                top: -1px;
+            }
+            QTabBar::tab {
+                background: #111722;
+                color: #94a3b8;
+                border: 1px solid #1e293b;
+                border-bottom: none;
+                border-top-left-radius: 8px;
+                border-top-right-radius: 8px;
+                padding: 8px 18px;
+                font-size: 12px;
+                font-weight: bold;
+                margin-right: 4px;
+            }
+            QTabBar::tab:selected {
+                background: #182234;
+                color: #00e5ff;
+                border: 1px solid #00d2ff;
+                border-bottom: 1px solid #182234;
+            }
+            QTabBar::tab:hover:!selected {
+                color: #e2e8f0;
+                background: #162030;
             }
             QRadioButton {
                 color: #cbd5e1;
@@ -57,6 +118,21 @@ class OrdisPersonaDialog(QDialog):
                 background: #00d2ff;
                 border: 1.5px solid #ffffff;
             }
+            QLineEdit, QSpinBox, QComboBox {
+                background-color: #111722;
+                border: 1px solid #1e293b;
+                border-radius: 8px;
+                color: #f8fafc;
+                font-size: 12px;
+                padding: 6px 10px;
+            }
+            QLineEdit:focus, QSpinBox:focus, QComboBox:focus {
+                border: 1px solid #00d2ff;
+            }
+            QComboBox::drop-down {
+                border: none;
+                width: 24px;
+            }
             QTextEdit {
                 background-color: #111722;
                 border: 1px solid #1e293b;
@@ -70,25 +146,119 @@ class OrdisPersonaDialog(QDialog):
             }
         """)
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(12)
+        root_layout = QVBoxLayout(self)
+        root_layout.setContentsMargins(10, 10, 10, 10)
 
-        # Header Title
-        title_lbl = QLabel("🎭 세팔론 오디스 성격 및 말투 커스터마이징")
-        title_lbl.setStyleSheet("color: #00e5ff; font-size: 15px; font-weight: bold;")
-        layout.addWidget(title_lbl)
+        main_card = QFrame()
+        main_card.setObjectName("mainCard")
+        card_layout = QVBoxLayout(main_card)
+        card_layout.setContentsMargins(16, 12, 16, 16)
+        card_layout.setSpacing(10)
 
-        sub_lbl = QLabel("오디스가 대화나 미션 조언 시 사용할 기본 페르소나와 성격 모드를 선택하십시오.")
+        # 1. Custom Frameless Titlebar
+        header = QFrame()
+        header.setObjectName("dialogHeader")
+        header.setStyleSheet("background: transparent; border-bottom: 1px solid rgba(0, 210, 255, 0.2); padding-bottom: 6px;")
+        h_layout = QHBoxLayout(header)
+        h_layout.setContentsMargins(0, 0, 0, 0)
+        h_layout.setSpacing(8)
+
+        settings_pix = load_icon_pixmap("settings")
+        if settings_pix and not settings_pix.isNull():
+            icon_lbl = QLabel()
+            icon_lbl.setPixmap(settings_pix.scaled(20, 20, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+            icon_lbl.setFixedSize(22, 22)
+            h_layout.addWidget(icon_lbl)
+
+        win_title = QLabel("워프레임 컴패니언 설정 (WF-Companion Settings)")
+        win_title.setStyleSheet("color: #00e5ff; font-weight: bold; font-size: 13px;")
+        h_layout.addWidget(win_title)
+        h_layout.addStretch()
+
+        close_btn = QPushButton("✕")
+        close_btn.setFixedSize(28, 28)
+        close_btn.setStyleSheet("""
+            QPushButton {
+                background: transparent;
+                color: #94a3b8;
+                font-size: 15px;
+                font-weight: bold;
+                border: none;
+                border-radius: 6px;
+            }
+            QPushButton:hover {
+                background: rgba(244, 63, 94, 0.25);
+                color: #ff3366;
+            }
+        """)
+        close_btn.setToolTip("닫기")
+        close_btn.clicked.connect(self.reject)
+        h_layout.addWidget(close_btn)
+
+        # Allow dragging window from header
+        def header_press(event):
+            if event.button() == Qt.MouseButton.LeftButton:
+                self._drag_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+                event.accept()
+        def header_move(event):
+            if event.buttons() == Qt.MouseButton.LeftButton and hasattr(self, '_drag_pos') and not self._drag_pos.isNull():
+                self.move(event.globalPosition().toPoint() - self._drag_pos)
+                event.accept()
+        def header_release(event):
+            self._drag_pos = QPoint()
+
+        header.mousePressEvent = header_press
+        header.mouseMoveEvent = header_move
+        header.mouseReleaseEvent = header_release
+        card_layout.addWidget(header)
+
+        # 2. Tabs Widget: Tab 1 = Persona, Tab 2 = Local Model & Engine
+        self.tab_widget = QTabWidget()
+        card_layout.addWidget(self.tab_widget)
+
+        # -------------------------------------------------------------
+        # TAB 1: 세팔론 오디스 성격 커스터마이징
+        # -------------------------------------------------------------
+        persona_tab = QWidget()
+        pt_layout = QVBoxLayout(persona_tab)
+        pt_layout.setContentsMargins(12, 12, 12, 12)
+        pt_layout.setSpacing(10)
+
+        # Cephalon Ordis Logo & Header Banner
+        banner_frame = QFrame()
+        banner_frame.setStyleSheet("background: rgba(18, 24, 38, 0.7); border: 1px solid rgba(0, 210, 255, 0.25); border-radius: 10px; padding: 6px;")
+        banner_layout = QHBoxLayout(banner_frame)
+        banner_layout.setContentsMargins(8, 6, 8, 6)
+        banner_layout.setSpacing(12)
+
+        # Logo Image
+        logo_lbl = QLabel()
+        logo_pix = load_icon_pixmap("ordis_logo")
+        if logo_pix and not logo_pix.isNull():
+            logo_lbl.setPixmap(logo_pix.scaled(56, 56, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+        logo_lbl.setFixedSize(58, 58)
+        banner_layout.addWidget(logo_lbl)
+
+        # Title + Description in banner
+        text_col = QVBoxLayout()
+        text_col.setSpacing(2)
+        title_lbl = QLabel("세팔론 오디스 성격 및 말투 커스터마이징")
+        title_lbl.setStyleSheet("color: #00e5ff; font-size: 14px; font-weight: bold;")
+        text_col.addWidget(title_lbl)
+
+        sub_lbl = QLabel("오디스가 대화나 조언 시 사용할 기본 페르소나와 성격 모드를 선택하십시오.")
         sub_lbl.setStyleSheet("color: #94a3b8; font-size: 11px;")
         sub_lbl.setWordWrap(True)
-        layout.addWidget(sub_lbl)
+        text_col.addWidget(sub_lbl)
+        banner_layout.addLayout(text_col)
+
+        pt_layout.addWidget(banner_frame)
 
         # Radio button selection frame
         radio_frame = QFrame()
-        radio_frame.setStyleSheet("background: rgba(18, 24, 38, 0.7); border: 1px solid #1e293b; border-radius: 10px; padding: 10px;")
+        radio_frame.setStyleSheet("background: rgba(18, 24, 38, 0.5); border: 1px solid #1e293b; border-radius: 10px; padding: 6px;")
         rf_layout = QVBoxLayout(radio_frame)
-        rf_layout.setSpacing(8)
+        rf_layout.setSpacing(6)
 
         self.btn_group = QButtonGroup(self)
         self.radio_random = QRadioButton("🎲  랜덤 변주 (매번 3가지 성격 중 무작위 변신)")
@@ -107,31 +277,185 @@ class OrdisPersonaDialog(QDialog):
             rf_layout.addWidget(btn)
             btn.toggled.connect(self.on_mode_changed)
 
-        layout.addWidget(radio_frame)
+        pt_layout.addWidget(radio_frame)
 
         # Description / Preview Box
         self.lbl_preview = QLabel()
-        self.lbl_preview.setStyleSheet("background: #141c2b; border: 1px solid #233147; border-radius: 8px; padding: 10px; color: #38bdf8; font-size: 11px; line-height: 1.4;")
+        self.lbl_preview.setStyleSheet("background: #141c2b; border: 1px solid #233147; border-radius: 8px; padding: 8px; color: #38bdf8; font-size: 11px; line-height: 1.4;")
         self.lbl_preview.setWordWrap(True)
-        layout.addWidget(self.lbl_preview)
+        pt_layout.addWidget(self.lbl_preview)
 
         # Custom Prompt Edit Area
         self.lbl_custom_title = QLabel("✏️ 사용자 지정 프롬프트 (오디스에게 부여할 성격 지침):")
         self.lbl_custom_title.setStyleSheet("color: #e2e8f0; font-weight: bold; font-size: 11px;")
-        layout.addWidget(self.lbl_custom_title)
+        pt_layout.addWidget(self.lbl_custom_title)
 
         self.edit_custom = QTextEdit()
         self.edit_custom.setPlaceholderText("예: 당신은 츤데레 성격의 오디스입니다. 겉으로는 툴툴대면서도 오퍼레이터를 누구보다 챙겨주며 답변하세요.")
         self.edit_custom.setText(self.persona_manager.get_custom_prompt())
-        self.edit_custom.setFixedHeight(95)
-        layout.addWidget(self.edit_custom)
+        self.edit_custom.setFixedHeight(75)
+        pt_layout.addWidget(self.edit_custom)
 
-        # Bottom Buttons
+        self.tab_widget.addTab(persona_tab, "🎭 성격 및 페르소나")
+
+        # -------------------------------------------------------------
+        # TAB 2: 로컬 모델 & LLM 엔진 설정
+        # -------------------------------------------------------------
+        model_tab = QWidget()
+        mt_layout = QVBoxLayout(model_tab)
+        mt_layout.setContentsMargins(14, 14, 14, 14)
+        mt_layout.setSpacing(12)
+
+        # Section 1: GGUF Model Path Selection
+        sec1_title = QLabel("🧠 로컬 GGUF 모델 파일 지정")
+        sec1_title.setStyleSheet("color: #00e5ff; font-weight: bold; font-size: 13px;")
+        mt_layout.addWidget(sec1_title)
+
+        sec1_desc = QLabel("원하는 llama.cpp 호환 `.gguf` 모델 파일을 지정하면 오디스 대화 엔진에 즉시 적용됩니다.")
+        sec1_desc.setStyleSheet("color: #94a3b8; font-size: 11px;")
+        sec1_desc.setWordWrap(True)
+        mt_layout.addWidget(sec1_desc)
+
+        # Preset / detected models combo
+        combo_box = QHBoxLayout()
+        combo_lbl = QLabel("감지된 모델:")
+        combo_lbl.setStyleSheet("color: #cbd5e1; font-size: 11px; min-width: 70px;")
+        self.model_combo = QComboBox()
+        self._populate_model_combo()
+        self.model_combo.currentIndexChanged.connect(self._on_model_combo_selected)
+        combo_box.addWidget(combo_lbl)
+        combo_box.addWidget(self.model_combo)
+        mt_layout.addLayout(combo_box)
+
+        # Path input line + Browse button
+        path_box = QHBoxLayout()
+        self.model_path_edit = QLineEdit()
+        self.model_path_edit.setText(self.persona_manager.get_model_path())
+        self.model_path_edit.setPlaceholderText("GGUF 모델 파일 전체 경로 (예: models/my_model.gguf)")
+        self.btn_browse = QPushButton("📁 찾아보기...")
+        self.btn_browse.setStyleSheet("""
+            QPushButton {
+                background: #1e293b;
+                color: #00e5ff;
+                border: 1px solid #334155;
+                border-radius: 6px;
+                padding: 6px 12px;
+                font-size: 11px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background: #334155;
+                color: #ffffff;
+            }
+        """)
+        self.btn_browse.clicked.connect(self.browse_model_file)
+        path_box.addWidget(self.model_path_edit)
+        path_box.addWidget(self.btn_browse)
+        mt_layout.addLayout(path_box)
+
+        # Section 2: Context Length (n_ctx)
+        sec2_title = QLabel("📏 컨텍스트 길이 (Context Size / Token Window)")
+        sec2_title.setStyleSheet("color: #00e5ff; font-weight: bold; font-size: 13px; margin-top: 10px;")
+        mt_layout.addWidget(sec2_title)
+
+        sec2_desc = QLabel("대화 기억 및 공략 문맥 길이를 조절합니다. (4096 = 기본 권장, 8192/16384 = 대용량 컨텍스트)")
+        sec2_desc.setStyleSheet("color: #94a3b8; font-size: 11px;")
+        sec2_desc.setWordWrap(True)
+        mt_layout.addWidget(sec2_desc)
+
+        ctx_box = QHBoxLayout()
+        self.context_size_spin = QSpinBox()
+        self.context_size_spin.setRange(512, 65536)
+        self.context_size_spin.setSingleStep(1024)
+        self.context_size_spin.setValue(self.persona_manager.get_context_size())
+        self.context_size_spin.setSuffix(" 토큰")
+
+        # Quick preset buttons
+        preset_box = QHBoxLayout()
+        preset_box.setSpacing(6)
+        for val in [2048, 4096, 8192, 16384]:
+            btn = QPushButton(f"{val}")
+            btn.setStyleSheet("""
+                QPushButton {
+                    background: #162030;
+                    color: #94a3b8;
+                    border: 1px solid #24324d;
+                    border-radius: 6px;
+                    padding: 5px 8px;
+                    font-size: 11px;
+                }
+                QPushButton:hover {
+                    background: #24324d;
+                    color: #00e5ff;
+                }
+            """)
+            btn.clicked.connect(lambda _, v=val: self.context_size_spin.setValue(v))
+            preset_box.addWidget(btn)
+
+        ctx_box.addWidget(self.context_size_spin)
+        ctx_box.addLayout(preset_box)
+        mt_layout.addLayout(ctx_box)
+
+        # Section 3: GPU Offload Layers
+        sec3_title = QLabel("⚡ GPU 가속 레이어 수 (n_gpu_layers)")
+        sec3_title.setStyleSheet("color: #00e5ff; font-weight: bold; font-size: 13px; margin-top: 10px;")
+        mt_layout.addWidget(sec3_title)
+
+        gpu_box = QHBoxLayout()
+        self.gpu_layers_spin = QSpinBox()
+        self.gpu_layers_spin.setRange(0, 128)
+        self.gpu_layers_spin.setValue(self.persona_manager.get_gpu_layers())
+        self.gpu_layers_spin.setSuffix(" 레이어")
+        gpu_hint = QLabel("💡 99 = 전체 GPU 가속 (가장 빠름), 0 = CPU 전용")
+        gpu_hint.setStyleSheet("color: #64748b; font-size: 11px;")
+        gpu_box.addWidget(self.gpu_layers_spin)
+        gpu_box.addWidget(gpu_hint)
+        gpu_box.addStretch()
+        mt_layout.addLayout(gpu_box)
+
+        mt_layout.addStretch()
+        self.tab_widget.addTab(model_tab, "🧠 로컬 모델 & 엔진")
+
+        # -------------------------------------------------------------
+        # 3. Bottom Action Buttons (Save & Apply / Cancel)
+        # -------------------------------------------------------------
         btn_box = QHBoxLayout()
-        btn_box.setSpacing(10)
+        btn_box.setSpacing(12)
 
-        self.btn_save = QPushButton("💾 저장 및 적용")
-        self.btn_save.setFixedHeight(36)
+        # Cancel button with project-matching icon
+        self.btn_cancel = QPushButton(" 취소")
+        self.btn_cancel.setFixedHeight(38)
+        self.btn_cancel.setMinimumWidth(110)
+        cancel_pix = load_icon_pixmap("btn_cancel")
+        if cancel_pix and not cancel_pix.isNull():
+            self.btn_cancel.setIcon(QIcon(cancel_pix))
+            self.btn_cancel.setIconSize(QSize(20, 20))
+        self.btn_cancel.setStyleSheet("""
+            QPushButton {
+                background: #1e293b;
+                color: #94a3b8;
+                border: 1px solid #334155;
+                border-radius: 8px;
+                font-size: 12px;
+                font-weight: bold;
+                padding: 0 14px;
+            }
+            QPushButton:hover {
+                background: #334155;
+                color: #ffffff;
+                border: 1px solid #64748b;
+            }
+        """)
+        self.btn_cancel.clicked.connect(self.reject)
+
+        # Save and Apply button with project-matching icon
+        self.btn_save = QPushButton(" 저장 및 적용")
+        self.btn_save.setFixedHeight(38)
+        self.btn_save.setMinimumWidth(140)
+        save_pix = load_icon_pixmap("btn_save")
+        if save_pix and not save_pix.isNull():
+            self.btn_save.setIcon(QIcon(save_pix))
+            self.btn_save.setIconSize(QSize(20, 20))
         self.btn_save.setStyleSheet("""
             QPushButton {
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #0088cc, stop:1 #00d2ff);
@@ -140,37 +464,23 @@ class OrdisPersonaDialog(QDialog):
                 border-radius: 8px;
                 border: none;
                 font-size: 12px;
+                padding: 0 16px;
             }
             QPushButton:hover {
-                background: #38bdf8;
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #00a0e9, stop:1 #38bdf8);
                 color: #ffffff;
             }
         """)
         self.btn_save.clicked.connect(self.save)
 
-        self.btn_cancel = QPushButton("취소")
-        self.btn_cancel.setFixedHeight(36)
-        self.btn_cancel.setStyleSheet("""
-            QPushButton {
-                background: #1e293b;
-                color: #94a3b8;
-                border: 1px solid #334155;
-                border-radius: 8px;
-                font-size: 12px;
-            }
-            QPushButton:hover {
-                background: #334155;
-                color: #ffffff;
-            }
-        """)
-        self.btn_cancel.clicked.connect(self.reject)
-
         btn_box.addStretch()
         btn_box.addWidget(self.btn_cancel)
         btn_box.addWidget(self.btn_save)
-        layout.addLayout(btn_box)
+        card_layout.addLayout(btn_box)
 
-        # Initialize current state from persona_manager
+        root_layout.addWidget(main_card)
+
+        # Initialize current persona state
         current_mode = self.persona_manager.get_mode()
         mode_map = {
             "random": self.radio_random,
@@ -182,6 +492,45 @@ class OrdisPersonaDialog(QDialog):
         target_btn = mode_map.get(current_mode, self.radio_random)
         target_btn.setChecked(True)
         self.on_mode_changed()
+
+    def _populate_model_combo(self):
+        self.model_combo.clear()
+        self.model_combo.addItem("직접 지정 / 외부 파일", "")
+
+        models_dir = get_path("models")
+        if os.path.exists(models_dir):
+            for fname in os.listdir(models_dir):
+                if fname.lower().endswith(".gguf"):
+                    rel_p = f"models/{fname}"
+                    self.model_combo.addItem(f"📦 {fname}", rel_p)
+
+        curr = self.persona_manager.get_model_path()
+        for i in range(self.model_combo.count()):
+            if self.model_combo.itemData(i) == curr:
+                self.model_combo.setCurrentIndex(i)
+                break
+
+    def _on_model_combo_selected(self, idx):
+        path = self.model_combo.itemData(idx)
+        if path:
+            self.model_path_edit.setText(path)
+
+    def browse_model_file(self):
+        curr_dir = os.path.dirname(self.model_path_edit.text() or get_path("models"))
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "GGUF 모델 파일 선택",
+            curr_dir,
+            "GGUF Models (*.gguf);;All Files (*.*)"
+        )
+        if file_path:
+            # Prefer relative path if inside project root
+            root = get_path()
+            if file_path.startswith(root):
+                rel_path = os.path.relpath(file_path, root).replace("\\", "/")
+                self.model_path_edit.setText(rel_path)
+            else:
+                self.model_path_edit.setText(file_path)
 
     def on_mode_changed(self):
         is_custom = self.radio_custom.isChecked()
@@ -210,6 +559,7 @@ class OrdisPersonaDialog(QDialog):
             )
 
     def save(self):
+        # 1. Save Persona Mode & Prompt
         if self.radio_random.isChecked():
             mode = "random"
         elif self.radio_caretaker.isChecked():
@@ -223,7 +573,23 @@ class OrdisPersonaDialog(QDialog):
 
         custom_prompt = self.edit_custom.toPlainText().strip()
         self.persona_manager.set_mode(mode, custom_prompt)
+
+        # 2. Save Model & Context Settings
+        model_path = self.model_path_edit.text().strip()
+        if model_path:
+            self.persona_manager.set_model_path(model_path)
+
+        context_size = self.context_size_spin.value()
+        self.persona_manager.set_context_size(context_size)
+
+        gpu_layers = self.gpu_layers_spin.value()
+        self.persona_manager.set_gpu_layers(gpu_layers)
+
         self.accept()
+
+
+# Alias for unified naming
+SettingsDialog = OrdisPersonaDialog
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

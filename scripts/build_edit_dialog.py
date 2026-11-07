@@ -8,11 +8,12 @@ except ImportError:
     from PySide6.QtWidgets import QComboBox, QCompleter, QDialog, QGridLayout, QHBoxLayout, QLabel, QPushButton, QVBoxLayout
 
 from scripts.build_store import GRID_SLOTS, RIVEN_MOD
+from scripts.frameless_dialog import apply_frameless_shell
 
 EMPTY = "(비어 있음)"
 RIVEN_LABEL = "리벤 모드"
 STYLE = (
-    "QDialog { background-color: #0d131f; } QLabel { color: #94a3b8; font-size: 12px; } "
+    "QDialog { background-color: #0c1017; border: 1.5px solid #00d2ff; border-radius: 14px; } QLabel { color: #94a3b8; font-size: 12px; } "
     "QComboBox { background: #161e2e; color: #ffffff; border: 1px solid #24324d; border-radius: 6px; padding: 4px; } "
     "QPushButton { border-radius: 6px; font-weight: bold; padding: 8px; color: #ffffff; background: #1e293b; }"
 )
@@ -34,6 +35,8 @@ class BuildEditDialog(QDialog):
         self.combos: Dict[str, QComboBox] = {}
 
         layout = QVBoxLayout(self)
+        header = apply_frameless_shell(self, title="장착 모드 수정", on_close=self.reject)
+        layout.addWidget(header)
         layout.addWidget(QLabel("슬롯 위치도 속성 합성에 영향을 줍니다. 이름을 입력하면 검색됩니다."))
 
         top = QGridLayout()

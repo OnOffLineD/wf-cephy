@@ -1,7 +1,8 @@
 import sys
 from PyQt6.QtWidgets import QApplication, QDialog, QVBoxLayout, QTabWidget, QTextBrowser, QTableWidget, QTableWidgetItem, QPushButton, QHBoxLayout, QWidget
 from PyQt6.QtGui import QColor, QPalette
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QPoint
+from scripts.frameless_dialog import apply_frameless_shell
 
 class DamageBreakdownDialog(QDialog):
     def __init__(self, parent=None, breakdown_text='', w_meta=None, mod_objs=None, metrics=None, riven_stats=None):
@@ -20,6 +21,8 @@ class DamageBreakdownDialog(QDialog):
 
     def setup_ui(self):
         layout = QVBoxLayout()
+        header = apply_frameless_shell(self, title=self.windowTitle(), on_close=self.close)
+        layout.addWidget(header)
 
         # Tab Widget
         tab_widget = QTabWidget()
@@ -224,6 +227,7 @@ class DamageBreakdownDialog(QDialog):
         palette.setColor(QPalette.ColorRole.Highlight, QColor("#D4AF37"))
         palette.setColor(QPalette.ColorRole.HighlightedText, QColor("#0f172a"))
         self.setPalette(palette)
+        self.setStyleSheet("QDialog { background-color: #0c1017; border: 1.5px solid #00d2ff; border-radius: 14px; color: #e2e8f0; }")
 
     def set_data(self, breakdown_text='', w_meta=None, mod_objs=None, metrics=None, riven_stats=None):
         self.breakdown_text = breakdown_text
@@ -234,6 +238,8 @@ class DamageBreakdownDialog(QDialog):
     
         if w_meta:
             self.setWindowTitle(f"Warframe Damage Breakdown - {w_meta.get('name', 'Unknown Weapon')}")
+            if hasattr(self, '_frameless_title_label') and self._frameless_title_label:
+                self._frameless_title_label.setText(self.windowTitle())
     
         self.text_browser.setHtml(self.generate_html_content())
         self.populate_table()

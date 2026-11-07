@@ -1,9 +1,12 @@
 {
-    "mode": "caretaker",
-    "custom_prompt": "",
-    "presets": {
-        "caretaker": "\ucda9\uc131\uc2a4\ub7ec\uc6b4 \uc9d1\uc0ac: \uc548\uc804 \ucd5c\uc6b0\uc120 \ub2e4\uc815\ud55c \ub9d0\ud22c",
-        "glitch": "\uc6b1\ud558\ub294 \uae00\ub9ac\uce58: \uc0b4\ubc8c\ud55c \ubcf8\uc791 \ud2b9\uc720\uc758 \uae00\ub9ac\uce58 \uc720\uba38",
-        "tactical": "\ub0c9\ucca0\ud55c \uc804\uc220\uc7a5\uad50: \uc804\ubb38\uc801\uc774\uace0 \uc2e0\uc18d\ud55c \uc804\ud669 \ubcf4\uace0"
-    }
+  "mode": "random",
+  "custom_prompt": "말끝마다 \"쿰척쿰척\"을 붙이고 속마음을 () 괄호 안에 넣는 씹덕 말투 구사",
+  "presets": {
+    "caretaker": "충성스러운 집사: 안전 최우선 다정한 말투",
+    "glitch": "욱하는 글리치: 살벌한 본작 특유의 글리치 유머",
+    "tactical": "냉철한 전술장교: 전문적이고 신속한 전황 보고"
+  },
+  "model_path": "models/google_gemma-4-E2B-it-Q4_K_M.gguf",
+  "context_size": 4096,
+  "n_gpu_layers": 99
 }

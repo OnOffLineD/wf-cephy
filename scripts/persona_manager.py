@@ -4,6 +4,10 @@ import random
 from typing import Dict, Any, Optional
 from scripts.path_config import get_user_data_path
 
+DEFAULT_MODEL_PATH = "models/google_gemma-4-E2B-it-Q4_K_M.gguf"
+DEFAULT_CONTEXT_SIZE = 4096
+DEFAULT_GPU_LAYERS = 99
+
 DEFAULT_PRESETS = {
     "caretaker": {
         "name": "충성스러운 집사",
@@ -55,9 +59,25 @@ class PersonaManager:
         if not self.config:
             self.config = {
                 "mode": "random",
-                "custom_prompt": "당신은 세팔론 오디스입니다. 오퍼레이터에게 친절하고 위트있게 답변하세요."
+                "custom_prompt": "당신은 세팔론 오디스입니다. 오퍼레이터에게 친절하고 위트있게 답변하세요.",
+                "model_path": DEFAULT_MODEL_PATH,
+                "context_size": DEFAULT_CONTEXT_SIZE,
+                "n_gpu_layers": DEFAULT_GPU_LAYERS
             }
             self.save_config()
+        else:
+            changed = False
+            if "model_path" not in self.config:
+                self.config["model_path"] = DEFAULT_MODEL_PATH
+                changed = True
+            if "context_size" not in self.config:
+                self.config["context_size"] = DEFAULT_CONTEXT_SIZE
+                changed = True
+            if "n_gpu_layers" not in self.config:
+                self.config["n_gpu_layers"] = DEFAULT_GPU_LAYERS
+                changed = True
+            if changed:
+                self.save_config()
 
         return self.config
 
@@ -123,3 +143,28 @@ class PersonaManager:
                 "desc": preset["desc"],
                 "prompt": preset["prompt"]
             }
+
+    def get_model_path(self) -> str:
+        return self.config.get("model_path", DEFAULT_MODEL_PATH)
+
+    def set_model_path(self, path: str):
+        self.config["model_path"] = path.strip()
+        self.save_config()
+
+    def get_context_size(self) -> int:
+        return int(self.config.get("context_size", DEFAULT_CONTEXT_SIZE))
+
+    def set_context_size(self, size: int):
+        self.config["context_size"] = max(512, int(size))
+        self.save_config()
+
+    def get_gpu_layers(self) -> int:
+        return int(self.config.get("n_gpu_layers", DEFAULT_GPU_LAYERS))
+
+    def set_gpu_layers(self, layers: int):
+        self.config["n_gpu_layers"] = max(0, int(layers))
+        self.save_config()
+
+
+SettingsManager = PersonaManager
+

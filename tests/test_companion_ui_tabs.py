@@ -79,8 +79,8 @@ def test_companion_hud_buttons_and_icon_tabs(qapp):
         assert panel.btn_clip.icon_name == "clipboard" and panel.btn_clip.icon_only
         assert panel.btn_refresh.icon_name == "refresh" and panel.btn_refresh.icon_only
         assert panel.btn_send.icon_name == "send" and not panel.btn_send.icon_only
-        assert panel.persona_btn.icon_name == "persona" and panel.persona_btn.text() == ""
-        assert panel.persona_btn.toolTip() == "오디스 성격 및 페르소나 설정"
+        assert panel.persona_btn.icon_name in ("settings", "persona") and panel.persona_btn.text() == ""
+        assert "설정" in panel.persona_btn.toolTip()
         assert panel.close_btn.icon_name == "close"
 
         emojis = ("💬", "📋", "🌍", "🎭", "🖥️", "🔄")

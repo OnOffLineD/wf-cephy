@@ -1,0 +1,998 @@
+{
+  ".antigravity/live_symbols.json": {
+    "mtime": 1792509287.195,
+    "seen": 1792509438.782011,
+    "ast_hash": "c15219df5f1c38a3c8fe62f29c118e0c",
+    "semantic_hash": ""
+  },
+  ".antigravity/project_profile.json": {
+    "mtime": 1792155749.096,
+    "seen": 1792314362.222936,
+    "ast_hash": "5ee60a255e08019586dc3be542605ed0",
+    "semantic_hash": "5ee60a255e08019586dc3be542605ed0"
+  },
+  "scripts/pipeline_runner.py": {
+    "mtime": 1792332137.548,
+    "seen": 1792509438.7995617,
+    "ast_hash": "1a16a6d52c35db40fa28a09a4cb8616e",
+    "semantic_hash": ""
+  },
+  "data/raw_wfcd/Melee.json": {
+    "mtime": 1791964762.091,
+    "seen": 1791991297.8599813,
+    "ast_hash": "1505c85fb859d96d1a9d6a023672c8d3",
+    "semantic_hash": "1505c85fb859d96d1a9d6a023672c8d3"
+  },
+  "data/raw_wfcd/Primary.json": {
+    "mtime": 1791964761.266,
+    "seen": 1791991297.8599834,
+    "ast_hash": "6afd4c5f1ae64d109d0eb17cae253389",
+    "semantic_hash": "6afd4c5f1ae64d109d0eb17cae253389"
+  },
+  "data/raw_wfcd/Secondary.json": {
+    "mtime": 1791964761.666,
+    "seen": 1791991297.8599846,
+    "ast_hash": "eb314181c709741edb5a1206c7aacef6",
+    "semantic_hash": "eb314181c709741edb5a1206c7aacef6"
+  },
+  "data/raw_wfcd/Warframes.json": {
+    "mtime": 1791964719.434,
+    "seen": 1791991297.8599856,
+    "ast_hash": "88727bef8192c0bb237b5c27e4f57f88",
+    "semantic_hash": "88727bef8192c0bb237b5c27e4f57f88"
+  },
+  "scripts/data_ingestor.py": {
+    "mtime": 1791964763.105,
+    "seen": 1791991297.8609781,
+    "ast_hash": "9500a6cd8b500979fbddaa69e893f98c",
+    "semantic_hash": "9500a6cd8b500979fbddaa69e893f98c"
+  },
+  "scripts/__init__.py": {
+    "mtime": 1791965036.104,
+    "seen": 1791991297.8603618,
+    "ast_hash": "1bb2fba4687674485ba37cc2820e6b20",
+    "semantic_hash": "1bb2fba4687674485ba37cc2820e6b20"
+  },
+  "scripts/damage_simulator.py": {
+    "mtime": 1792508370.813,
+    "seen": 1792509438.7974095,
+    "ast_hash": "4cc0898ec4d83b979256b6a60aea8ff3",
+    "semantic_hash": ""
+  },
+  "scripts/optimizer_engine.py": {
+    "mtime": 1791970466.405,
+    "seen": 1791991297.8609843,
+    "ast_hash": "1bb2a206d2e28945e6fc1c9aec3a13d0",
+    "semantic_hash": "1bb2a206d2e28945e6fc1c9aec3a13d0"
+  },
+  "scripts/survival_evaluator.py": {
+    "mtime": 1791965081.926,
+    "seen": 1791991297.860991,
+    "ast_hash": "d65a916d722377771c8c721cef3a4fb8",
+    "semantic_hash": "d65a916d722377771c8c721cef3a4fb8"
+  },
+  "scripts/synergy_planner.py": {
+    "mtime": 1791965206.967,
+    "seen": 1791991297.8609922,
+    "ast_hash": "5e93a47473c2daf1d049a4d9f115058e",
+    "semantic_hash": "5e93a47473c2daf1d049a4d9f115058e"
+  },
+  "tests/__init__.py": {
+    "mtime": 1791965040.053,
+    "seen": 1791991297.8609993,
+    "ast_hash": "d0662d59fb4703bc596739ce52ace110",
+    "semantic_hash": "d0662d59fb4703bc596739ce52ace110"
+  },
+  "tests/test_damage_simulator.py": {
+    "mtime": 1791965008.03,
+    "seen": 1791991297.8610005,
+    "ast_hash": "347246aef68c9c59a103b4c635ea41f2",
+    "semantic_hash": "347246aef68c9c59a103b4c635ea41f2"
+  },
+  "tests/test_optimizer_engine.py": {
+    "mtime": 1791965270.912,
+    "seen": 1791991297.8610015,
+    "ast_hash": "02e1eae9789ad5c2790f2dde967e8ac8",
+    "semantic_hash": "02e1eae9789ad5c2790f2dde967e8ac8"
+  },
+  "tests/test_survival_evaluator.py": {
+    "mtime": 1791965110.895,
+    "seen": 1791991297.8610024,
+    "ast_hash": "8f43ae3f397e3bf820f8943811f452ca",
+    "semantic_hash": "8f43ae3f397e3bf820f8943811f452ca"
+  },
+  "tests/test_synergy_planner.py": {
+    "mtime": 1791965159.53,
+    "seen": 1791991297.8610032,
+    "ast_hash": "e756d8bca2bdaffb1ccb15619e81fb2e",
+    "semantic_hash": "e756d8bca2bdaffb1ccb15619e81fb2e"
+  },
+  "data/user_checklist.json": {
+    "mtime": 1792680687.796,
+    "seen": 1792680766.50102,
+    "ast_hash": "c79897df75bba0bfae63bf704b5383fe",
+    "semantic_hash": ""
+  },
+  "main_companion.py": {
+    "mtime": 1792313022.878,
+    "seen": 1792314362.2298367,
+    "ast_hash": "6447abba0944ff8f1ef7f97b6195e1d9",
+    "semantic_hash": "6447abba0944ff8f1ef7f97b6195e1d9"
+  },
+  "scripts/app_server.py": {
+    "mtime": 1791969620.544,
+    "seen": 1791991297.8609712,
+    "ast_hash": "3c4e3aefda80f9a6736c6778d0fd9a44",
+    "semantic_hash": "3c4e3aefda80f9a6736c6778d0fd9a44"
+  },
+  "scripts/codex_sheet_importer.py": {
+    "mtime": 1791979036.936,
+    "seen": 1791991297.8609743,
+    "ast_hash": "b429a7a5ec064164881604004dd22b48",
+    "semantic_hash": "b429a7a5ec064164881604004dd22b48"
+  },
+  "scripts/desktop_companion.py": {
+    "mtime": 1792337426.255,
+    "seen": 1792509438.7978125,
+    "ast_hash": "700c9b3acb2ae30f796f5c64cf8e519c",
+    "semantic_hash": ""
+  },
+  "scripts/embedded_llm_runner.py": {
+    "mtime": 1792249655.746,
+    "seen": 1792314362.2337785,
+    "ast_hash": "e1a6e2a6c04e7243755c6b217394ea4e",
+    "semantic_hash": "e1a6e2a6c04e7243755c6b217394ea4e"
+  },
+  "scripts/llm_orchestrator.py": {
+    "mtime": 1792253328.172,
+    "seen": 1792314362.2337823,
+    "ast_hash": "892876ef423b1661235df041aade6889",
+    "semantic_hash": "892876ef423b1661235df041aade6889"
+  },
+  "scripts/riven_ocr_analyzer.py": {
+    "mtime": 1792069583.078,
+    "seen": 1792069662.852005,
+    "ast_hash": "5daaeef82d06afe26d2e3ed721842025",
+    "semantic_hash": "5daaeef82d06afe26d2e3ed721842025"
+  },
+  "scripts/setup_portable_runtime.py": {
+    "mtime": 1791969151.836,
+    "seen": 1791991297.86099,
+    "ast_hash": "718143ade0a25fe3b4fc1bec833025d7",
+    "semantic_hash": "718143ade0a25fe3b4fc1bec833025d7"
+  },
+  "scripts/wf_data_indexer.py": {
+    "mtime": 1792327411.132,
+    "seen": 1792509438.8018146,
+    "ast_hash": "d0a7b3c775c90d3854591602623485be",
+    "semantic_hash": ""
+  },
+  "scripts/wiki_ingestor.py": {
+    "mtime": 1791979730.624,
+    "seen": 1791991297.8609962,
+    "ast_hash": "3df5be86bf08dbb29457be043023090f",
+    "semantic_hash": "3df5be86bf08dbb29457be043023090f"
+  },
+  "scripts/world_state_tracker.py": {
+    "mtime": 1792253254.187,
+    "seen": 1792314362.2383914,
+    "ast_hash": "345d0349e32b18f9f6d6d9e62cdc9b23",
+    "semantic_hash": "345d0349e32b18f9f6d6d9e62cdc9b23"
+  },
+  "data/raw_wfcd/Relics.json": {
+    "mtime": 1791991351.122,
+    "seen": 1792069662.8359747,
+    "ast_hash": "59cf6e6e766bfca8e97c3a16bcff492b",
+    "semantic_hash": "59cf6e6e766bfca8e97c3a16bcff492b"
+  },
+  "scripts/chroma_rag_retriever.py": {
+    "mtime": 1792246102.683,
+    "seen": 1792314362.2314532,
+    "ast_hash": "f36042cabdbea57cc1250e30a900e76c",
+    "semantic_hash": "f36042cabdbea57cc1250e30a900e76c"
+  },
+  "scripts/screen_mod_analyzer.py": {
+    "mtime": 1792508825.099,
+    "seen": 1792509438.7999985,
+    "ast_hash": "475e007e6d358b656ac4c920dea79c8b",
+    "semantic_hash": ""
+  },
+  "tests/test_wfcd_indexing.py": {
+    "mtime": 1792076510.687,
+    "seen": 1792077826.232405,
+    "ast_hash": "c78090dafb4fcd7da7b99a9e2d5b3d68",
+    "semantic_hash": "c78090dafb4fcd7da7b99a9e2d5b3d68"
+  },
+  "data/incarnon_traits.json": {
+    "mtime": 1792077348.734,
+    "seen": 1792077826.2112534,
+    "ast_hash": "25e4be275eae43b46af1c53915ed10c3",
+    "semantic_hash": "25e4be275eae43b46af1c53915ed10c3"
+  },
+  "tests/test_interactive_clarification.py": {
+    "mtime": 1792116188.981,
+    "seen": 1792314362.239777,
+    "ast_hash": "37f667387ef9ffccec5a1bb1cb6dd6c0",
+    "semantic_hash": "37f667387ef9ffccec5a1bb1cb6dd6c0"
+  },
+  "data/mod_ocr_aliases.json": {
+    "mtime": 1792081167.28,
+    "seen": 1792081592.6551147,
+    "ast_hash": "978a441c9dbe1a0afa6c6c3686371590",
+    "semantic_hash": "978a441c9dbe1a0afa6c6c3686371590"
+  },
+  "data/raw_wfcd/mod_ocr_aliases.json": {
+    "mtime": 1792081167.28,
+    "seen": 1792081592.6593728,
+    "ast_hash": "978a441c9dbe1a0afa6c6c3686371590",
+    "semantic_hash": "978a441c9dbe1a0afa6c6c3686371590"
+  },
+  "batch_test_all.py": {
+    "mtime": 1792136698.75,
+    "seen": 1792314362.2229378,
+    "ast_hash": "640445b399fd9aa89098dec6cb86d014",
+    "semantic_hash": "640445b399fd9aa89098dec6cb86d014"
+  },
+  "data/raw_wfcd/weapon_arcanes.json": {
+    "mtime": 1792133476.883,
+    "seen": 1792314362.2298071,
+    "ast_hash": "4d84892ed066c7299149f1dd6451c12b",
+    "semantic_hash": "4d84892ed066c7299149f1dd6451c12b"
+  },
+  "data/user_checklist.json.meta.json": {
+    "mtime": 1792680687.801,
+    "seen": 1792680766.5010235,
+    "ast_hash": "2c39f8375bd4d84ab120138b2a6bb226",
+    "semantic_hash": ""
+  },
+  "data/weapon_arcanes.json": {
+    "mtime": 1792133256.195,
+    "seen": 1792314362.229813,
+    "ast_hash": "4d84892ed066c7299149f1dd6451c12b",
+    "semantic_hash": "4d84892ed066c7299149f1dd6451c12b"
+  },
+  "debug_ocr_detail.py": {
+    "mtime": 1792133489.938,
+    "seen": 1792314362.2298143,
+    "ast_hash": "44c16b22bf7c61430e788d3fa728b5c5",
+    "semantic_hash": "44c16b22bf7c61430e788d3fa728b5c5"
+  },
+  "find_arcanes_in_wfcd.py": {
+    "mtime": 1792133585.17,
+    "seen": 1792314362.2298183,
+    "ast_hash": "50076c75cd7627253d71e0a367a35096",
+    "semantic_hash": "50076c75cd7627253d71e0a367a35096"
+  },
+  "inspect_all_arcanes.py": {
+    "mtime": 1792133578.576,
+    "seen": 1792314362.2298193,
+    "ast_hash": "24492413ecba483eadd922b54d59ea9c",
+    "semantic_hash": "24492413ecba483eadd922b54d59ea9c"
+  },
+  "inspect_category_compat.py": {
+    "mtime": 1792137311.359,
+    "seen": 1792314362.2298207,
+    "ast_hash": "53ba2a00ac0ec9dd750fa1ca6133e738",
+    "semantic_hash": "53ba2a00ac0ec9dd750fa1ca6133e738"
+  },
+  "inspect_drops.py": {
+    "mtime": 1792133592.133,
+    "seen": 1792314362.2298217,
+    "ast_hash": "8a07d32c1413c4fc6dcec683229639f2",
+    "semantic_hash": "8a07d32c1413c4fc6dcec683229639f2"
+  },
+  "inspect_drops_struct.py": {
+    "mtime": 1792133599.921,
+    "seen": 1792314362.2298229,
+    "ast_hash": "47057d12f883d85b3c3b628799fc2617",
+    "semantic_hash": "47057d12f883d85b3c3b628799fc2617"
+  },
+  "inspect_failed_matches.py": {
+    "mtime": 1792137226.81,
+    "seen": 1792314362.229824,
+    "ast_hash": "560f4eab420c3a68cbc471fcd434939d",
+    "semantic_hash": "560f4eab420c3a68cbc471fcd434939d"
+  },
+  "inspect_images.py": {
+    "mtime": 1792133369.143,
+    "seen": 1792314362.2298248,
+    "ast_hash": "7a9d3769995db79abcc51aca394d24a2",
+    "semantic_hash": "7a9d3769995db79abcc51aca394d24a2"
+  },
+  "inspect_indexer.py": {
+    "mtime": 1792133461.469,
+    "seen": 1792314362.229826,
+    "ast_hash": "ad2187aab0b53895982706eecd8d72d3",
+    "semantic_hash": "ad2187aab0b53895982706eecd8d72d3"
+  },
+  "inspect_missing_mods.py": {
+    "mtime": 1792133548.569,
+    "seen": 1792314362.2298272,
+    "ast_hash": "22f9a1a6ef2e7cb4e4ca00fe914de50f",
+    "semantic_hash": "22f9a1a6ef2e7cb4e4ca00fe914de50f"
+  },
+  "inspect_mods_and_arcanes.py": {
+    "mtime": 1792133570.559,
+    "seen": 1792314362.2298281,
+    "ast_hash": "e75de36d376e860c219c5340962e390e",
+    "semantic_hash": "e75de36d376e860c219c5340962e390e"
+  },
+  "inspect_mods_types.py": {
+    "mtime": 1792133611.673,
+    "seen": 1792314362.229829,
+    "ast_hash": "d94b6dc7330e6797cecece397d8c239b",
+    "semantic_hash": "d94b6dc7330e6797cecece397d8c239b"
+  },
+  "inspect_reaper_ocr.py": {
+    "mtime": 1792137376.927,
+    "seen": 1792314362.22983,
+    "ast_hash": "e2a2d3d2d252abc4044b6f64adc09ebd",
+    "semantic_hash": "e2a2d3d2d252abc4044b6f64adc09ebd"
+  },
+  "inspect_tuple_test.py": {
+    "mtime": 1792137331.236,
+    "seen": 1792314362.229831,
+    "ast_hash": "49900e358a1ecf63232996b201d71787",
+    "semantic_hash": "49900e358a1ecf63232996b201d71787"
+  },
+  "inspect_two_mods.py": {
+    "mtime": 1792137297.102,
+    "seen": 1792314362.229832,
+    "ast_hash": "3030eb43c7e30743c3081273772b8bd9",
+    "semantic_hash": "3030eb43c7e30743c3081273772b8bd9"
+  },
+  "inspect_winocr_box.py": {
+    "mtime": 1792133378.881,
+    "seen": 1792314362.2298331,
+    "ast_hash": "147627fa93742d47bbddf24956296444",
+    "semantic_hash": "147627fa93742d47bbddf24956296444"
+  },
+  "quick_test_speed.py": {
+    "mtime": 1792135554.491,
+    "seen": 1792314362.229838,
+    "ast_hash": "a1f7583e02bdc70fd625a6ab5d6bd08c",
+    "semantic_hash": "a1f7583e02bdc70fd625a6ab5d6bd08c"
+  },
+  "scripts/companion_views.py": {
+    "mtime": 1792310064.547,
+    "seen": 1792314362.2322245,
+    "ast_hash": "3edc719222b56200a26347eb600b0194",
+    "semantic_hash": "3edc719222b56200a26347eb600b0194"
+  },
+  "scripts/jamo_matcher.py": {
+    "mtime": 1792316201.36,
+    "seen": 1792509438.798254,
+    "ast_hash": "345cd65856b4bd7f63550956b6ce8f50",
+    "semantic_hash": ""
+  },
+  "scripts/path_config.py": {
+    "mtime": 1792127712.436,
+    "seen": 1792314362.2344663,
+    "ast_hash": "0806f0ed14c452b3d2a2dfff46f8191c",
+    "semantic_hash": "0806f0ed14c452b3d2a2dfff46f8191c"
+  },
+  "scripts/short_term_memory.py": {
+    "mtime": 1792162127.485,
+    "seen": 1792314362.2357934,
+    "ast_hash": "6da8d5cad44a633916d659df97146fdf",
+    "semantic_hash": "6da8d5cad44a633916d659df97146fdf"
+  },
+  "scripts/yolo_slot_detector.py": {
+    "mtime": 1792303019.035,
+    "seen": 1792314362.2383943,
+    "ast_hash": "c7c6dd71010c4456fec37f6cb3c49a44",
+    "semantic_hash": "c7c6dd71010c4456fec37f6cb3c49a44"
+  },
+  "test_5_user_images.py": {
+    "mtime": 1792137201.371,
+    "seen": 1792314362.2383966,
+    "ast_hash": "469dd0e1167251354656a050a2b2e392",
+    "semantic_hash": "469dd0e1167251354656a050a2b2e392"
+  },
+  "test_equipped_enhancement.py": {
+    "mtime": 1792133395.466,
+    "seen": 1792314362.2383986,
+    "ast_hash": "43d65ad61c9ebcf45c5c0acd6edf1fe8",
+    "semantic_hash": "43d65ad61c9ebcf45c5c0acd6edf1fe8"
+  },
+  "test_jamo_reaper.py": {
+    "mtime": 1792137391.328,
+    "seen": 1792314362.2384,
+    "ast_hash": "8ff757f9bfa0407bef19c81c021d7821",
+    "semantic_hash": "8ff757f9bfa0407bef19c81c021d7821"
+  },
+  "test_smart_jamo.py": {
+    "mtime": 1792137411.277,
+    "seen": 1792314362.2384017,
+    "ast_hash": "ed4719d5a76d12f7f717c4416fc7aaa4",
+    "semantic_hash": "ed4719d5a76d12f7f717c4416fc7aaa4"
+  },
+  "tests/test_chat_routing_comprehensive.py": {
+    "mtime": 1792139402.625,
+    "seen": 1792314362.239159,
+    "ast_hash": "d7604ed05213ec59f9be2e4ddcec80db",
+    "semantic_hash": "d7604ed05213ec59f9be2e4ddcec80db"
+  },
+  "tests/test_companion_ui_tabs.py": {
+    "mtime": 1792313038.148,
+    "seen": 1792314362.239161,
+    "ast_hash": "2d151c878da7211930016ba3afb6f32a",
+    "semantic_hash": "2d151c878da7211930016ba3afb6f32a"
+  },
+  "tests/test_riven_diagnosis_workflow.py": {
+    "mtime": 1792337609.986,
+    "seen": 1792509438.8071272,
+    "ast_hash": "8ec635eacdf793d03df5db26da7abfc9",
+    "semantic_hash": ""
+  },
+  "tests/test_screen_capture_hotkeys.py": {
+    "mtime": 1792335910.408,
+    "seen": 1792509438.8071306,
+    "ast_hash": "c449f876b3a1fc9aab1015363210fd11",
+    "semantic_hash": ""
+  },
+  "tests/test_short_term_memory.py": {
+    "mtime": 1792162206.798,
+    "seen": 1792314362.2403662,
+    "ast_hash": "6acb3177dfc02b3ce27a915ecea5550f",
+    "semantic_hash": "6acb3177dfc02b3ce27a915ecea5550f"
+  },
+  "trace_screen_mod.py": {
+    "mtime": 1792136606.481,
+    "seen": 1792314362.2422552,
+    "ast_hash": "1cadc2ec7bfa9029ec4368a46720d5d3",
+    "semantic_hash": "1cadc2ec7bfa9029ec4368a46720d5d3"
+  },
+  "scripts/damage_breakdown_dialog.py": {
+    "mtime": 1792332701.743,
+    "seen": 1792509438.7974057,
+    "ast_hash": "c75749b0473cafaf1c708e4b12246278",
+    "semantic_hash": ""
+  },
+  "scripts/riven_quick_dialog.py": {
+    "mtime": 1792337244.311,
+    "seen": 1792509438.799996,
+    "ast_hash": "7847a0a3e17c983e9ca844504386156c",
+    "semantic_hash": ""
+  },
+  "scripts/warframe_damage_engine.py": {
+    "mtime": 1792509286.382,
+    "seen": 1792509438.8018112,
+    "ast_hash": "f7f9137c5fa1a30736b193a66b41eff9",
+    "semantic_hash": ""
+  },
+  "tests/test_screen_recognition_overhaul.py": {
+    "mtime": 1792316688.948,
+    "seen": 1792509438.8071332,
+    "ast_hash": "c50ff029a0c4a31f6220130104721bb6",
+    "semantic_hash": ""
+  },
+  "tests/test_warframe_damage_engine.py": {
+    "mtime": 1792509328.252,
+    "seen": 1792509438.8083978,
+    "ast_hash": "b7aecd0cb01a021cb703a6e359508be8",
+    "semantic_hash": ""
+  },
+  ".agents/rules/universal_orchestration.md": {
+    "mtime": 1792680640.969,
+    "seen": 1792680766.5259717,
+    "ast_hash": "7198d4823f9250468c98fb54189d7a7f",
+    "semantic_hash": ""
+  },
+  "AGENTS.md": {
+    "mtime": 1792680618.549,
+    "seen": 1792680766.5259757,
+    "ast_hash": "9a8aff9734bc6c1be6841d2080afaf5d",
+    "semantic_hash": ""
+  },
+  "GEMINI.md": {
+    "mtime": 1792680625.967,
+    "seen": 1792680766.5259802,
+    "ast_hash": "9a8aff9734bc6c1be6841d2080afaf5d",
+    "semantic_hash": ""
+  },
+  "HANDOVER.md": {
+    "mtime": 1792163656.161,
+    "seen": 1792509438.8092616,
+    "ast_hash": "b973cc7054cd1900f843fdfb49578689",
+    "semantic_hash": ""
+  },
+  "PROJECT_OVERVIEW.md": {
+    "mtime": 1792130959.922,
+    "seen": 1792509438.809263,
+    "ast_hash": "be079f504d9faf72dcb852f6080db6d4",
+    "semantic_hash": ""
+  },
+  "antigravity_Rules.md": {
+    "mtime": 1791942452.138,
+    "seen": 1792509438.809265,
+    "ast_hash": "de6dc352c1e3d7357164e42f374f2ced",
+    "semantic_hash": ""
+  },
+  "requirements.txt": {
+    "mtime": 1792144043.516,
+    "seen": 1792509438.8092663,
+    "ast_hash": "08510558944565b9f469f1abe1773a61",
+    "semantic_hash": ""
+  },
+  "rules/01_damage_formulas.md": {
+    "mtime": 1791964366.914,
+    "seen": 1792509438.8092716,
+    "ast_hash": "c37577c2bf2e28d459efca3ed1bf3d8f",
+    "semantic_hash": ""
+  },
+  "rules/02_status_and_scaling.md": {
+    "mtime": 1791964381.303,
+    "seen": 1792509438.809273,
+    "ast_hash": "b60c92dc2dd0fc001476b9872acdf1b9",
+    "semantic_hash": ""
+  },
+  "rules/03_survivability_rules.md": {
+    "mtime": 1791964395.983,
+    "seen": 1792509438.809275,
+    "ast_hash": "55f0872bd9ebe9e51b9a1058af6bd6da",
+    "semantic_hash": ""
+  },
+  "rules/04_synergy_matrix.md": {
+    "mtime": 1791964409.672,
+    "seen": 1792509438.8092763,
+    "ast_hash": "5cd9cbdc4f285f4e9365050c677442e9",
+    "semantic_hash": ""
+  },
+  "rules/wiki_docs/bosses/Archon_Amar_2814003.txt": {
+    "mtime": 1792117228.807,
+    "seen": 1792509438.8092782,
+    "ast_hash": "9230b27411c1c240bec23e6bd2dad515",
+    "semantic_hash": ""
+  },
+  "rules/wiki_docs/bosses/Archon_Boreal_2814002.txt": {
+    "mtime": 1792118669.947,
+    "seen": 1792509438.80928,
+    "ast_hash": "e14b56f378f7885ff6c682505f17f17b",
+    "semantic_hash": ""
+  },
+  "rules/wiki_docs/bosses/Archon_Hunt_2817085.txt": {
+    "mtime": 1792118669.895,
+    "seen": 1792509438.809282,
+    "ast_hash": "5669eaab8b540be77ceb69612083244d",
+    "semantic_hash": ""
+  },
+  "rules/wiki_docs/bosses/Archon_Nira_2815944.txt": {
+    "mtime": 1792118669.922,
+    "seen": 1792509438.8092842,
+    "ast_hash": "435dff00647d48ca048fcacd095179ce",
+    "semantic_hash": ""
+  },
+  "rules/wiki_docs/bosses/Eidolon_Teralyst_2815865.txt": {
+    "mtime": 1792118669.876,
+    "seen": 1792509438.8092859,
+    "ast_hash": "f38a36fa9f6c5aca0c7b228ba61942e5",
+    "semantic_hash": ""
+  },
+  "rules/wiki_docs/bosses/Exploiter_Orb_2806156.txt": {
+    "mtime": 1792117310.685,
+    "seen": 1792509438.8092878,
+    "ast_hash": "8d7f01563cc1d6601d5a9c7817fb5c7b",
+    "semantic_hash": ""
+  },
+  "rules/wiki_docs/bosses/Kuva_Lich_2806252.txt": {
+    "mtime": 1792117192.999,
+    "seen": 1792509438.80929,
+    "ast_hash": "2fba0b05e14951b82303bd703eebc0ed",
+    "semantic_hash": ""
+  },
+  "rules/wiki_docs/bosses/Profit-Taker_Orb_2796659.txt": {
+    "mtime": 1792118670.032,
+    "seen": 1792509438.8092916,
+    "ast_hash": "fafdf59e3a7b52539f8a9ffca1fe6d3f",
+    "semantic_hash": ""
+  },
+  "rules/wiki_docs/bosses/Ropalolyst_2817720.txt": {
+    "mtime": 1792117323.956,
+    "seen": 1792509438.8092935,
+    "ast_hash": "d00e945097162cfd50b6c948caf2717c",
+    "semantic_hash": ""
+  },
+  "rules/wiki_docs/bosses/The_Fragmented_2724347.txt": {
+    "mtime": 1792118670.025,
+    "seen": 1792509438.8092954,
+    "ast_hash": "eb9e32d8d1d85ef65e145b79c9a98f5d",
+    "semantic_hash": ""
+  },
+  "rules/wiki_docs/factions_and_enemies/Acolyte_1891170.txt": {
+    "mtime": 1792118669.921,
+    "seen": 1792509438.8092973,
+    "ast_hash": "fe57e5b22b8dda66ed2970048edf6ce5",
+    "semantic_hash": ""
+  },
+  "rules/wiki_docs/factions_and_enemies/Corpus_2800316.txt": {
+    "mtime": 1792118669.947,
+    "seen": 1792509438.8092992,
+    "ast_hash": "d96472f65c69dfaeeca2c8e89bc21541",
+    "semantic_hash": ""
+  },
+  "rules/wiki_docs/factions_and_enemies/Eximus_2818093.txt": {
+    "mtime": 1792117105.513,
+    "seen": 1792509438.809301,
+    "ast_hash": "97681261c3617098bf1f298df107b4ff",
+    "semantic_hash": ""
+  },
+  "rules/wiki_docs/factions_and_enemies/Grineer_2807554.txt": {
+    "mtime": 1792117120.973,
+    "seen": 1792509438.8093028,
+    "ast_hash": "0603f3c4a377777527e3613209c77997",
+    "semantic_hash": ""
+  },
+  "rules/wiki_docs/factions_and_enemies/Infested_2806491.txt": {
+    "mtime": 1792117158.032,
+    "seen": 1792509438.8093045,
+    "ast_hash": "433091c0283895197a6857002937bd85",
+    "semantic_hash": ""
+  },
+  "rules/wiki_docs/factions_and_enemies/Murmur_2602865.txt": {
+    "mtime": 1792117087.258,
+    "seen": 1792509438.809306,
+    "ast_hash": "81badbaf317c2b992e58ce6e8e80012d",
+    "semantic_hash": ""
+  },
+  "rules/wiki_docs/factions_and_enemies/Sentient_2816746.txt": {
+    "mtime": 1792118670.003,
+    "seen": 1792509438.8093073,
+    "ast_hash": "a9df697bf7df64591638e70a26b22d37",
+    "semantic_hash": ""
+  },
+  "rules/wiki_docs/game_modes/game_modes.txt": {
+    "mtime": 1792118669.907,
+    "seen": 1792509438.809309,
+    "ast_hash": "2c3a146e1b60ad5821351dbf1b328340",
+    "semantic_hash": ""
+  },
+  "rules/wiki_docs/game_modes/star_chart_missions.md": {
+    "mtime": 1792138317.07,
+    "seen": 1792509438.8093107,
+    "ast_hash": "c3c4ec34ac539d79224da7ea30d39f90",
+    "semantic_hash": ""
+  },
+  "rules/wiki_docs/mechanics/Armor_2814011.txt": {
+    "mtime": 1792116974.824,
+    "seen": 1792509438.8093126,
+    "ast_hash": "bc8fe4fd03dd691345da882d2ab016e2",
+    "semantic_hash": ""
+  },
+  "rules/wiki_docs/mechanics/Critical_Hit_2805152.txt": {
+    "mtime": 1792117050.437,
+    "seen": 1792509438.8093143,
+    "ast_hash": "479854970adc832be6b8ac06891e887f",
+    "semantic_hash": ""
+  },
+  "rules/wiki_docs/mechanics/Damage_2816587.txt": {
+    "mtime": 1792118671.73,
+    "seen": 1792509438.8093162,
+    "ast_hash": "bc6995df07954ef65db2cbe677ee6ac1",
+    "semantic_hash": ""
+  },
+  "rules/wiki_docs/mechanics/Damage_Attenuation_2210911.txt": {
+    "mtime": 1792118671.408,
+    "seen": 1792509438.8093178,
+    "ast_hash": "0b7f771bfecaf38db70d16a1b690d232",
+    "semantic_hash": ""
+  },
+  "rules/wiki_docs/mechanics/Overguard_2814940.txt": {
+    "mtime": 1792118669.913,
+    "seen": 1792509438.8093195,
+    "ast_hash": "29faca3e23efe650c17279ad16bd3cdb",
+    "semantic_hash": ""
+  },
+  "rules/wiki_docs/mechanics/Shield_2801800.txt": {
+    "mtime": 1792118671.497,
+    "seen": 1792509438.8093212,
+    "ast_hash": "5207a7b6d06fe09e0ffaeea52e2db61d",
+    "semantic_hash": ""
+  },
+  "rules/wiki_docs/mechanics/Status_Effect_2817953.txt": {
+    "mtime": 1792118671.554,
+    "seen": 1792509438.809323,
+    "ast_hash": "2d861a90a5bbc890e1f29975cc937ae3",
+    "semantic_hash": ""
+  },
+  "rules/wiki_docs/meta_weapons_and_sortie.md": {
+    "mtime": 1792118668.163,
+    "seen": 1792509438.8093247,
+    "ast_hash": "f64564a110c4edfa69a87f2943854c2a",
+    "semantic_hash": ""
+  },
+  "rules/wiki_docs/quests_and_story/Quest_2798773.txt": {
+    "mtime": 1792118669.976,
+    "seen": 1792509438.8093264,
+    "ast_hash": "293ba146849dfc6a0abce4eeebefa08e",
+    "semantic_hash": ""
+  },
+  "rules/wiki_docs/quests_and_story/The_New_War_2815558.txt": {
+    "mtime": 1792118669.956,
+    "seen": 1792509438.809328,
+    "ast_hash": "e9017b209e932261df4ff0f626baeeb2",
+    "semantic_hash": ""
+  },
+  "rules/wiki_docs/quests_and_story/The_Sacrifice_2812274.txt": {
+    "mtime": 1792117415.454,
+    "seen": 1792509438.8093302,
+    "ast_hash": "37cd5c376201714a3588022479f55d59",
+    "semantic_hash": ""
+  },
+  "rules/wiki_docs/quests_and_story/The_Second_Dream_2815333.txt": {
+    "mtime": 1792117375.944,
+    "seen": 1792509438.8093321,
+    "ast_hash": "31257ba4de4b0c338bc9dd4ca6d4c4df",
+    "semantic_hash": ""
+  },
+  "rules/wiki_docs/quests_and_story/The_War_Within_2818078.txt": {
+    "mtime": 1792118669.987,
+    "seen": 1792509438.809334,
+    "ast_hash": "d39e276a0a6f258798be730c86dd3f43",
+    "semantic_hash": ""
+  },
+  "rules/wiki_docs/quests_and_story/Whispers_in_the_Walls_2816270.txt": {
+    "mtime": 1792118669.973,
+    "seen": 1792509438.809336,
+    "ast_hash": "16427927414c71f47d02f44607b0a48d",
+    "semantic_hash": ""
+  },
+  "warframe.md": {
+    "mtime": 1791963677.935,
+    "seen": 1792509438.8093376,
+    "ast_hash": "329bed6257e99be15cc96bf2c2c7d6d0",
+    "semantic_hash": ""
+  },
+  "web/index.html": {
+    "mtime": 1791970515.054,
+    "seen": 1792509438.8093393,
+    "ast_hash": "7275d3f54fc45ad7de22e17c3f19dfe8",
+    "semantic_hash": ""
+  },
+  "ocrTestImg/1791599160.jpg": {
+    "mtime": 1792128018.136,
+    "seen": 1792509438.809341,
+    "ast_hash": "5b6fb6132b47171fc67da3818fb1e3b2",
+    "semantic_hash": ""
+  },
+  "ocrTestImg/1791688184.jpg": {
+    "mtime": 1792128004.918,
+    "seen": 1792509438.8093424,
+    "ast_hash": "0598d6ce4f810a4ea8dadfd7ddc05fd9",
+    "semantic_hash": ""
+  },
+  "ocrTestImg/1791804136.jpg": {
+    "mtime": 1792127939.357,
+    "seen": 1792509438.809344,
+    "ast_hash": "a9b8959586be4213c029ea67466f097c",
+    "semantic_hash": ""
+  },
+  "ocrTestImg/1791804158.jpg": {
+    "mtime": 1792127945.002,
+    "seen": 1792509438.8093455,
+    "ast_hash": "f84490fbb4d86d536828ed448d455b56",
+    "semantic_hash": ""
+  },
+  "ocrTestImg/1792128102.jpg": {
+    "mtime": 1792128102.117,
+    "seen": 1792509438.8093472,
+    "ast_hash": "fb52f5876a61d4570a0b7f7eca9147ca",
+    "semantic_hash": ""
+  },
+  "ocrTestImg/1792128109.jpg": {
+    "mtime": 1792128107.802,
+    "seen": 1792509438.8093486,
+    "ast_hash": "4a1b051d262c80144344361e4812f85c",
+    "semantic_hash": ""
+  },
+  "ocrTestImg/1792128113.jpg": {
+    "mtime": 1792128111.989,
+    "seen": 1792509438.8093505,
+    "ast_hash": "fe194f3a377cf3da58d44fa847a44165",
+    "semantic_hash": ""
+  },
+  "ocrTestImg/1792128117.jpg": {
+    "mtime": 1792128116.122,
+    "seen": 1792509438.8093522,
+    "ast_hash": "6e49671e556f38eabce08b355d1c864b",
+    "semantic_hash": ""
+  },
+  "ocrTestImg/1792128122.jpg": {
+    "mtime": 1792128120.495,
+    "seen": 1792509438.8093538,
+    "ast_hash": "58e5ebe9c1298216ab3b1cef422c1e03",
+    "semantic_hash": ""
+  },
+  "ocrTestImg/1792128125.jpg": {
+    "mtime": 1792128124.308,
+    "seen": 1792509438.8093555,
+    "ast_hash": "e25261bd2e4268facdcca10afed69915",
+    "semantic_hash": ""
+  },
+  "ocrTestImg/1792128129.jpg": {
+    "mtime": 1792128128.052,
+    "seen": 1792509438.8093572,
+    "ast_hash": "f4273869b2eed218913982d7fa97f3b6",
+    "semantic_hash": ""
+  },
+  "ocrTestImg/1792128159.jpg": {
+    "mtime": 1792128160.639,
+    "seen": 1792509438.8093586,
+    "ast_hash": "447155e160255a1ab525f5c238100065",
+    "semantic_hash": ""
+  },
+  "ocrTestImg/1792128165.jpg": {
+    "mtime": 1792128164.074,
+    "seen": 1792509438.8093598,
+    "ast_hash": "3bcc6ff74d81c8f98823fbf0d3172525",
+    "semantic_hash": ""
+  },
+  "ocrTestImg/266ec246513058ac9fa4dc11af173f94f2dc00422369fa22bfd5724857acd372.jpg": {
+    "mtime": 1792137114.194,
+    "seen": 1792509438.809362,
+    "ast_hash": "ef015d63431f1eaee59cde085401de5a",
+    "semantic_hash": ""
+  },
+  "ocrTestImg/4203b411f11953381bd5c523e8db5d51766cc72d612c645cfacc095d401103d1.jpg": {
+    "mtime": 1792137130.077,
+    "seen": 1792509438.8093634,
+    "ast_hash": "f67276b42d452b2a99f209dc7115baba",
+    "semantic_hash": ""
+  },
+  "ocrTestImg/4443cfd435208226e70fdc910901f2c6a6c085e72c82bbd687d57faae6167fda.jpg": {
+    "mtime": 1792137118.643,
+    "seen": 1792509438.8093655,
+    "ast_hash": "3418677390a75170a8917af77828855b",
+    "semantic_hash": ""
+  },
+  "ocrTestImg/58659f0ca30c003e6f30a1d10d770f231ff7903eb93780bf2357058b2f3859c4.jpg": {
+    "mtime": 1792137123.192,
+    "seen": 1792509438.809367,
+    "ast_hash": "b27a28cc07d2a954bde1a9acd54816f4",
+    "semantic_hash": ""
+  },
+  "ocrTestImg/a34ba64807557d63709edc393c9601d0ca496876e4f714d3d89a7f5f723e905c.jpg": {
+    "mtime": 1792137101.779,
+    "seen": 1792509438.809369,
+    "ast_hash": "993eb5711ce99244059910d0fa9fb163",
+    "semantic_hash": ""
+  },
+  "harness/templates/hooks/pre-commit": {
+    "mtime": 1792560580.0,
+    "seen": 1792680766.502064,
+    "ast_hash": "a02b642f3ee7ed6000eb035dc55e0539",
+    "semantic_hash": ""
+  },
+  "harness/templates/node/probe.mjs": {
+    "mtime": 1792560104.0,
+    "seen": 1792680766.5020661,
+    "ast_hash": "1a9a538fb8c86f5870aa640ee50e426a",
+    "semantic_hash": ""
+  },
+  "harness/templates/node/record_experience.mjs": {
+    "mtime": 1792560110.0,
+    "seen": 1792680766.5020678,
+    "ast_hash": "76f94f9afd0fd7a7b57f2b5e8fbc6ff2",
+    "semantic_hash": ""
+  },
+  "harness/templates/python/probe.py": {
+    "mtime": 1792560090.0,
+    "seen": 1792680766.502069,
+    "ast_hash": "e9cbd703de4ac7369e2e0d811cffaa69",
+    "semantic_hash": ""
+  },
+  "harness/templates/python/record_experience.py": {
+    "mtime": 1792560096.0,
+    "seen": 1792680766.5020702,
+    "ast_hash": "3aaa0e4d20cfb426bbf2e9a5098ee547",
+    "semantic_hash": ""
+  },
+  "scripts/probe.py": {
+    "mtime": 1792680514.301,
+    "seen": 1792680766.5137923,
+    "ast_hash": "11d3af1a91fd2f05a67faa83ae80c714",
+    "semantic_hash": ""
+  },
+  "scripts/record_experience.py": {
+    "mtime": 1792560096.0,
+    "seen": 1792680766.513794,
+    "ast_hash": "3aaa0e4d20cfb426bbf2e9a5098ee547",
+    "semantic_hash": ""
+  },
+  ".agents/guardrails/domain_rules.md": {
+    "mtime": 1792680493.414,
+    "seen": 1792680766.5259635,
+    "ast_hash": "e236a9654bba2c612018930391c9eb5f",
+    "semantic_hash": ""
+  },
+  ".agents/guardrails/engineering.md": {
+    "mtime": 1792560046.0,
+    "seen": 1792680766.5259666,
+    "ast_hash": "e8e5c5e8a4a79dd1a5075cfcb6cca5fe",
+    "semantic_hash": ""
+  },
+  ".agents/memory/domain_context.md": {
+    "mtime": 1792680501.231,
+    "seen": 1792680766.5259686,
+    "ast_hash": "e5bcf7a4f0b95cdcd778286ce37054dc",
+    "semantic_hash": ""
+  },
+  ".agents/skills/propose_probe_compose.md": {
+    "mtime": 1792560060.0,
+    "seen": 1792680766.5259736,
+    "ast_hash": "4abd4497130f9e40b6513898fe0a0389",
+    "semantic_hash": ""
+  },
+  "EXPERIENCE.md": {
+    "mtime": 1792680645.769,
+    "seen": 1792680766.5259776,
+    "ast_hash": "6d8610738527416b44a367d002b92d23",
+    "semantic_hash": ""
+  },
+  "PROGRESS.md": {
+    "mtime": 1792680600.943,
+    "seen": 1792680766.526482,
+    "ast_hash": "45662b3774419415071a9587e2a83c64",
+    "semantic_hash": ""
+  },
+  "harness/GLOBAL_EXPERIENCE.md": {
+    "mtime": 1792560040.0,
+    "seen": 1792680766.5274937,
+    "ast_hash": "0ea333f687d500323a8ac90b00a85dfc",
+    "semantic_hash": ""
+  },
+  "harness/GLOBAL_PROMPT.md": {
+    "mtime": 1792560136.0,
+    "seen": 1792680766.5274968,
+    "ast_hash": "e9c45653a14e01f0bf87711480448557",
+    "semantic_hash": ""
+  },
+  "harness/SKILL.md": {
+    "mtime": 1792560592.0,
+    "seen": 1792680766.5274985,
+    "ast_hash": "1fd42673e70ac1cbf2f8e854e665c4be",
+    "semantic_hash": ""
+  },
+  "harness/templates/AGENTS.md": {
+    "mtime": 1792560072.0,
+    "seen": 1792680766.5275,
+    "ast_hash": "f1c15fc7f3cfdd872b10a4909ebd969a",
+    "semantic_hash": ""
+  },
+  "harness/templates/EXPERIENCE.md": {
+    "mtime": 1792560084.0,
+    "seen": 1792680766.5275025,
+    "ast_hash": "3380958274a6c0335ff96a6c8874b6fa",
+    "semantic_hash": ""
+  },
+  "harness/templates/PROGRESS.md": {
+    "mtime": 1792560078.0,
+    "seen": 1792680766.527504,
+    "ast_hash": "af91661c39f4c69ed3c31ef8b81fb907",
+    "semantic_hash": ""
+  },
+  "harness/templates/guardrails/domain_rules.md": {
+    "mtime": 1792560052.0,
+    "seen": 1792680766.5275059,
+    "ast_hash": "f34cd06f95708c4d17dd7483d6276547",
+    "semantic_hash": ""
+  },
+  "harness/templates/guardrails/engineering.md": {
+    "mtime": 1792560046.0,
+    "seen": 1792680766.5275073,
+    "ast_hash": "e8e5c5e8a4a79dd1a5075cfcb6cca5fe",
+    "semantic_hash": ""
+  },
+  "harness/templates/memory/domain_context.md": {
+    "mtime": 1792560066.0,
+    "seen": 1792680766.5275087,
+    "ast_hash": "182b94c0584d1bf4f3f1b5d67bfa82ae",
+    "semantic_hash": ""
+  },
+  "harness/templates/skills/propose_probe_compose.md": {
+    "mtime": 1792560060.0,
+    "seen": 1792680766.527511,
+    "ast_hash": "4abd4497130f9e40b6513898fe0a0389",
+    "semantic_hash": ""
+  }
+}

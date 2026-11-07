@@ -92,6 +92,7 @@ def qimage_to_pil(qimg) -> Image.Image:
 class DesktopPet(QWidget):
     clicked = pyqtSignal()
     open_persona_requested = pyqtSignal()
+    open_settings_requested = open_persona_requested
 
     def __init__(self, asset_dir=None):
         super().__init__()
@@ -147,7 +148,7 @@ class DesktopPet(QWidget):
         menu = QMenu(self)
         menu.setStyleSheet("QMenu { background: #121622; color: #fff; border: 1px solid #00d2ff; padding: 5px; } QMenu::item:selected { background: #0088cc; }")
         open_act = menu.addAction("💬 오디스 메신저 열기")
-        persona_act = menu.addAction("🎭 오디스 성격 설정...")
+        persona_act = menu.addAction("⚙️ 설정 (오디스 성격 & 모델)...")
         reset_act = menu.addAction("📍 위치 초기화")
         exit_act = menu.addAction("❌ 종료")
 
@@ -159,6 +160,8 @@ class DesktopPet(QWidget):
         elif act == reset_act:
             screen = QApplication.primaryScreen().geometry()
             self.move(screen.width() - 180, screen.height() - 220)
+            if hasattr(self, 'parent_app') and self.parent_app:
+                self.parent_app._user_moved = False
         elif act == exit_act:
             QApplication.quit()
 
@@ -343,9 +346,16 @@ class OrdisCompanionApp(QWidget):
 
     def __init__(self):
         super().__init__()
-        self.llm_runner = EmbeddedLLMRunner()
         self.orchestrator = LLMOrchestrator()
+        pm = self.orchestrator.persona_manager
+        self.llm_runner = EmbeddedLLMRunner(
+            model_path=pm.get_model_path(),
+            context_size=pm.get_context_size(),
+            n_gpu_layers=pm.get_gpu_layers()
+        )
         self.orchestrator.runner = self.llm_runner
+        self._drag_pos = QPoint()
+        self._user_moved = False
         self.diagnoser = ScreenModAnalyzer()
         self.tracker = WorldStateTracker(name_translator=self._translate_game_name)
         self.orchestrator.diagnoser = self.diagnoser
@@ -397,6 +407,25 @@ class OrdisCompanionApp(QWidget):
         pet.set_mood(mood, intensity=intensity, vfx=vfx, secondary_mood=secondary_mood)
         pet.start_talking(duration_ms=talk_ms)
 
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._drag_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+            event.accept()
+        else:
+            super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if event.buttons() == Qt.MouseButton.LeftButton and hasattr(self, '_drag_pos') and not self._drag_pos.isNull():
+            self.move(event.globalPosition().toPoint() - self._drag_pos)
+            self._user_moved = True
+            event.accept()
+        else:
+            super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        self._drag_pos = QPoint()
+        super().mouseReleaseEvent(event)
+
     def init_ui(self):
             self.setWindowTitle("WF-Companion: Cephalon Ordis Messenger")
             self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint)
@@ -437,11 +466,12 @@ class OrdisCompanionApp(QWidget):
             h_layout.addStretch()
             h_layout.setSpacing(6)
 
-            # Persona Button
-            self.persona_btn = persona_btn = HudButton('', icon_name='persona', icon_only=True)
-            persona_btn.setToolTip("오디스 성격 및 페르소나 설정")
-            persona_btn.clicked.connect(self.open_persona_dialog)
-            h_layout.addWidget(persona_btn)
+            # Settings Button (Persona & Local Model)
+            self.settings_btn = settings_btn = HudButton('', icon_name='settings', icon_only=True)
+            settings_btn.setToolTip("설정 (오디스 성격 및 로컬 모델)")
+            settings_btn.clicked.connect(self.open_settings_dialog)
+            self.persona_btn = settings_btn
+            h_layout.addWidget(settings_btn)
 
             # Close Button
             self.close_btn = close_btn = HudButton('', icon_name='close', icon_only=True)
@@ -449,6 +479,12 @@ class OrdisCompanionApp(QWidget):
             close_btn.clicked.connect(self.animate_hide)
             h_layout.addWidget(close_btn)
 
+            header.mousePressEvent = self.mousePressEvent
+            header.mouseMoveEvent = self.mouseMoveEvent
+            header.mouseReleaseEvent = self.mouseReleaseEvent
+            main_frame.mousePressEvent = self.mousePressEvent
+            main_frame.mouseMoveEvent = self.mouseMoveEvent
+            main_frame.mouseReleaseEvent = self.mouseReleaseEvent
             main_layout.addWidget(header)
 
             # Tab Stack
@@ -646,8 +682,8 @@ class OrdisCompanionApp(QWidget):
         self.add_chat_bubble("오퍼레이터", text, is_user=True)
         QApplication.processEvents()
 
-        if text in ('/성격', '/페르소나', '/persona', '성격 설정', '페르소나 설정'):
-            self.open_persona_dialog()
+        if text in ('/설정', '/settings', '/환경설정', '/config', '/성격', '/페르소나', '/persona', '설정', '환경설정', '성격 설정', '페르소나 설정'):
+            self.open_settings_dialog()
             return
 
         # Process chat todo command
@@ -1082,7 +1118,7 @@ class OrdisCompanionApp(QWidget):
         if hasattr(self, '_anim_group') and self._anim_group:
             self._anim_group.stop()
     
-        if pet_rect is not None:
+        if pet_rect is not None and not getattr(self, '_user_moved', False):
             self.reposition_above_pet(pet_rect)
     
         target_geo = self.geometry()
@@ -1142,15 +1178,41 @@ class OrdisCompanionApp(QWidget):
         self.setGeometry(curr_geo)
         self.setWindowOpacity(0.94)
 
-    def open_persona_dialog(self):
-        dlg = OrdisPersonaDialog(self.orchestrator.persona_manager, parent=self)
+    def open_settings_dialog(self):
+        pm = self.orchestrator.persona_manager
+        old_model = pm.get_model_path()
+        old_ctx = pm.get_context_size()
+        old_gpu = pm.get_gpu_layers()
+
+        dlg = OrdisPersonaDialog(pm, parent=self)
         if dlg.exec() == QDialog.DialogCode.Accepted:
-            persona = self.orchestrator.persona_manager.get_active_persona()
+            persona = pm.get_active_persona()
+            new_model = pm.get_model_path()
+            new_ctx = pm.get_context_size()
+            new_gpu = pm.get_gpu_layers()
+
+            model_changed = (new_model != old_model or new_ctx != old_ctx or new_gpu != old_gpu)
+
             self.add_chat_bubble(
                 "세팔론 오디스",
-                f"오퍼레이터님! 오디스의 성격 모드가 [{persona.get('name', '설정 완료')}] 모드로 변경되었습니다!",
+                f"오퍼레이터님! 오디스의 성격 모드가 [{persona.get('name', '설정 완료')}] 모드로 설정되었습니다!",
                 is_user=False
             )
+
+            if model_changed:
+                model_name = os.path.basename(new_model)
+                self.add_chat_bubble(
+                    "세팔론 오디스",
+                    f"⚙️ 모델 설정이 변경되었습니다. (모델: {model_name}, 컨텍스트: {new_ctx} 토큰, GPU: {new_gpu} 레이어)\n새 설정을 적용하기 위해 대화 엔진을 재시작합니다...",
+                    is_user=False
+                )
+                self.llm_runner.stop_server()
+                self.llm_runner.model_path = new_model if os.path.isabs(new_model) else get_path(new_model)
+                self.llm_runner.context_size = new_ctx
+                self.llm_runner.n_gpu_layers = new_gpu
+                self.start_llm_in_background()
+
+    open_persona_dialog = open_settings_dialog
 
     def open_riven_quick_dialog(self):
         dlg = RivenQuickInputDialog(self)
