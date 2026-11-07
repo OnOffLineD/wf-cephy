@@ -108,8 +108,8 @@
     "semantic_hash": "e756d8bca2bdaffb1ccb15619e81fb2e"
   },
   "data/user_checklist.json": {
-    "mtime": 1794032477.325,
-    "seen": 1794043103.521374,
+    "mtime": 1794045820.819,
+    "seen": 1794046316.230664,
     "ast_hash": "ac5e6669ffb0fa4e804a21339d68375b",
     "semantic_hash": ""
   },
@@ -132,9 +132,9 @@
     "semantic_hash": "b429a7a5ec064164881604004dd22b48"
   },
   "scripts/desktop_companion.py": {
-    "mtime": 1794042932.283,
-    "seen": 1794043103.5398815,
-    "ast_hash": "df2e77b056df950c5fea3084970f1372",
+    "mtime": 1794044422.021,
+    "seen": 1794046316.2485924,
+    "ast_hash": "65b5359f022e3fcb78593878db764475",
     "semantic_hash": ""
   },
   "scripts/embedded_llm_runner.py": {
@@ -222,9 +222,9 @@
     "semantic_hash": "4d84892ed066c7299149f1dd6451c12b"
   },
   "data/user_checklist.json.meta.json": {
-    "mtime": 1794032477.342,
-    "seen": 1794043103.5213776,
-    "ast_hash": "912509d1f57cabd0e4b21c49e9cc5681",
+    "mtime": 1794045820.836,
+    "seen": 1794046316.2306674,
+    "ast_hash": "7ea427e31f80d8e4f1baa32a055f879f",
     "semantic_hash": ""
   },
   "data/weapon_arcanes.json": {
@@ -900,15 +900,15 @@
     "semantic_hash": ""
   },
   "EXPERIENCE.md": {
-    "mtime": 1794031056.872,
-    "seen": 1794031235.569892,
-    "ast_hash": "23232daab727795510df77f095ba337e",
+    "mtime": 1794046130.311,
+    "seen": 1794046316.293668,
+    "ast_hash": "b5ef73c84bb7634cbd1f52ca4d5b98a7",
     "semantic_hash": ""
   },
   "PROGRESS.md": {
-    "mtime": 1794031071.254,
-    "seen": 1794031235.5707595,
-    "ast_hash": "354aa02cd9d6b6b3d633111c51a14caf",
+    "mtime": 1794046140.803,
+    "seen": 1794046316.294557,
+    "ast_hash": "37d650b64b4061b8ca4ff69bac8f12a4",
     "semantic_hash": ""
   },
   "harness/GLOBAL_EXPERIENCE.md": {
@@ -1008,9 +1008,9 @@
     "semantic_hash": ""
   },
   "scripts/layered_pet_renderer.py": {
-    "mtime": 1794042932.316,
-    "seen": 1794043103.544254,
-    "ast_hash": "3c1882de32433a16f70c894eb56a1430",
+    "mtime": 1794044422.044,
+    "seen": 1794046316.254185,
+    "ast_hash": "a68a0a7298598469d158486983938f33",
     "semantic_hash": ""
   },
   "scripts/morphing_tab_bar.py": {
@@ -1020,9 +1020,9 @@
     "semantic_hash": ""
   },
   "scripts/persona_dialog.py": {
-    "mtime": 1794042034.829,
-    "seen": 1794043103.546103,
-    "ast_hash": "9bc4f03b57d90257360ed9f2104b1a8d",
+    "mtime": 1794045806.399,
+    "seen": 1794046316.2565026,
+    "ast_hash": "524db495e01d9e289c37ea03283a1fa2",
     "semantic_hash": ""
   },
   "scripts/persona_manager.py": {
@@ -1266,9 +1266,9 @@
     "semantic_hash": ""
   },
   "scripts/frameless_dialog.py": {
-    "mtime": 1794035790.207,
-    "seen": 1794043103.541094,
-    "ast_hash": "32856bd1fa8cdd15d065f3550e127f77",
+    "mtime": 1794045806.369,
+    "seen": 1794046316.2501862,
+    "ast_hash": "a9629dddae6d62450a9ed4e7e4ac00db",
     "semantic_hash": ""
   },
   "scripts/generate_ui_assets.py": {
@@ -1314,9 +1314,9 @@
     "semantic_hash": ""
   },
   "tests/test_settings_and_frameless_dialogs.py": {
-    "mtime": 1794035790.275,
-    "seen": 1794043103.5707464,
-    "ast_hash": "fc75d0b59497289b9008335a27384a7a",
+    "mtime": 1794045806.432,
+    "seen": 1794046316.2833245,
+    "ast_hash": "e00e10a9664b6406659b2673203ae49f",
     "semantic_hash": ""
   },
   ".orchestra/EXPERIENCE.md": {
@@ -1326,9 +1326,9 @@
     "semantic_hash": ""
   },
   ".orchestra/PROGRESS.md": {
-    "mtime": 1794042934.685,
-    "seen": 1794043103.5778732,
-    "ast_hash": "8a486041994ea2e7808fda1d0bd8ad00",
+    "mtime": 1794045809.401,
+    "seen": 1794046316.291688,
+    "ast_hash": "696a6cf16205265aa8502ebd44117635",
     "semantic_hash": ""
   },
   ".orchestra/prompts/builder.md": {
@@ -1740,15 +1740,9 @@
     "semantic_hash": ""
   },
   "tests/test_game_input_listener.py": {
-    "mtime": 1794042932.33,
-    "seen": 1794043103.5641918,
-    "ast_hash": "9155d8262585ffcffaa554aff14b0733",
-    "semantic_hash": ""
-  },
-  "test_stdout.txt": {
-    "mtime": 1794041282.629,
-    "seen": 1794043103.608172,
-    "ast_hash": "f8cb789b7d6bd3d2d95efb53b92a9480",
+    "mtime": 1794044422.066,
+    "seen": 1794046316.2756596,
+    "ast_hash": "4b3c2b9c4d503b0f569146c8b0a9961c",
     "semantic_hash": ""
   },
   "assets/icons/browse.png": {
