@@ -14,14 +14,14 @@ try:
     from PyQt6.QtWidgets import (
         QDialog, QFrame, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QWidget
     )
-    from PyQt6.QtCore import Qt, QPoint
-    from PyQt6.QtGui import QIcon, QPixmap
+    from PyQt6.QtCore import Qt, QPoint, QRectF
+    from PyQt6.QtGui import QIcon, QPixmap, QPainter, QPen, QColor, QBrush
 except ImportError:
     from PySide6.QtWidgets import (
         QDialog, QFrame, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QWidget
     )
-    from PySide6.QtCore import Qt, QPoint
-    from PySide6.QtGui import QIcon, QPixmap
+    from PySide6.QtCore import Qt, QPoint, QRectF
+    from PySide6.QtGui import QIcon, QPixmap, QPainter, QPen, QColor, QBrush
 
 from scripts.hud_widgets import load_icon_pixmap, HUD_CYAN, HUD_BG
 
@@ -100,6 +100,12 @@ QPushButton#framelessCloseBtn:hover {
 }
 """
 
+FRAMELESS_BG_COLOR = "#0c1017"
+FRAMELESS_BORDER_COLOR = "#00d2ff"
+FRAMELESS_BORDER_WIDTH = 1.5
+FRAMELESS_RADIUS = 14.0
+
+
 class FramelessDialog(QDialog):
     """Base QDialog with frameless window hint, sleek Warframe dark theme card,
     draggable header bar, and close button.
@@ -118,6 +124,23 @@ class FramelessDialog(QDialog):
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setStyleSheet(FRAMELESS_DIALOG_STYLE)
+
+    def paintEvent(self, event):
+        # WA_TranslucentBackground leaves the window surface fully transparent and
+        # top-level QDialog stylesheet backgrounds are unreliable, so paint the
+        # opaque rounded card ourselves; children then draw on top of it.
+        painter = QPainter(self)
+        try:
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            pen = QPen(QColor(FRAMELESS_BORDER_COLOR))
+            pen.setWidthF(FRAMELESS_BORDER_WIDTH)
+            painter.setPen(pen)
+            painter.setBrush(QBrush(QColor(FRAMELESS_BG_COLOR)))
+            half = FRAMELESS_BORDER_WIDTH / 2
+            rect = QRectF(self.rect()).adjusted(half, half, -half, -half)
+            painter.drawRoundedRect(rect, FRAMELESS_RADIUS, FRAMELESS_RADIUS)
+        finally:
+            painter.end()
 
     def setWindowTitle(self, title: str):
         super().setWindowTitle(title)

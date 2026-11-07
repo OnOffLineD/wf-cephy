@@ -90,6 +90,34 @@ def test_real_riven_flow_with_element_opens_dialog(qapp, tmp_path):
     assert any(row[0] == "Riven" for row in rows(dialog))
 
 
+def test_dialog_paints_opaque_dark_card_with_cyan_border(qapp):
+    try:
+        from PyQt6.QtGui import QImage, QColor, QPaintEvent
+        from PyQt6.QtCore import Qt
+    except ImportError:
+        from PySide6.QtGui import QImage, QColor, QPaintEvent
+        from PySide6.QtCore import Qt
+    dialog = DamageBreakdownDialog(breakdown_text="x", w_meta={"name": "W"}, mod_objs=MODS)
+    assert dialog.testAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+    dialog.resize(400, 300)
+    dialog.paintEvent(QPaintEvent(dialog.rect()))  # direct call must not raise outside a paint cycle
+    image = QImage(dialog.size(), QImage.Format.Format_ARGB32)
+    image.fill(Qt.GlobalColor.transparent)
+    dialog.render(image)
+    # Bottom margin strip below the buttons (inside the border) is only covered by paintEvent.
+    bottom = image.pixelColor(200, 300 - 5)
+    assert bottom.alpha() == 255
+    assert bottom.name() == "#0c1017"
+    border = image.pixelColor(200, 299)
+    assert border.alpha() > 0
+    assert border.blue() > border.red()
+    # Rounded corner stays transparent (outside the 14px radius).
+    assert image.pixelColor(0, 0).alpha() == 0
+    assert "QTabBar::tab" in dialog.styleSheet() and "QPushButton" in dialog.styleSheet()
+    assert "QPushButton" in dialog.copy_button.styleSheet()
+    assert dialog.layout().contentsMargins().left() == 14
+
+
 def test_uncaught_error_is_logged_and_reported_instead_of_closing(qapp, tmp_path, monkeypatch):
     monkeypatch.setattr(OrdisCompanionApp, "refresh_world_events", lambda self: None)
     panel = OrdisCompanionApp()

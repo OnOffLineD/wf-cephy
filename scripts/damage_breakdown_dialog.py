@@ -18,6 +18,72 @@ except ImportError:
 
 from scripts.frameless_dialog import FramelessDialog
 
+BREAKDOWN_BUTTON_STYLE = """
+QPushButton {
+    background-color: #161e2e;
+    color: #e2e8f0;
+    border: 1px solid #24324d;
+    border-radius: 6px;
+    font-weight: bold;
+    padding: 8px 14px;
+}
+QPushButton:hover {
+    background-color: #1e2a40;
+    color: #00e5ff;
+    border: 1px solid #00d2ff;
+}
+QPushButton:pressed {
+    background-color: #0f1724;
+}
+"""
+
+# The whole sheet is applied at once so the dialog background rule does not
+# wipe out tab/browser/table/button styling (paintEvent draws the opaque card).
+BREAKDOWN_DIALOG_STYLE = """
+QDialog {
+    background-color: #0c1017;
+    color: #e2e8f0;
+}
+QTabWidget::pane {
+    background-color: #111722;
+    border: 1px solid #1e293b;
+    border-radius: 6px;
+}
+QTabBar::tab {
+    background-color: #161e2e;
+    color: #94a3b8;
+    border: 1px solid #24324d;
+    border-bottom: none;
+    border-top-left-radius: 6px;
+    border-top-right-radius: 6px;
+    padding: 6px 14px;
+    margin-right: 2px;
+}
+QTabBar::tab:selected {
+    background-color: #1e2a40;
+    color: #00e5ff;
+    border: 1px solid #00d2ff;
+    border-bottom: none;
+}
+QTextBrowser {
+    background-color: #0f172a;
+    color: #e2e8f0;
+    border: none;
+}
+QTableWidget {
+    background-color: #111722;
+    color: #e2e8f0;
+    gridline-color: #1e293b;
+    border: none;
+}
+QHeaderView::section {
+    background-color: #1e293b;
+    color: #94a3b8;
+    padding: 4px;
+    border: none;
+}
+""" + BREAKDOWN_BUTTON_STYLE
+
 
 class DamageBreakdownDialog(FramelessDialog):
     def __init__(self, parent=None, breakdown_text='', w_meta=None, mod_objs=None, metrics=None, riven_stats=None):
@@ -36,6 +102,8 @@ class DamageBreakdownDialog(FramelessDialog):
 
     def setup_ui(self):
         layout = QVBoxLayout()
+        layout.setContentsMargins(14, 12, 14, 14)
+        layout.setSpacing(10)
         header = self.create_title_bar(title=self.windowTitle(), on_close=self.close)
         layout.addWidget(header)
 
@@ -59,12 +127,18 @@ class DamageBreakdownDialog(FramelessDialog):
         # Buttons
         button_layout = QHBoxLayout()
         copy_button = QPushButton("Copy to Clipboard")
+        copy_button.setObjectName("breakdownCopyBtn")
+        copy_button.setStyleSheet(BREAKDOWN_BUTTON_STYLE)
         copy_button.clicked.connect(self.copy_to_clipboard)
         button_layout.addWidget(copy_button)
 
         close_button = QPushButton("Close")
+        close_button.setObjectName("breakdownCloseBtn")
+        close_button.setStyleSheet(BREAKDOWN_BUTTON_STYLE)
         close_button.clicked.connect(self.close)
         button_layout.addWidget(close_button)
+        self.copy_button = copy_button
+        self.close_button = close_button
 
         layout.addLayout(button_layout)
         self.setLayout(layout)
@@ -240,7 +314,7 @@ class DamageBreakdownDialog(FramelessDialog):
         palette.setColor(QPalette.ColorRole.Highlight, QColor("#D4AF37"))
         palette.setColor(QPalette.ColorRole.HighlightedText, QColor("#0f172a"))
         self.setPalette(palette)
-        self.setStyleSheet("QDialog { background-color: #0c1017; border: 1.5px solid #00d2ff; border-radius: 14px; color: #e2e8f0; }")
+        self.setStyleSheet(BREAKDOWN_DIALOG_STYLE)
 
     def set_data(self, breakdown_text='', w_meta=None, mod_objs=None, metrics=None, riven_stats=None):
         self.breakdown_text = breakdown_text
