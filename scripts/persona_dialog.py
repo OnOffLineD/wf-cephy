@@ -131,6 +131,9 @@ class OrdisPersonaDialog(FramelessDialog):
 
         main_card = QFrame()
         main_card.setObjectName("mainCard")
+        self.main_card = main_card
+        # Card margins drag the dialog; child buttons/tabs consume their own clicks first.
+        self.bind_drag_events(main_card)
         card_layout = QVBoxLayout(main_card)
         card_layout.setContentsMargins(16, 12, 16, 16)
         card_layout.setSpacing(10)
