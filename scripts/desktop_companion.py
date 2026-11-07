@@ -127,8 +127,12 @@ class DesktopPet(QWidget):
         self.input_listener.start()
 
         # Initial bottom-right placement
+        self.move_to_home()
+
+    def move_to_home(self):
+        # Keep the old on-screen anchor (right edge -40, bottom -80) for the larger 160x180 canvas
         screen = QApplication.primaryScreen().geometry()
-        self.move(screen.width() - 180, screen.height() - 220)
+        self.move(screen.width() - 40 - self.avatar.width(), screen.height() - 80 - self.avatar.height())
 
     def set_mood(self, mood="idle", intensity=1, vfx=None, secondary_mood=None):
         if hasattr(self.avatar, 'set_mood'):
@@ -169,8 +173,7 @@ class DesktopPet(QWidget):
         elif act == persona_act:
             self.open_persona_requested.emit()
         elif act == reset_act:
-            screen = QApplication.primaryScreen().geometry()
-            self.move(screen.width() - 180, screen.height() - 220)
+            self.move_to_home()
             if hasattr(self, 'parent_app') and self.parent_app:
                 self.parent_app._user_moved = False
         elif act == exit_act:
