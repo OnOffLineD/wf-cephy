@@ -1,30 +1,34 @@
 from typing import Dict
 
 try:
-    from PyQt6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QComboBox, QGridLayout
+    from PyQt6.QtWidgets import (
+        QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
+        QPushButton, QComboBox, QGridLayout
+    )
     from PyQt6.QtCore import Qt
 except ImportError:
-    from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QComboBox, QGridLayout
+    from PySide6.QtWidgets import (
+        QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
+        QPushButton, QComboBox, QGridLayout
+    )
     from PySide6.QtCore import Qt
 
 from scripts.riven_reroll_reader import parse_riven_input
-from scripts.frameless_dialog import apply_frameless_shell
+from scripts.frameless_dialog import FramelessDialog
 
 STAT_CHOICES = ['치확', '치피', '멀샷', '피해', '공속', '탄창', '재장전', '화염', '냉기', '전기', '독성', '충격', '관통', '베기', '상태이상']
 
 
-class RivenQuickInputDialog(QDialog):
+class RivenQuickInputDialog(FramelessDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle('리벤 모드 옵션 간편 입력')
         self.setFixedSize(400, 470)
-        self.setStyleSheet('QDialog { background-color: #0c1017; color: #FFFFFF; border: 1.5px solid #00d2ff; border-radius: 14px; } QLabel { color: #94a3b8; font-size: 12px; } QLineEdit { background: #161e2e; color: #ffffff; border: 1px solid #24324d; border-radius: 6px; padding: 6px; } QComboBox { background: #161e2e; color: #ffffff; border: 1px solid #24324d; border-radius: 6px; padding: 4px; } QPushButton { border-radius: 6px; font-weight: bold; padding: 8px; }')
-
         self.init_ui()
 
     def init_ui(self):
         layout = QVBoxLayout(self)
-        header = apply_frameless_shell(self, title='리벤 모드 옵션 간편 입력', on_close=self.reject)
+        header = self.create_title_bar(title=self.windowTitle(), on_close=self.reject)
         layout.addWidget(header)
 
         # Quick input at top

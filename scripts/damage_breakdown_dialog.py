@@ -1,27 +1,42 @@
 import sys
-from PyQt6.QtWidgets import QApplication, QDialog, QVBoxLayout, QTabWidget, QTextBrowser, QTableWidget, QTableWidgetItem, QPushButton, QHBoxLayout, QWidget
-from PyQt6.QtGui import QColor, QPalette
-from PyQt6.QtCore import Qt, QPoint
-from scripts.frameless_dialog import apply_frameless_shell
+from typing import Optional
 
-class DamageBreakdownDialog(QDialog):
+try:
+    from PyQt6.QtWidgets import (
+        QApplication, QDialog, QVBoxLayout, QTabWidget, QTextBrowser,
+        QTableWidget, QTableWidgetItem, QPushButton, QHBoxLayout, QWidget
+    )
+    from PyQt6.QtGui import QColor, QPalette
+    from PyQt6.QtCore import Qt, QPoint
+except ImportError:
+    from PySide6.QtWidgets import (
+        QApplication, QDialog, QVBoxLayout, QTabWidget, QTextBrowser,
+        QTableWidget, QTableWidgetItem, QPushButton, QHBoxLayout, QWidget
+    )
+    from PySide6.QtGui import QColor, QPalette
+    from PySide6.QtCore import Qt, QPoint
+
+from scripts.frameless_dialog import FramelessDialog
+
+
+class DamageBreakdownDialog(FramelessDialog):
     def __init__(self, parent=None, breakdown_text='', w_meta=None, mod_objs=None, metrics=None, riven_stats=None):
-            super().__init__(parent)
-            self.setWindowTitle("Warframe Damage Breakdown")
-            self.setModal(True)
-            self.breakdown_text = breakdown_text
-            self.w_meta = w_meta
-            self.mod_objs = mod_objs or []
-            self.metrics = metrics or {}
-            self.riven_stats = riven_stats or {}
-            self.setup_ui()
-            self.apply_dark_theme()
-            if breakdown_text or w_meta or mod_objs:
-                self.set_data(breakdown_text, w_meta, mod_objs, metrics, riven_stats)
+        super().__init__(parent)
+        self.setWindowTitle("Warframe Damage Breakdown")
+        self.setModal(True)
+        self.breakdown_text = breakdown_text
+        self.w_meta = w_meta
+        self.mod_objs = mod_objs or []
+        self.metrics = metrics or {}
+        self.riven_stats = riven_stats or {}
+        self.setup_ui()
+        self.apply_dark_theme()
+        if breakdown_text or w_meta or mod_objs:
+            self.set_data(breakdown_text, w_meta, mod_objs, metrics, riven_stats)
 
     def setup_ui(self):
         layout = QVBoxLayout()
-        header = apply_frameless_shell(self, title=self.windowTitle(), on_close=self.close)
+        header = self.create_title_bar(title=self.windowTitle(), on_close=self.close)
         layout.addWidget(header)
 
         # Tab Widget
@@ -52,155 +67,153 @@ class DamageBreakdownDialog(QDialog):
         button_layout.addWidget(close_button)
 
         layout.addLayout(button_layout)
-
         self.setLayout(layout)
-        self.apply_dark_theme()
 
     def generate_html_content(self):
-            text = getattr(self, 'breakdown_text', '') or ''
-            if not text:
-                return """
-                <html>
-                <head>
-                    <style>
-                        body { background-color: #0f172a; color: #D4AF37; }
-                    </style>
-                </head>
-                <body>
-                    <h1>No Damage Breakdown Available</h1>
-                </body>
-                </html>
-                """
-
-            lines = text.split('\n')
-            html_content = """
+        text = getattr(self, 'breakdown_text', '') or ''
+        if not text:
+            return """
             <html>
             <head>
                 <style>
                     body { background-color: #0f172a; color: #D4AF37; }
-                    h1 { color: #D4AF37; }
-                    .section-header { color: #D4AF37; font-weight: bold; }
-                    .step { background-color: #1e293b; color: #38bdf8; border: 1px solid #38bdf8; padding: 5px; border-radius: 5px; }
-                    .bullet-item { background-color: #1e293b; color: #D4AF37; padding: 5px; border-radius: 5px; }
-                    .total-highlight { background-color: #D4AF37; color: #0f172a; padding: 5px; border-radius: 5px; }
                 </style>
             </head>
             <body>
-                <h1>Damage Calculation Breakdown</h1>
-            """
-
-            for line in lines:
-                line = line.strip()
-                if line.startswith(('1.', '2.', '3.', '4.', '5.', '6.', '7.')):
-                    html_content += f'<p class="section-header">{line}</p>'
-                elif line.startswith(('①', '②', '③', '④', '⑤', '⑥', '⑦')):
-                    html_content += f'<p class="step">{line}</p>'
-                elif line.startswith('•'):
-                    html_content += f'<p class="bullet-item">{line}</p>'
-                elif line.startswith('Total:'):
-                    html_content += f'<p class="total-highlight">{line}</p>'
-                else:
-                    html_content += f'<p>{line}</p>'
-
-            html_content += """
+                <h1>No Damage Breakdown Available</h1>
             </body>
             </html>
             """
-            return html_content
+
+        lines = text.split('\n')
+        html_content = """
+        <html>
+        <head>
+            <style>
+                body { background-color: #0f172a; color: #D4AF37; }
+                h1 { color: #D4AF37; }
+                .section-header { color: #D4AF37; font-weight: bold; }
+                .step { background-color: #1e293b; color: #38bdf8; border: 1px solid #38bdf8; padding: 5px; border-radius: 5px; }
+                .bullet-item { background-color: #1e293b; color: #D4AF37; padding: 5px; border-radius: 5px; }
+                .total-highlight { background-color: #D4AF37; color: #0f172a; padding: 5px; border-radius: 5px; }
+            </style>
+        </head>
+        <body>
+            <h1>Damage Calculation Breakdown</h1>
+        """
+
+        for line in lines:
+            line = line.strip()
+            if line.startswith(('1.', '2.', '3.', '4.', '5.', '6.', '7.')):
+                html_content += f'<p class="section-header">{line}</p>'
+            elif line.startswith(('①', '②', '③', '④', '⑤', '⑥', '⑦')):
+                html_content += f'<p class="step">{line}</p>'
+            elif line.startswith('•'):
+                html_content += f'<p class="bullet-item">{line}</p>'
+            elif line.startswith('Total:'):
+                html_content += f'<p class="total-highlight">{line}</p>'
+            else:
+                html_content += f'<p>{line}</p>'
+
+        html_content += """
+        </body>
+        </html>
+        """
+        return html_content
 
     def populate_table(self):
-            self.table_widget.setRowCount(0)  # Clear existing rows
-            self.table_widget.setColumnCount(8)
-            self.table_widget.setHorizontalHeaderLabels(["모드명", "피해", "멀티샷", "속성", "치확", "치피", "연사/공속", "비고"])
+        self.table_widget.setRowCount(0)  # Clear existing rows
+        self.table_widget.setColumnCount(8)
+        self.table_widget.setHorizontalHeaderLabels(["모드명", "피해", "멀티샷", "속성", "치확", "치피", "연사/공속", "비고"])
 
-            if not self.mod_objs and not self.riven_stats:
-                return
+        if not self.mod_objs and not self.riven_stats:
+            return
 
-            def percent(value):
-                return f"{value*100:+.1f}%" if value != 0 else "-"
+        def percent(value):
+            return f"{value*100:+.1f}%" if value != 0 else "-"
 
-            data = []
-            total_damage = 0
-            total_multishot = 0
-            total_elemental_damage = 0
-            total_crit_chance = 0
-            total_crit_damage = 0
-            total_fire_rate = 0
+        data = []
+        total_damage = 0
+        total_multishot = 0
+        total_elemental_damage = 0
+        total_crit_chance = 0
+        total_crit_damage = 0
+        total_fire_rate = 0
 
-            for m in self.mod_objs or []:
-                # The riven's values get their own row below; this is only its slot marker.
-                if self.riven_stats and m.get('name') == 'Riven Mod':
-                    continue
-                mod_name = m.get('kr_name') or m.get('name')
-                damage = float(m.get('damage') or 0.0)
-                multishot = float(m.get('multishot') or 0.0)
-                elemental_damage = float(m.get('elemental_damage') or 0.0)
-                crit_chance = float(m.get('crit_chance') or 0.0)
-                crit_damage = float(m.get('crit_damage') or 0.0)
-                fire_rate = float(m.get('fire_rate') or 0.0)
+        for m in self.mod_objs or []:
+            # The riven's values get their own row below; this is only its slot marker.
+            if self.riven_stats and m.get('name') == 'Riven Mod':
+                continue
+            mod_name = m.get('kr_name') or m.get('name')
+            damage = float(m.get('damage') or 0.0)
+            multishot = float(m.get('multishot') or 0.0)
+            elemental_damage = float(m.get('elemental_damage') or 0.0)
+            crit_chance = float(m.get('crit_chance') or 0.0)
+            crit_damage = float(m.get('crit_damage') or 0.0)
+            fire_rate = float(m.get('fire_rate') or 0.0)
 
-                total_damage += damage
-                total_multishot += multishot
-                total_elemental_damage += elemental_damage
-                total_crit_chance += crit_chance
-                total_crit_damage += crit_damage
-                total_fire_rate += fire_rate
+            total_damage += damage
+            total_multishot += multishot
+            total_elemental_damage += elemental_damage
+            total_crit_chance += crit_chance
+            total_crit_damage += crit_damage
+            total_fire_rate += fire_rate
 
-                is_zero = not any([damage, multishot, elemental_damage, crit_chance, crit_damage, fire_rate])
-                note = "[스탠스]" if "stance" in str(m.get("type", "")).lower() else ("[유틸리티]" if is_zero else "-")
+            is_zero = not any([damage, multishot, elemental_damage, crit_chance, crit_damage, fire_rate])
+            note = "[스탠스]" if "stance" in str(m.get("type", "")).lower() else ("[유틸리티]" if is_zero else "-")
 
-                row_data = [
-                    mod_name,
-                    percent(damage),
-                    percent(multishot),
-                    percent(elemental_damage),
-                    percent(crit_chance),
-                    percent(crit_damage),
-                    percent(fire_rate),
-                    note
-                ]
-                data.append(row_data)
-
-            if self.riven_stats:
-                riven = self.riven_stats
-                riven_damage = riven.get('damage', 0.0) or riven.get('base_damage', 0.0)
-                total_damage += riven_damage
-                total_multishot += riven.get('multishot', 0.0)
-                total_elemental_damage += riven.get('elemental_damage', 0.0)
-                total_crit_chance += riven.get('crit_chance', 0.0)
-                total_crit_damage += riven.get('crit_damage', 0.0)
-                total_fire_rate += riven.get('fire_rate', 0.0)
-                data.append([
-                    "Riven",
-                    percent(riven_damage),
-                    percent(riven.get('multishot', 0.0)),
-                    percent(riven.get('elemental_damage', 0.0)),
-                    percent(riven.get('crit_chance', 0.0)),
-                    percent(riven.get('crit_damage', 0.0)),
-                    percent(riven.get('fire_rate', 0.0)),
-                    "고유 롤 옵션 합산"
-                ])
-
-            summary_row = [
-                "🎯 총합 적용치",
-                f"{total_damage*100:+.1f}%",
-                f"{total_multishot*100:+.1f}%",
-                f"{total_elemental_damage*100:+.1f}%",
-                f"{total_crit_chance*100:+.1f}%",
-                f"{total_crit_damage*100:+.1f}%",
-                f"{total_fire_rate*100:+.1f}%",
-                "연산 대입값 (Total Sum)"
+            row_data = [
+                mod_name,
+                percent(damage),
+                percent(multishot),
+                percent(elemental_damage),
+                percent(crit_chance),
+                percent(crit_damage),
+                percent(fire_rate),
+                note
             ]
-            data.append(summary_row)
+            data.append(row_data)
 
-            self.table_widget.setRowCount(len(data))
-            for row, row_data in enumerate(data):
-                for col, value in enumerate(row_data):
-                    item = QTableWidgetItem(value)
-                    item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                    if value != "0" and value != "-":
-                        item.setBackground(QColor("#1e293b"))
-                    self.table_widget.setItem(row, col, item)
+        if self.riven_stats:
+            riven = self.riven_stats
+            riven_damage = riven.get('damage', 0.0) or riven.get('base_damage', 0.0)
+            total_damage += riven_damage
+            total_multishot += riven.get('multishot', 0.0)
+            total_elemental_damage += riven.get('elemental_damage', 0.0)
+            total_crit_chance += riven.get('crit_chance', 0.0)
+            total_crit_damage += riven.get('crit_damage', 0.0)
+            total_fire_rate += riven.get('fire_rate', 0.0)
+            data.append([
+                "Riven",
+                percent(riven_damage),
+                percent(riven.get('multishot', 0.0)),
+                percent(riven.get('elemental_damage', 0.0)),
+                percent(riven.get('crit_chance', 0.0)),
+                percent(riven.get('crit_damage', 0.0)),
+                percent(riven.get('fire_rate', 0.0)),
+                "고유 롤 옵션 합산"
+            ])
+
+        summary_row = [
+            "🎯 총합 적용치",
+            f"{total_damage*100:+.1f}%",
+            f"{total_multishot*100:+.1f}%",
+            f"{total_elemental_damage*100:+.1f}%",
+            f"{total_crit_chance*100:+.1f}%",
+            f"{total_crit_damage*100:+.1f}%",
+            f"{total_fire_rate*100:+.1f}%",
+            "연산 대입값 (Total Sum)"
+        ]
+        data.append(summary_row)
+
+        self.table_widget.setRowCount(len(data))
+        for row, row_data in enumerate(data):
+            for col, value in enumerate(row_data):
+                item = QTableWidgetItem(value)
+                item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                if value != "0" and value != "-":
+                    item.setBackground(QColor("#1e293b"))
+                self.table_widget.setItem(row, col, item)
 
     def copy_to_clipboard(self):
         lines = []
@@ -235,14 +248,13 @@ class DamageBreakdownDialog(QDialog):
         self.mod_objs = mod_objs
         self.metrics = metrics
         self.riven_stats = riven_stats
-    
+
         if w_meta:
             self.setWindowTitle(f"Warframe Damage Breakdown - {w_meta.get('name', 'Unknown Weapon')}")
-            if hasattr(self, '_frameless_title_label') and self._frameless_title_label:
-                self._frameless_title_label.setText(self.windowTitle())
-    
+
         self.text_browser.setHtml(self.generate_html_content())
         self.populate_table()
+
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

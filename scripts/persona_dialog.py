@@ -22,40 +22,20 @@ except ImportError:
 from scripts.persona_manager import PersonaManager, DEFAULT_PRESETS
 from scripts.hud_widgets import load_icon_pixmap, ICON_DIR
 from scripts.path_config import get_path
+from scripts.frameless_dialog import FramelessDialog
 
-class OrdisPersonaDialog(QDialog):
+class OrdisPersonaDialog(FramelessDialog):
     """WF-Companion Settings & Cephalon Ordis Persona Customization Dialog.
     Frameless, draggable, and themed for Warframe dark HUD aesthetics.
     """
     def __init__(self, persona_manager: Optional[PersonaManager] = None, parent=None):
         super().__init__(parent)
         self.persona_manager = persona_manager or PersonaManager()
-        self._drag_pos = QPoint()
         self.init_ui()
-
-    def mousePressEvent(self, event):
-        if event.button() == Qt.MouseButton.LeftButton:
-            self._drag_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
-            event.accept()
-        else:
-            super().mousePressEvent(event)
-
-    def mouseMoveEvent(self, event):
-        if event.buttons() == Qt.MouseButton.LeftButton and hasattr(self, '_drag_pos') and not self._drag_pos.isNull():
-            self.move(event.globalPosition().toPoint() - self._drag_pos)
-            event.accept()
-        else:
-            super().mouseMoveEvent(event)
-
-    def mouseReleaseEvent(self, event):
-        self._drag_pos = QPoint()
-        super().mouseReleaseEvent(event)
 
     def init_ui(self):
         self.setWindowTitle("워프레임 컴패니언 설정 (Settings)")
         self.setFixedSize(540, 680)
-        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
 
         self.setStyleSheet("""
             QDialog {
@@ -155,61 +135,12 @@ class OrdisPersonaDialog(QDialog):
         card_layout.setContentsMargins(16, 12, 16, 16)
         card_layout.setSpacing(10)
 
-        # 1. Custom Frameless Titlebar
-        header = QFrame()
-        header.setObjectName("dialogHeader")
-        header.setStyleSheet("background: transparent; border-bottom: 1px solid rgba(0, 210, 255, 0.2); padding-bottom: 6px;")
-        h_layout = QHBoxLayout(header)
-        h_layout.setContentsMargins(0, 0, 0, 0)
-        h_layout.setSpacing(8)
-
-        settings_pix = load_icon_pixmap("settings")
-        if settings_pix and not settings_pix.isNull():
-            icon_lbl = QLabel()
-            icon_lbl.setPixmap(settings_pix.scaled(20, 20, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
-            icon_lbl.setFixedSize(22, 22)
-            h_layout.addWidget(icon_lbl)
-
-        win_title = QLabel("워프레임 컴패니언 설정 (WF-Companion Settings)")
-        win_title.setStyleSheet("color: #00e5ff; font-weight: bold; font-size: 13px;")
-        h_layout.addWidget(win_title)
-        h_layout.addStretch()
-
-        close_btn = QPushButton("✕")
-        close_btn.setFixedSize(28, 28)
-        close_btn.setStyleSheet("""
-            QPushButton {
-                background: transparent;
-                color: #94a3b8;
-                font-size: 15px;
-                font-weight: bold;
-                border: none;
-                border-radius: 6px;
-            }
-            QPushButton:hover {
-                background: rgba(244, 63, 94, 0.25);
-                color: #ff3366;
-            }
-        """)
-        close_btn.setToolTip("닫기")
-        close_btn.clicked.connect(self.reject)
-        h_layout.addWidget(close_btn)
-
-        # Allow dragging window from header
-        def header_press(event):
-            if event.button() == Qt.MouseButton.LeftButton:
-                self._drag_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
-                event.accept()
-        def header_move(event):
-            if event.buttons() == Qt.MouseButton.LeftButton and hasattr(self, '_drag_pos') and not self._drag_pos.isNull():
-                self.move(event.globalPosition().toPoint() - self._drag_pos)
-                event.accept()
-        def header_release(event):
-            self._drag_pos = QPoint()
-
-        header.mousePressEvent = header_press
-        header.mouseMoveEvent = header_move
-        header.mouseReleaseEvent = header_release
+        # 1. Custom Frameless Titlebar (using FramelessDialog SSOT title bar)
+        header = self.create_title_bar(
+            title="워프레임 컴패니언 설정 (WF-Companion Settings)",
+            on_close=self.reject,
+            icon_name="settings"
+        )
         card_layout.addWidget(header)
 
         # 2. Tabs Widget: Tab 1 = Persona, Tab 2 = Local Model & Engine

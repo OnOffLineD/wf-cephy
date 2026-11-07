@@ -106,3 +106,20 @@
 - **교훈**:
   - 프레임리스 윈도우 환경에서는 마우스 이벤트를 자식 프레임(헤더, 카드 본체)에서도 윈도우로 전달해야 클릭 미스가 발생하지 않고 쾌적한 드래그 UX가 보장된다.
   - 모델/컨텍스트 설정 변경은 단순히 JSON을 쓰는 것에 그치지 않고 구동 중인 로컬 추론 프로세스의 graceful shutdown 및 자동 재기동 파이프라인과 긴밀하게 연동되어야 한다.
+
+
+---
+
+### EXP-010: 다이얼로그 계층의 FramelessDialog 정규 상속 일원화 및 레거시 뷰 청산
+- **기록일자**: 2026-11-07
+- **현상**:
+  1. 여러 팝업 다이얼로그(DamageBreakdownDialog, RivenQuickInputDialog, BuildEditDialog, RivenCompareDialog, OrdisPersonaDialog)가 `apply_frameless_shell` 래핑 함수나 인라인 마우스 이벤트 보일러플레이트를 중복 정의하고 있어 유지보수성이 저하됨.
+  2. `DamageBreakdownDialog`가 PyQt6 단독 임포트로 고정되어 있어 PySide6 환경과의 크로스 런타임 호환성이 취약했음.
+  3. 미사용 레거시 파일(`scripts/companion_views.py`)이 잔존하여 지식 그래프 및 의존성 분석에 노이즈를 유발함.
+- **해결책**:
+  1. **정규 클래스 상속 일원화**: 모든 다이얼로그가 `FramelessDialog`를 직접 상속받고 `self.create_title_bar(...)`를 호출하도록 리팩토링.
+  2. **테마 스타일 SSOT 정립**: `scripts/frameless_dialog.py` 내에 `FRAMELESS_DIALOG_STYLE`을 중앙 집중화하고 `setWindowTitle` 호출 시 헤더 라벨 자동 동기화 기능 추가.
+  3. **PySide6 / PyQt6 크로스 임포트 통일**: `try...except ImportError` 패턴을 전 다이얼로그 모듈에 일관되게 적용.
+  4. **레거시 코드 제거**: 참조되지 않는 `companion_views.py`를 영구 삭제하여 코드베이스를 슬림화함.
+- **교훈**:
+  - 몽키 패칭 형태의 데코레이터/래퍼 함수보다 명확한 베이스 클래스(`FramelessDialog`) 상속 패턴이 타입 힌팅, 이벤트 전달 계층, 테스트 작성(`isinstance` 검증) 면에서 훨씬 안정적이고 확장에 용이하다.

@@ -2,31 +2,31 @@ from typing import Dict, List, Optional, Tuple
 
 try:
     from PyQt6.QtCore import Qt
-    from PyQt6.QtWidgets import QComboBox, QCompleter, QDialog, QGridLayout, QHBoxLayout, QLabel, QPushButton, QVBoxLayout
+    from PyQt6.QtWidgets import (
+        QComboBox, QCompleter, QDialog, QGridLayout, QHBoxLayout,
+        QLabel, QPushButton, QVBoxLayout
+    )
 except ImportError:
     from PySide6.QtCore import Qt
-    from PySide6.QtWidgets import QComboBox, QCompleter, QDialog, QGridLayout, QHBoxLayout, QLabel, QPushButton, QVBoxLayout
+    from PySide6.QtWidgets import (
+        QComboBox, QCompleter, QDialog, QGridLayout, QHBoxLayout,
+        QLabel, QPushButton, QVBoxLayout
+    )
 
 from scripts.build_store import GRID_SLOTS, RIVEN_MOD
-from scripts.frameless_dialog import apply_frameless_shell
+from scripts.frameless_dialog import FramelessDialog
 
 EMPTY = "(비어 있음)"
 RIVEN_LABEL = "리벤 모드"
-STYLE = (
-    "QDialog { background-color: #0c1017; border: 1.5px solid #00d2ff; border-radius: 14px; } QLabel { color: #94a3b8; font-size: 12px; } "
-    "QComboBox { background: #161e2e; color: #ffffff; border: 1px solid #24324d; border-radius: 6px; padding: 4px; } "
-    "QPushButton { border-radius: 6px; font-weight: bold; padding: 8px; color: #ffffff; background: #1e293b; }"
-)
 INVALID_STYLE = "QComboBox { border: 1px solid #ef4444; }"
 
 
-class BuildEditDialog(QDialog):
+class BuildEditDialog(FramelessDialog):
     """Fix misrecognized mods slot by slot. Position matters: it decides elemental combination."""
 
     def __init__(self, slots: Dict[str, str], mod_choices: List[Tuple[str, str]], arcane: Optional[str] = None, arcane_choices: Optional[List[Tuple[str, str]]] = None, parent=None):
         super().__init__(parent)
         self.setWindowTitle("장착 모드 수정")
-        self.setStyleSheet(STYLE)
         self._names = {display: name for display, name in mod_choices}
         self._names[RIVEN_LABEL] = RIVEN_MOD
         self._displays = {name: display for display, name in self._names.items()}
@@ -35,7 +35,7 @@ class BuildEditDialog(QDialog):
         self.combos: Dict[str, QComboBox] = {}
 
         layout = QVBoxLayout(self)
-        header = apply_frameless_shell(self, title="장착 모드 수정", on_close=self.reject)
+        header = self.create_title_bar(title=self.windowTitle(), on_close=self.reject)
         layout.addWidget(header)
         layout.addWidget(QLabel("슬롯 위치도 속성 합성에 영향을 줍니다. 이름을 입력하면 검색됩니다."))
 

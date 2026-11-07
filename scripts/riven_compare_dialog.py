@@ -1,20 +1,18 @@
 from typing import Any, Dict
 
 try:
-    from PyQt6.QtWidgets import QDialog, QHBoxLayout, QLabel, QLineEdit, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout
+    from PyQt6.QtWidgets import (
+        QDialog, QHBoxLayout, QLabel, QLineEdit, QPushButton,
+        QTableWidget, QTableWidgetItem, QVBoxLayout
+    )
 except ImportError:
-    from PySide6.QtWidgets import QDialog, QHBoxLayout, QLabel, QLineEdit, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout
+    from PySide6.QtWidgets import (
+        QDialog, QHBoxLayout, QLabel, QLineEdit, QPushButton,
+        QTableWidget, QTableWidgetItem, QVBoxLayout
+    )
 
 from scripts.riven_reroll_reader import format_riven_stats, parse_riven_input
-from scripts.frameless_dialog import apply_frameless_shell
-
-STYLE = (
-    "QDialog { background-color: #0c1017; border: 1.5px solid #00d2ff; border-radius: 14px; } QLabel { color: #cbd5e1; font-size: 12px; } "
-    "QTableWidget { background: #111722; color: #e2e8f0; gridline-color: #1e293b; border: 1px solid #1e293b; } "
-    "QHeaderView::section { background: #1e293b; color: #94a3b8; padding: 4px; border: none; } "
-    "QLineEdit { background: #161e2e; color: #ffffff; border: 1px solid #24324d; border-radius: 6px; padding: 6px; } "
-    "QPushButton { border-radius: 6px; font-weight: bold; padding: 8px; color: #ffffff; background: #1e293b; }"
-)
+from scripts.frameless_dialog import FramelessDialog
 
 
 def format_change(before: float, after: float) -> str:
@@ -23,14 +21,13 @@ def format_change(before: float, after: float) -> str:
     return f"{(after - before) / before * 100:+.1f}%"
 
 
-class RivenCompareDialog(QDialog):
+class RivenCompareDialog(FramelessDialog):
     def __init__(self, res: Dict[str, Any], parent=None):
         super().__init__(parent)
         self.setWindowTitle("리벤 전후 비교")
-        self.setStyleSheet(STYLE)
         self.resize(460, 420)
         layout = QVBoxLayout(self)
-        header = apply_frameless_shell(self, title="리벤 전후 비교", on_close=self.reject)
+        header = self.create_title_bar(title=self.windowTitle(), on_close=self.reject)
         layout.addWidget(header)
 
         verdict = QLabel(f"{res['verdict']} (지속 DPS 기준)")
@@ -64,16 +61,15 @@ class RivenCompareDialog(QDialog):
         layout.addWidget(close)
 
 
-class RivenRollEditDialog(QDialog):
+class RivenRollEditDialog(FramelessDialog):
     """Correct misread options. Values are percents, such as: 피해 251.7 상태이상확률 -53.8"""
 
     def __init__(self, old_stats: Dict[str, float], new_stats: Dict[str, float], parent=None):
         super().__init__(parent)
         self.setWindowTitle("리벤 옵션 수정")
-        self.setStyleSheet(STYLE)
         self.resize(460, 180)
         layout = QVBoxLayout(self)
-        header = apply_frameless_shell(self, title="리벤 옵션 수정", on_close=self.reject)
+        header = self.create_title_bar(title=self.windowTitle(), on_close=self.reject)
         layout.addWidget(header)
         layout.addWidget(QLabel("수치는 % 기준입니다. 예: 치확 150 멀샷 90 화염 85.2 상태이상 -53.8"))
         layout.addWidget(QLabel("이전 옵션"))

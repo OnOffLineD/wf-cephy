@@ -12,6 +12,7 @@ except ImportError:
     from PySide6.QtCore import Qt, QPoint, QPointF
     from PySide6.QtGui import QMouseEvent
 
+from scripts.frameless_dialog import FramelessDialog
 from scripts.persona_manager import PersonaManager, SettingsManager
 from scripts.persona_dialog import OrdisPersonaDialog, SettingsDialog
 from scripts.damage_breakdown_dialog import DamageBreakdownDialog
@@ -56,7 +57,8 @@ def test_settings_dialog_frameless_and_assets(qapp):
         
         dlg = SettingsDialog(persona_manager=sm)
         
-        # 1. Headless / Frameless check
+        # 1. Headless / Frameless check & FramelessDialog inheritance
+        assert isinstance(dlg, FramelessDialog)
         assert bool(dlg.windowFlags() & Qt.WindowType.FramelessWindowHint) is True
 
         # 2. Assets presence check
@@ -84,16 +86,19 @@ def test_settings_dialog_frameless_and_assets(qapp):
 def test_all_popup_dialogs_frameless(qapp):
     # Damage breakdown dialog
     dmg_dlg = DamageBreakdownDialog()
+    assert isinstance(dmg_dlg, FramelessDialog)
     assert bool(dmg_dlg.windowFlags() & Qt.WindowType.FramelessWindowHint) is True
 
     # Riven quick input dialog
     riven_dlg = RivenQuickInputDialog()
+    assert isinstance(riven_dlg, FramelessDialog)
     assert bool(riven_dlg.windowFlags() & Qt.WindowType.FramelessWindowHint) is True
 
     # Build edit dialog
     slots = {"slot1": "Serration"}
     mod_choices = [("Serration", "Serration")]
     edit_dlg = BuildEditDialog(slots=slots, mod_choices=mod_choices)
+    assert isinstance(edit_dlg, FramelessDialog)
     assert bool(edit_dlg.windowFlags() & Qt.WindowType.FramelessWindowHint) is True
 
     # Riven compare & roll edit dialogs
@@ -104,9 +109,11 @@ def test_all_popup_dialogs_frameless(qapp):
         "new_card": {"name": "New", "stats": {"피해": 150.0}}
     }
     comp_dlg = RivenCompareDialog(res)
+    assert isinstance(comp_dlg, FramelessDialog)
     assert bool(comp_dlg.windowFlags() & Qt.WindowType.FramelessWindowHint) is True
 
     roll_dlg = RivenRollEditDialog({"피해": 100.0}, {"피해": 150.0})
+    assert isinstance(roll_dlg, FramelessDialog)
     assert bool(roll_dlg.windowFlags() & Qt.WindowType.FramelessWindowHint) is True
 
 def test_chat_popup_draggable(qapp):

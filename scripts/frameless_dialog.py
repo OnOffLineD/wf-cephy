@@ -5,6 +5,7 @@ Provides:
 - FramelessWindowHint styling with Warframe Cephalon dark theme.
 - Silky smooth mouse dragging from the header or card background.
 - Aesthetic header bar with custom title, icon, and close button.
+- Title synchronization on setWindowTitle.
 """
 import os
 from typing import Optional
@@ -36,6 +37,52 @@ QFrame#framelessCard QLabel {
 }
 """
 
+FRAMELESS_DIALOG_STYLE = """
+QDialog {
+    background-color: #0c1017;
+    border: 1.5px solid #00d2ff;
+    border-radius: 14px;
+    color: #e2e8f0;
+}
+QLabel {
+    color: #94a3b8;
+    font-size: 12px;
+}
+QLineEdit, QSpinBox, QComboBox {
+    background-color: #161e2e;
+    color: #ffffff;
+    border: 1px solid #24324d;
+    border-radius: 6px;
+    padding: 6px;
+}
+QLineEdit:focus, QSpinBox:focus, QComboBox:focus {
+    border: 1px solid #00d2ff;
+}
+QPushButton {
+    border-radius: 6px;
+    font-weight: bold;
+    padding: 8px;
+    color: #ffffff;
+    background-color: #1e293b;
+}
+QPushButton:hover {
+    background-color: #2e3e5c;
+    border: 1px solid #00d2ff;
+}
+QTableWidget {
+    background-color: #111722;
+    color: #e2e8f0;
+    gridline-color: #1e293b;
+    border: 1px solid #1e293b;
+}
+QHeaderView::section {
+    background-color: #1e293b;
+    color: #94a3b8;
+    padding: 4px;
+    border: none;
+}
+"""
+
 CLOSE_BTN_STYLE = """
 QPushButton#framelessCloseBtn {
     background: transparent;
@@ -60,8 +107,16 @@ class FramelessDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._drag_pos = QPoint()
+        self.title_label = None
+        self._frameless_title_label = None
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setStyleSheet(FRAMELESS_DIALOG_STYLE)
+
+    def setWindowTitle(self, title: str):
+        super().setWindowTitle(title)
+        if getattr(self, 'title_label', None) is not None:
+            self.title_label.setText(title)
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
@@ -100,8 +155,10 @@ class FramelessDialog(QDialog):
             h_layout.addWidget(icon_lbl)
 
         # Title
-        self.title_label = QLabel(title, header)
+        display_title = title or self.windowTitle()
+        self.title_label = QLabel(display_title, header)
         self.title_label.setStyleSheet("color: #00e5ff; font-weight: bold; font-size: 13px;")
+        self._frameless_title_label = self.title_label
         h_layout.addWidget(self.title_label)
         h_layout.addStretch()
 
