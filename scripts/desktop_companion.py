@@ -27,7 +27,8 @@ try:
     from PyQt6.QtWidgets import (
         QApplication, QWidget, QLabel, QVBoxLayout, QHBoxLayout,
         QLineEdit, QPushButton, QTextEdit, QScrollArea, QFrame,
-        QCheckBox, QMenu, QSplitter, QStackedWidget, QDialog, QInputDialog, QGridLayout
+        QCheckBox, QMenu, QSplitter, QStackedWidget, QDialog, QInputDialog, QGridLayout,
+        QComboBox, QMessageBox
     )
 except ImportError:
     from PySide6.QtCore import (
@@ -38,7 +39,8 @@ except ImportError:
     from PySide6.QtWidgets import (
         QApplication, QWidget, QLabel, QVBoxLayout, QHBoxLayout,
         QLineEdit, QPushButton, QTextEdit, QScrollArea, QFrame,
-        QCheckBox, QMenu, QSplitter, QStackedWidget, QDialog, QInputDialog, QGridLayout
+        QCheckBox, QMenu, QSplitter, QStackedWidget, QDialog, QInputDialog, QGridLayout,
+        QComboBox, QMessageBox
     )
 
 from scripts.llm_orchestrator import LLMOrchestrator
@@ -50,6 +52,7 @@ from scripts.damage_breakdown_dialog import DamageBreakdownDialog
 from scripts.riven_quick_dialog import RivenQuickInputDialog
 from scripts.riven_compare_dialog import RivenCompareDialog, RivenRollEditDialog
 from scripts.build_edit_dialog import BuildEditDialog
+from scripts.build_store import GRID_SLOTS, RIVEN_MOD, is_riven_name
 from scripts.morphing_tab_bar import MorphingTabBar
 from scripts.hud_widgets import HudButton
 from scripts.persona_dialog import OrdisPersonaDialog
@@ -477,7 +480,8 @@ class OrdisCompanionApp(QWidget):
 
             # Header
             header = QFrame()
-            header.setStyleSheet("background: transparent; border-bottom: 1px solid rgba(255, 255, 255, 0.08); padding: 8px;")
+            # No side padding: the four-tab bar plus two buttons must fit the 440px window.
+            header.setStyleSheet("background: transparent; border-bottom: 1px solid rgba(255, 255, 255, 0.08); padding: 8px 0px;")
             h_layout = QHBoxLayout(header)
             h_layout.setContentsMargins(0, 0, 0, 0)
             h_layout.setSpacing(0)
@@ -487,10 +491,11 @@ class OrdisCompanionApp(QWidget):
             self.tab_bar.add_tab('채팅', icon_name='chat')
             self.tab_bar.add_tab('숙제', icon_name='todo')
             self.tab_bar.add_tab('현황', icon_name='status')
+            self.tab_bar.add_tab('빌드', icon_name='build')
             self.tab_bar.tab_changed.connect(self.switch_tab)
             h_layout.addWidget(self.tab_bar)
             h_layout.addStretch()
-            h_layout.setSpacing(6)
+            h_layout.setSpacing(4)
 
             # Settings Button (Persona & Local Model)
             self.settings_btn = settings_btn = HudButton('', icon_name='settings', icon_only=True)
@@ -648,6 +653,63 @@ class OrdisCompanionApp(QWidget):
             status_layout.addWidget(status_scroll)
 
             self.tab_stack.addWidget(status_page)
+
+            # Build Vault Page (Tab 3)
+            self.build_page = QWidget()
+            build_layout = QVBoxLayout(self.build_page)
+            build_layout.setContentsMargins(4, 4, 4, 4)
+            build_layout.setSpacing(6)
+            build_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+            bh_layout = QHBoxLayout()
+            build_title = QLabel("저장된 모딩 보관함")
+            build_title.setStyleSheet("color: #00e5ff; font-weight: bold; font-size: 13px;")
+            self.build_combo = QComboBox()
+            self.build_combo.currentIndexChanged.connect(self._show_selected_build)
+            self.build_refresh_btn = HudButton('새로고침', icon_name='refresh', icon_only=True)
+            self.build_refresh_btn.clicked.connect(self.refresh_build_page)
+            bh_layout.addWidget(build_title)
+            bh_layout.addWidget(self.build_combo, 1)
+            bh_layout.addWidget(self.build_refresh_btn)
+            build_layout.addLayout(bh_layout)
+
+            self.build_empty_label = QLabel("저장된 모딩이 없습니다. F9 화면 캡처 또는 클립보드로 모딩을 스캔하면 자동으로 보관됩니다.")
+            self.build_empty_label.setWordWrap(True)
+            self.build_empty_label.setStyleSheet("color: #94a3b8; font-size: 11px; padding: 20px;")
+            build_layout.addWidget(self.build_empty_label)
+
+            self.build_card = QWidget()
+            card_layout = QVBoxLayout(self.build_card)
+            card_layout.setContentsMargins(0, 0, 0, 0)
+            self.build_grid = QGridLayout()
+            self.build_grid.setSpacing(4)
+            self.build_slot_labels = []
+            slot_style = "background: #111722; border: 1px solid #1e293b; border-radius: 6px; padding: 4px; font-size: 10px; color: #e2e8f0;"
+            for i in range(8):
+                lbl = QLabel(f"#{i + 1}\n(빈 슬롯)")
+                lbl.setWordWrap(True)
+                lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                lbl.setMinimumHeight(54)
+                lbl.setStyleSheet(slot_style)
+                self.build_grid.addWidget(lbl, i // 4, i % 4)
+                self.build_slot_labels.append(lbl)
+            card_layout.addLayout(self.build_grid)
+            self.build_stats_label = QLabel("")
+            self.build_stats_label.setWordWrap(True)
+            self.build_stats_label.setStyleSheet(slot_style + " font-size: 11px; padding: 8px;")
+            card_layout.addWidget(self.build_stats_label)
+            btn_row = QHBoxLayout()
+            self.build_analyze_btn = QPushButton("📊 데미지 분석")
+            self.build_analyze_btn.clicked.connect(self._analyze_selected_build)
+            self.build_edit_btn = QPushButton("✏️ 슬롯 수정")
+            self.build_edit_btn.clicked.connect(self._edit_selected_build)
+            self.build_delete_btn = QPushButton("🗑️ 빌드 삭제")
+            self.build_delete_btn.clicked.connect(self._delete_selected_build)
+            for btn in (self.build_analyze_btn, self.build_edit_btn, self.build_delete_btn):
+                btn_row.addWidget(btn)
+            card_layout.addLayout(btn_row)
+            build_layout.addWidget(self.build_card)
+            self.tab_stack.addWidget(self.build_page)
+            self.refresh_build_page()
 
             # Set initial tab
             self.switch_tab(0)
@@ -915,12 +977,113 @@ class OrdisCompanionApp(QWidget):
     def _save_build_message(self, res):
         build = self.diagnoser.save_scanned_build(res)
         if build:
+            self.refresh_build_page()
             weapon = res['w_meta'].get('kr_name') or res['w_meta']['name']
             return f"💾 {weapon} 빌드를 저장했습니다." + (" 입력하신 리벤 옵션도 함께 저장했습니다." if build.get('riven') else "")
         return "ℹ️ 무기를 확인하지 못해 빌드를 저장하지 않았습니다. 무기 이름을 알려 주시면 저장할 수 있습니다."
 
+    # --- Build vault tab ---
+
+    def refresh_build_page(self):
+        selected = self.build_combo.currentData()
+        builds = self.diagnoser.build_store.list_builds()
+        self.build_combo.blockSignals(True)
+        self.build_combo.clear()
+        for b in builds:
+            saved = b.get('saved_at', '').replace('T', ' ')[:16]
+            self.build_combo.addItem(f"{b.get('kr_name') or b['weapon']} ({saved})", b['weapon'])
+        idx = self.build_combo.findData(selected) if selected else -1
+        self.build_combo.setCurrentIndex(max(idx, 0) if builds else -1)
+        self.build_combo.blockSignals(False)
+        self._show_selected_build()
+
+    def _selected_build(self):
+        weapon = self.build_combo.currentData()
+        return self.diagnoser.build_store.get_build(weapon) if weapon else None
+
+    def _saved_build_result(self, build):
+        w_meta = self.diagnoser.indexer.weapons_index.get(build['weapon'].lower()) or {'name': build['weapon']}
+        metrics = self.diagnoser.evaluate_saved_build(build)
+        return {'w_meta': w_meta, 'mod_objs': self.diagnoser._resolve_build_mods(build), 'metrics': metrics,
+                'riven_stats': build.get('riven'), 'stats': build.get('panel') or {}}
+
+    def _show_selected_build(self, *_):
+        build = self._selected_build()
+        self.build_empty_label.setVisible(build is None)
+        self.build_card.setVisible(build is not None)
+        if build is None:
+            return
+        mods_index = self.diagnoser.indexer.mods_index
+        for i, slot in enumerate(GRID_SLOTS):
+            name = build.get('slots', {}).get(slot)
+            if not name:
+                text = "(빈 슬롯)"
+            elif name == RIVEN_MOD:
+                riven = build.get('riven')
+                text = "[리벤]\n" + (self.diagnoser._format_riven_options(riven) if riven else "수치 미입력")
+            else:
+                text = (mods_index.get(name.lower()) or {}).get('kr_name') or name
+            self.build_slot_labels[i].setText(f"#{i + 1}\n{text}")
+        try:
+            res = self._saved_build_result(build)
+        except Exception as e:
+            self.build_stats_label.setText(f"전투 스탯을 계산하지 못했습니다: {e}")
+            return
+        m, panel, w_meta = res['metrics'], res['stats'], res['w_meta']
+        status = panel.get('status_chance', w_meta.get('status_chance'))
+        self.build_stats_label.setText(
+            f"연사력 {m.get('final_fr', 0):.2f} · 멀티샷 {m.get('final_ms', 1):.2f}\n"
+            f"치명타 확률 {m.get('final_cc', 0) * 100:.1f}% · 치명타 배수 {m.get('final_cd', 0):.2f}x\n"
+            f"상태이상 확률 {f'{status * 100:.1f}%' if status is not None else '-'}\n"
+            f"총 데미지 {m.get('final_dmg', 0):,.1f} · 버스트 DPS {m.get('burst_dps', 0):,.0f}"
+        )
+
+    def _analyze_selected_build(self):
+        build = self._selected_build()
+        if not build:
+            return
+        res = self._saved_build_result(build)
+        text = self.diagnoser.format_calculation_breakdown(res['w_meta'], res['mod_objs'], res['metrics'])
+        self.on_show_calculation_breakdown(text, res)
+
+    def _edit_selected_build(self):
+        build = self._selected_build()
+        if not build:
+            return
+        w_meta = self.diagnoser.indexer.weapons_index.get(build['weapon'].lower()) or {'name': build['weapon']}
+        dialog = BuildEditDialog(
+            dict(build.get('slots', {})),
+            self.diagnoser.mod_choices(w_meta),
+            arcane=build.get('arcane'),
+            arcane_choices=self.diagnoser.arcane_choices(w_meta),
+            parent=self,
+        )
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        edits = dialog.get_edits()
+        slots = {s: (RIVEN_MOD if is_riven_name(n) else n) for s, n in edits.items() if s != 'arcane' and n}
+        # Mods taken off since the scan still sit in the panel numbers, so they are stripped at evaluation.
+        removed = [n for n in build.get('slots', {}).values() if n != RIVEN_MOD and n not in slots.values()]
+        build['panel_removed'] = build.get('panel_removed', []) + removed
+        build['slots'] = slots
+        build['arcane'] = edits.get('arcane') or None
+        self.diagnoser.build_store.save_build(build)
+        self.refresh_build_page()
+
+    def _delete_selected_build(self):
+        build = self._selected_build()
+        if not build:
+            return
+        weapon = build.get('kr_name') or build['weapon']
+        answer = QMessageBox.question(self, "빌드 삭제", f"{weapon} 빌드를 보관함에서 삭제할까요?")
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        self.diagnoser.build_store.delete_build(build['weapon'])
+        self.refresh_build_page()
+
     def _delete_build(self, weapon):
         deleted = self.diagnoser.build_store.delete_build(weapon)
+        self.refresh_build_page()
         self.add_chat_bubble('세팔론 오디스', f"🗑️ {weapon} 빌드를 삭제했습니다." if deleted else "이미 삭제된 빌드입니다.", is_user=False)
 
     def _result_action(self, res):
@@ -1157,6 +1320,8 @@ class OrdisCompanionApp(QWidget):
                 self.refresh_checklist_ui()
             if index == 2:
                 self.refresh_world_events()
+            if index == 3:
+                self.refresh_build_page()
 
     def _set_game_input_paused(self, paused: bool):
         listener = getattr(getattr(self, 'pet', None), 'input_listener', None)
