@@ -34,6 +34,15 @@ class LayeredPetRenderer(QWidget):
         self.tick = 0
         self.talk_tick = 0
 
+        # In-game input motion (spring-damped toward target; impulses kick the current offset)
+        self.motion_offset_x = 0.0
+        self.motion_offset_y = 0.0
+        self.motion_offset_rot = 0.0
+        self.motion_target_x = 0.0
+        self.motion_target_y = 0.0
+        self.motion_target_rot = 0.0
+        self._held_dirs = set()
+
         self.setFixedSize(140, 140)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
 
@@ -62,6 +71,37 @@ class LayeredPetRenderer(QWidget):
         self.tick = (self.tick + 1) % 10000
         if self.is_talking:
             self.talk_tick = (self.talk_tick + 1) % 10000
+        self._step_motion()
+        self.update()
+
+    def _step_motion(self):
+        """One spring step: curr += (target - curr) * 0.25, snapping when settled."""
+        for axis in ("x", "y", "rot"):
+            curr = getattr(self, f"motion_offset_{axis}")
+            target = getattr(self, f"motion_target_{axis}")
+            curr += (target - curr) * 0.25
+            if abs(target - curr) < 0.01:
+                curr = target
+            setattr(self, f"motion_offset_{axis}", curr)
+
+    def apply_motion_action(self, action: str, is_down: bool):
+        """React to an in-game input: WASD lean (held), jump/melee/shoot impulses (on press)."""
+        if action in ("w", "a", "s", "d"):
+            if is_down:
+                self._held_dirs.add(action)
+            else:
+                self._held_dirs.discard(action)
+            held = self._held_dirs
+            self.motion_target_x = (8.0 if "d" in held else 0.0) - (8.0 if "a" in held else 0.0)
+            self.motion_target_y = (4.0 if "s" in held else 0.0) - (4.0 if "w" in held else 0.0)
+            self.motion_target_rot = (4.0 if "d" in held else 0.0) - (4.0 if "a" in held else 0.0)
+        elif is_down and action == "jump":
+            self.motion_offset_y += -18.0
+        elif is_down and action == "melee":
+            self.motion_offset_rot += 25.0
+        elif is_down and action == "shoot":
+            self.motion_offset_x += -3.0
+            self.motion_offset_y += 2.0
         self.update()
 
     # ---- Multi-phase motion math (pure functions of state; testable headless) ----
@@ -200,9 +240,11 @@ class LayeredPetRenderer(QWidget):
         y_body, rot_body = self._compute_body_transform(self.tick)
         hand_offsets = self._compute_hand_offsets(self.tick)
 
+        mx, my, mrot = self.motion_offset_x, self.motion_offset_y, self.motion_offset_rot
+
         def apply_body_transform():
-            painter.translate(cx, cy + y_body)
-            painter.rotate(rot_body)
+            painter.translate(cx + mx, cy + y_body + my)
+            painter.rotate(rot_body + mrot)
             painter.translate(-cx, -cy)
 
         painter.save()
@@ -252,8 +294,11 @@ class LayeredPetRenderer(QWidget):
 
         if has_layers:
             # Layer E: Hands (independent transforms outside the body transform)
+            painter.save()
+            painter.translate(mx, my)
             if self._draw_hands(painter, target_rect, hand_offsets):
                 drawn_any = True
+            painter.restore()
 
         painter.save()
         apply_body_transform()
