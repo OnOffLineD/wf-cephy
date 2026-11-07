@@ -123,3 +123,18 @@
   4. **레거시 코드 제거**: 참조되지 않는 `companion_views.py`를 영구 삭제하여 코드베이스를 슬림화함.
 - **교훈**:
   - 몽키 패칭 형태의 데코레이터/래퍼 함수보다 명확한 베이스 클래스(`FramelessDialog`) 상속 패턴이 타입 힌팅, 이벤트 전달 계층, 테스트 작성(`isinstance` 검증) 면에서 훨씬 안정적이고 확장에 용이하다.
+
+
+---
+
+### EXP-011: Frameless 다이얼로그 드래그 후 자식 위젯 클릭 불능 버그 및 WindowStaysOnTopHint / Mouse Release 동기화
+- **기록일자**: 2026-11-07
+- **현상**:
+  - 메인 컴패니언 창(`OrdisCompanionApp`)은 `WindowStaysOnTopHint` 속성을 가지는 반면, 자식 다이얼로그(`FramelessDialog`)에는 이 플래그가 누락되어 있었음.
+  - 결과적으로 다이얼로그를 마우스로 잡고 드래그하여 이동시키는 순간 Windows DWM에서 Z-Order 역전 및 윈도우 비활성화가 발생하여, 다이얼로그 내부의 버튼(취소, 저장, 탭, 라디오 버튼 등)이 클릭되지 않는 먹통 현상 발생.
+- **해결책**:
+  1. **WindowStaysOnTopHint 동기화**: `FramelessDialog.__init__`에서 `Qt.WindowType.WindowStaysOnTopHint` 플래그를 기본 추가하여 창 이동 후에도 최상단 Z-Order와 활성 상태를 유지하도록 보장.
+  2. **마우스 릴리즈 및 윈도우 활성화 파이프라인 정비**: `mouseReleaseEvent`에서 `_drag_pos` 리셋 및 `event.accept()`를 호출하고, 다이얼로그가 가시 상태일 때 `self.activateWindow()`와 `self.raise_()`를 즉시 실행하여 자식 위젯의 클릭 입력을 활성화.
+  3. **드래그 라우팅 일원화**: `bind_drag_events(widget)` 유틸리티를 통해 헤더(`framelessHeader`) 및 메인 카드(`mainCard`)의 마우스 이벤트를 다이얼로그 자체 핸들러로 깔끔하게 위임하여 마우스 그래빙 유실 원천 차단.
+- **교훈**:
+  - Always-On-Top 플래그를 사용하는 애플리케이션 위에서 구동되는 모든 프레임리스 서브 윈도우/다이얼로그는 반드시 동일한 Top-most 속성과 릴리즈 후 재활성화(`activateWindow`) 로직을 일관되게 갖추어야 DWM 상의 입력 유실을 방지할 수 있다.

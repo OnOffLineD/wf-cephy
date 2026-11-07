@@ -1,0 +1,54 @@
+# Task packet. Written by the orchestrator (CEO), never by the builder.
+id    = "T-UI-5"
+title = "설정창 및 프레임리스 다이얼로그 드래그 후 클릭 불능 버그 수정"
+tier  = 2
+
+goal = """
+OrdisPersonaDialog(설정창)을 비롯한 FramelessDialog 기반 팝업 다이얼로그를 마우스로 드래그하여 이동시킨 후 다이얼로그 내부의 버튼(취소, 저장, 탭, 라디오 등)이 클릭되지 않는 버그를 완벽히 해결한다.
+
+[원인 및 수정 요건]
+1. WindowStaysOnTopHint 플래그 누락 해결:
+   메인 앱(OrdisCompanionApp)은 WindowStaysOnTopHint 플래그를 가지는데, 자식 다이얼로그(FramelessDialog)에는 이 플래그가 없어 창을 마우스로 잡고 이동하는 순간 Windows DWM에서 Z-Order 역전이나 포커스 상실이 발생함.
+   -> scripts/frameless_dialog.py의 FramelessDialog.__init__에서 Qt.WindowType.WindowStaysOnTopHint 플래그를 기본 활성화(또는 부모 플래그 상속)하여 창 이동 후에도 최상단 포커스를 유지하도록 한다.
+
+2. 마우스 릴리즈 이벤트 및 그랩 해제 완전성 확보:
+   scripts/frameless_dialog.py의 create_title_bar() 내 header_release 및 FramelessDialog.mouseReleaseEvent()에서 _drag_pos를 초기화하고 event.accept()를 확실히 호출하며, self.activateWindow() 및 self.raise_()를 호출하여 드래그 직후 자식 위젯들에 대한 마우스 클릭 입력이 즉시 활성화되도록 한다.
+   필요시 header의 마우스 이벤트 바인딩을 header.mousePressEvent = self.mousePressEvent 형태로 정규화한다.
+
+3. OrdisPersonaDialog 카드 영역 드래그 안전성:
+   scripts/persona_dialog.py에서 main_card의 여백 클릭 시에도 드래그가 원활히 작동하면서 내부 버튼/위젯의 클릭 이벤트를 방해하지 않도록 정비한다.
+
+4. 회귀 방지 단위 테스트 추가:
+   tests/test_settings_and_frameless_dialogs.py에 다이얼로그 드래그 시뮬레이션 후 버튼 클릭이 정상 동작하는지 검증하는 테스트 케이스를 추가한다.
+"""
+
+[scope]
+allow = [
+  "scripts/frameless_dialog.py",
+  "scripts/persona_dialog.py",
+  "tests/test_settings_and_frameless_dialogs.py"
+]
+forbid = []
+max_files = 3
+max_diff_lines = 150
+
+[context]
+hints = [
+  "scripts/frameless_dialog.py: FramelessDialog.__init__() - setWindowFlags에 WindowStaysOnTopHint 추가",
+  "scripts/frameless_dialog.py: FramelessDialog.mouseReleaseEvent() - _drag_pos 리셋 및 event.accept(), activateWindow()",
+  "scripts/frameless_dialog.py: FramelessDialog.create_title_bar() - header 드래그 이벤트 정상 전달 및 release 처리",
+  "scripts/persona_dialog.py: OrdisPersonaDialog - main_card 레이아웃 및 버튼 클릭 이벤트 검증",
+  "tests/test_settings_and_frameless_dialogs.py - 드래그 후 버튼 클릭 단위 테스트 추가"
+]
+
+[acceptance]
+cases = [
+  "bool(dlg.windowFlags() & Qt.WindowType.WindowStaysOnTopHint) is True",
+  "마우스로 다이얼로그 이동 후 btn_cancel 또는 btn_save 클릭 시 시그널 정상 발생 및 다이얼로그 종료/저장 동작 수행"
+]
+commands = [
+  "python -m pytest tests/test_settings_and_frameless_dialogs.py -q"
+]
+
+[limits]
+max_attempts = 3
