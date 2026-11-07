@@ -6,7 +6,7 @@ try:
     from PyQt6.QtWidgets import (
         QDialog, QRadioButton, QButtonGroup, QTextEdit, QPushButton,
         QVBoxLayout, QHBoxLayout, QLabel, QFrame, QApplication,
-        QTabWidget, QWidget, QLineEdit, QFileDialog, QSpinBox, QComboBox
+        QTabWidget, QWidget, QLineEdit, QFileDialog, QSpinBox, QComboBox, QCheckBox
     )
     from PyQt6.QtCore import Qt, QPoint, QSize
     from PyQt6.QtGui import QIcon, QPixmap
@@ -14,7 +14,7 @@ except ImportError:
     from PySide6.QtWidgets import (
         QDialog, QRadioButton, QButtonGroup, QTextEdit, QPushButton,
         QVBoxLayout, QHBoxLayout, QLabel, QFrame, QApplication,
-        QTabWidget, QWidget, QLineEdit, QFileDialog, QSpinBox, QComboBox
+        QTabWidget, QWidget, QLineEdit, QFileDialog, QSpinBox, QComboBox, QCheckBox
     )
     from PySide6.QtCore import Qt, QPoint, QSize
     from PySide6.QtGui import QIcon, QPixmap
@@ -375,6 +375,17 @@ class OrdisPersonaDialog(FramelessDialog):
         gpu_box.addStretch()
         mt_layout.addLayout(gpu_box)
 
+        # Section 4: In-game input-driven pet motion (opt-in/out, zero-trace when OFF)
+        self.cb_motion = QCheckBox("워프레임 인게임 입력 연동 펫 반응 모션 활성화 (WASD / Space / E / 마우스)")
+        self.cb_motion.setChecked(self.persona_manager.get_motion_enabled())
+        self.cb_motion.setStyleSheet("color: #e2e8f0; font-size: 12px; margin-top: 10px;")
+        mt_layout.addWidget(self.cb_motion)
+        motion_hint = QLabel("💡 워프레임 창 활성화 시에만 키를 감지해 펫이 점프/참격 모션을 취합니다. "
+                             "비활성화 시 모든 키 감지 폴링(GetAsyncKeyState)과 백그라운드 타이머가 완전히 차단(OFF)됩니다.")
+        motion_hint.setWordWrap(True)
+        motion_hint.setStyleSheet("color: #64748b; font-size: 11px;")
+        mt_layout.addWidget(motion_hint)
+
         mt_layout.addStretch()
         self.tab_widget.addTab(model_tab, self._tab_icon("model"), "로컬 모델 & 엔진")
 
@@ -576,6 +587,8 @@ class OrdisPersonaDialog(FramelessDialog):
 
         gpu_layers = self.gpu_layers_spin.value()
         self.persona_manager.set_gpu_layers(gpu_layers)
+
+        self.persona_manager.set_motion_enabled(self.cb_motion.isChecked())
 
         self.accept()
 

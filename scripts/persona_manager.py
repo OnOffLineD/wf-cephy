@@ -165,6 +165,13 @@ class PersonaManager:
         self.config["n_gpu_layers"] = max(0, int(layers))
         self.save_config()
 
+    def get_motion_enabled(self) -> bool:
+        return bool(self.config.get("motion_enabled", True))
+
+    def set_motion_enabled(self, enabled: bool):
+        self.config["motion_enabled"] = bool(enabled)
+        self.save_config()
+
 
 SettingsManager = PersonaManager
 

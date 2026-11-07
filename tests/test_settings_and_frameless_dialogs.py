@@ -50,6 +50,28 @@ def test_settings_model_and_context_persistence():
         assert sm2.get_context_size() == 8192
         assert sm2.get_gpu_layers() == 45
 
+def test_settings_motion_enabled_toggle(qapp):
+    with tempfile.TemporaryDirectory() as tmpdir:
+        cfg_path = os.path.join(tmpdir, "test_settings.json")
+        sm = SettingsManager(config_path=cfg_path)
+        assert sm.get_motion_enabled() is True  # default ON
+        sm.set_motion_enabled(False)
+        assert sm.get_motion_enabled() is False
+        assert SettingsManager(config_path=cfg_path).get_motion_enabled() is False
+        sm.set_motion_enabled(True)
+
+        dlg = SettingsDialog(persona_manager=sm)
+        assert dlg.cb_motion.isChecked() is True
+        assert "WASD" in dlg.cb_motion.text()
+        dlg.cb_motion.setChecked(False)
+        dlg.save()
+        assert sm.get_motion_enabled() is False
+        assert SettingsManager(config_path=cfg_path).get_motion_enabled() is False
+
+        dlg2 = SettingsDialog(persona_manager=SettingsManager(config_path=cfg_path))
+        assert dlg2.cb_motion.isChecked() is False
+
+
 def test_settings_dialog_frameless_and_assets(qapp):
     with tempfile.TemporaryDirectory() as tmpdir:
         cfg_path = os.path.join(tmpdir, "test_settings.json")
