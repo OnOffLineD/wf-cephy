@@ -38,7 +38,7 @@ protected = [
   ".orchestra/**",
   ".git/**",
   "assets/**",
-  "rules/*.md",
+  "rules/0*.md",
   "tests/fixtures/**",
 ]
 default_max_files = 5
