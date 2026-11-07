@@ -57,7 +57,11 @@ class ShortTermMemory:
 
     def get_recent_keywords(self) -> List[str]:
         import re
-        stop_words = {'어떻게', '알려줘', '알려', '뭐야', '해', '이거', '그거', '저거', '어때', '좀', '추천', '세팅', '모딩', '알려주'}
+        stop_words = {'어떻게', '알려줘', '알려', '뭐야', '해', '이거', '그거', '저거', '어때', '좀', '추천', '세팅', '모딩', '알려주',
+                      # Question and command words, so only the topic's nouns are left to carry over.
+                      '어디서', '어디', '나와', '나와요', '나오', '나오나', '나옴', '드랍', '드롭', '얻어', '얻는', '파밍',
+                      '추가', '추가해', '추가해줘', '등록', '등록해', '등록해줘', '숙제', '숙제로', '숙제에',
+                      '할일', '할일로', '일로', '오늘', '내일'}
         keywords = []
         with self.lock:
             for user, _, _ in reversed(self.turns):

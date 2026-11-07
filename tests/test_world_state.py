@@ -121,6 +121,25 @@ def tracker(tmp_path):
     return t
 
 
+@pytest.mark.parametrize("message", ["신스 디컨스트럭트 숙제로 추가해줘", "신스 디컨스트럭트 할 일에 등록해", "신스 디컨스트럭트 숙제 추가"])
+def test_add_command_names_its_target(tracker, message):
+    res = tracker.process_chat_todo_command(message)
+    assert res["action"] == "ADD" and res["task"] == "신스 디컨스트럭트"
+    assert "신스 디컨스트럭트" in [i["text"] for i in tracker.load_checklist()]
+
+
+def test_add_command_without_target_uses_context_keyword(tracker):
+    res = tracker.process_chat_todo_command("오늘 할 일로 추가해줘", context_keyword="신스 디컨스트럭트")
+    assert res["action"] == "ADD" and res["task"] == "신스 디컨스트럭트"
+    assert "신스 디컨스트럭트" in [i["text"] for i in tracker.load_checklist()]
+
+
+def test_add_command_without_target_or_context_adds_nothing(tracker):
+    before = tracker.load_checklist()
+    assert tracker.process_chat_todo_command("오늘 할 일로 추가해줘") is None
+    assert tracker.load_checklist() == before
+
+
 @pytest.mark.parametrize("message", ["일일 완료", "오늘 다 했어", "방금 완료", "주간 완료"])
 def test_vague_completion_marks_nothing(tracker, message):
     assert tracker.process_chat_todo_command(message) is None

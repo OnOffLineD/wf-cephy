@@ -356,7 +356,7 @@ class WorldStateTracker:
                 return item
         return None
 
-    def process_chat_todo_command(self, user_text: str) -> Optional[Dict[str, Any]]:
+    def process_chat_todo_command(self, user_text: str, context_keyword: Optional[str] = None) -> Optional[Dict[str, Any]]:
         user_text = user_text.strip()
 
         # Questions and guide requests belong to the chat router.
@@ -389,9 +389,14 @@ class WorldStateTracker:
                 "message": f"🗑️ 오퍼레이터님! [{item['text']}] 항목을 숙제 목록에서 삭제했습니다."
             }
 
-        addition = re.search(r"(.+?)\s*(?:숙제\s*등록|숙제\s*추가|할\s*일\s*추가|할\s*일\s*등록)[.!]?$", user_text, re.IGNORECASE)
+        addition = re.search(
+            r"^(.*?)\s*(?:숙제|할\s*일|체크\s*리스트|목록|일정)\s*(?:에다?|으로|로)?\s*(?:추가|등록|넣어|적어)"
+            r"\s*(?:해\s*줘|해\s*주세요|해\s*줄래|해|줘|하자)?[.!~]*$", user_text, re.IGNORECASE)
         if addition:
             task_name = self._clean_task_name(addition.group(1))
+            # "오늘 할 일로 추가해줘" names nothing itself; the topic just talked about is the target.
+            if len(task_name) < 2 and context_keyword:
+                task_name = self._clean_task_name(context_keyword)
             if len(task_name) >= 2:
                 self.add_custom_item(task_name)
                 return {

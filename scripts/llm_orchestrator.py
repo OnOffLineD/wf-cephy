@@ -63,7 +63,10 @@ GUIDE_KEYWORDS = (
     '섬멸', '포획', '도청', '첩보', '구출', '감청', '교란', '네트라셀', '아르키메디아', '미션', '샤드', '엔도', '포르마', '크레딧', '쿠바', '오로킨', '리벤',
     '레일잭', '아크윙', '낚시', '길드', '초보', '뉴비', '방깎', '방깍', '인페', '코퍼스', '그리니어', '센티언트',
 )
-TODO_MARKERS = ('돌아야', '해야', '가야', '잡아야', '깨야', '파밍해야', '사야', '돌거야', '갈거야', '할거야', '돌자', '가자', '잡을래', '잡으러', '가볼까', '시작할게', '출발', '달릴거', '숙제', '클리어', '완료', '다 했', '다했', '끝냈')
+TODO_MARKERS = ('돌아야', '해야', '가야', '잡아야', '깨야', '파밍해야', '사야', '돌거야', '갈거야', '할거야', '돌자', '가자', '잡을래', '잡으러', '가볼까', '시작할게', '출발', '달릴거', '숙제', '클리어', '완료', '다 했', '다했', '끝냈',
+                '할 일', '할일', '추가', '등록', '체크리스트', '목록에', '일정에', '적어줘', '넣어줘')
+# A direct order to add ("추가해줘", "등록해") is carried out at once; "~해야겠다" still gets a confirm button.
+TODO_EXPLICIT_ADD = re.compile(r'(추가|등록|넣어|적어)\s*(해|줘|하자|주세요)')
 
 # [Step 1] 1-Token 도메인 분류를 위한 GBNF 문법 제약 (출력 토큰을 3가지 도메인 중 하나로만 강제)
 INTENT_GRAMMAR = 'root ::= "GUIDE" | "SMALLTALK" | "TODO"'
@@ -508,11 +511,24 @@ class LLMOrchestrator:
         tracker = self.todo_tracker
         if tracker is None:
             return None
+        explicit_add = bool(TODO_EXPLICIT_ADD.search(query))
+        if explicit_add:
+            # A plain order is parsed by rule first: it works offline and fills a left-out target from the last topic.
+            done = tracker.process_chat_todo_command(query, context_keyword=self._recent_topic())
+            if done and done.get('action') == 'ADD':
+                reply = {'type': 'TODO_DONE', 'report': done['message'], 'action': done['action'], 'mood': 'happy', 'intensity': 2}
+                self.memory.add_turn(query, reply['report'])
+                return reply
         plan = tracker.plan_todo_tool(self.resolve_domain_tool('TODO', query))
         if plan is None:
             return None
 
-        if plan['tool'] == 'complete_todo':
+        if plan['tool'] == 'add_todo' and explicit_add:
+            done = tracker.execute_todo_tool({'tool': 'add_todo', 'args': {'task': plan['task']}})
+            if not done:
+                return None
+            reply = {'type': 'TODO_DONE', 'report': done['message'], 'action': done['action'], 'mood': 'happy', 'intensity': 2}
+        elif plan['tool'] == 'complete_todo':
             done = tracker.execute_todo_tool({'tool': 'complete_todo', 'args': {'task': plan['task']}})
             if not done:
                 return None
@@ -527,6 +543,11 @@ class LLMOrchestrator:
                      'report': f"[{plan['task']}] 항목을 숙제로 추가할까요?", 'mood': 'thinking', 'intensity': 1}
         self.memory.add_turn(query, reply['report'])
         return reply
+
+    def _recent_topic(self) -> Optional[str]:
+        """The last topic as a short name ("신스 디컨스트럭트"), for orders that leave their target out."""
+        kws = self.memory.get_recent_keywords()
+        return ' '.join(kws[:2]) if kws else None
 
     def _weapon_in_query(self, query: str) -> Optional[Dict[str, Any]]:
         tokens = re.findall(r'[가-힣a-zA-Z0-9]+', query)
@@ -683,7 +704,9 @@ class LLMOrchestrator:
         grammar = build_gbnf_tool_grammar(tools)
         tool_lines = "\n".join(f"- {name}({', '.join(meta.get('args', []))}): {meta.get('desc', '')}" for name, meta in tools.items())
         enriched_query = user_query
-        if any(p in user_query for p in TOOL_PRONOUNS):
+        # An add order often leaves out its target ("오늘 할 일로 추가해줘"), so the last topic is passed along too.
+        wants_add = domain.upper() == 'TODO' and TODO_EXPLICIT_ADD.search(user_query)
+        if wants_add or any(p in user_query for p in TOOL_PRONOUNS):
             recent_kws = self.memory.get_recent_keywords()
             if recent_kws:
                 enriched_query = f"[최근 키워드: {', '.join(recent_kws[:2])}] {user_query}"
