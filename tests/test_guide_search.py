@@ -59,6 +59,22 @@ def test_slang_is_mapped_to_doc_wording(retriever, slang, official):
     assert any(official in word for word in retriever._query_words(f"{slang} 알려줘")[1])
 
 
+@pytest.mark.parametrize("query, doc, phrase", [
+    ("오토파이어 설정", "official_game_settings.md", "발사 버튼 유지 시 연속 발사"),
+    ("오디스 옛날에 사람이었어", "official_lore_and_factions.md", "오르단 카리스"),
+    ("네트라셀 주간 몇번", "endgame_progression_guide.md", "네트라셀"),
+])
+def test_official_guides_search(retriever, query, doc, phrase):
+    hits = [h for h in retriever.retrieve(query, top_k=3) if h["type"] == "wiki" and doc in h["title"]]
+    assert hits, doc_titles(retriever, query)
+    assert any(phrase in h["text"] for h in hits)
+
+
+def test_official_guides_aliases(retriever):
+    assert "연속" in retriever._query_words("오토파이어 설정")[1]
+    assert "연속" in retriever._query_words("연속발사 끄는법")[1]
+
+
 def test_spacing_does_not_matter(retriever):
     assert _compact("두번째 꿈") == _compact("두 번째 꿈")
     assert "The_Second_Dream" in doc_titles(retriever, "두번째꿈 보상")[0]
