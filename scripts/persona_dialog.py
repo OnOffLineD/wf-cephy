@@ -195,11 +195,11 @@ class OrdisPersonaDialog(FramelessDialog):
         rf_layout.setSpacing(6)
 
         self.btn_group = QButtonGroup(self)
-        self.radio_random = QRadioButton("🎲  랜덤 변주 (매번 3가지 성격 중 무작위 변신)")
-        self.radio_caretaker = QRadioButton("🛡️  충성스러운 집사 (오퍼레이터 안전 최우선 다정한 말투)")
-        self.radio_glitch = QRadioButton("⚡  욱하는 글리치 (살벌한 속마음이 튀어나오는 원작 오디스)")
-        self.radio_tactical = QRadioButton("🎯  냉철한 전술장교 (군더더기 없는 신속 정확한 전황 보고)")
-        self.radio_custom = QRadioButton("✏️  사용자 직접 설정 (나만의 프롬프트 지침 입력)")
+        self.radio_random = QRadioButton("[랜덤 변주]  매번 3가지 성격 중 무작위 변신")
+        self.radio_caretaker = QRadioButton("[충성스러운 집사]  오퍼레이터 안전 최우선 다정한 말투")
+        self.radio_glitch = QRadioButton("[글리치 모드]  살벌한 속마음이 튀어나오는 원작 오디스")
+        self.radio_tactical = QRadioButton("[냉철한 전술장교]  군더더기 없는 신속 정확한 전황 보고")
+        self.radio_custom = QRadioButton("[사용자 직접 설정]  나만의 프롬프트 지침 입력")
 
         self.btn_group.addButton(self.radio_random, 0)
         self.btn_group.addButton(self.radio_caretaker, 1)
@@ -220,7 +220,7 @@ class OrdisPersonaDialog(FramelessDialog):
         pt_layout.addWidget(self.lbl_preview)
 
         # Custom Prompt Edit Area
-        self.lbl_custom_title = QLabel("✏️ 사용자 지정 프롬프트 (오디스에게 부여할 성격 지침):")
+        self.lbl_custom_title = QLabel("사용자 지정 프롬프트 (오디스에게 부여할 성격 지침):")
         self.lbl_custom_title.setStyleSheet("color: #e2e8f0; font-weight: bold; font-size: 11px;")
         pt_layout.addWidget(self.lbl_custom_title)
 
@@ -241,9 +241,9 @@ class OrdisPersonaDialog(FramelessDialog):
         mt_layout.setSpacing(12)
 
         # Section 1: GGUF Model Path Selection
-        sec1_title = QLabel("🧠 로컬 GGUF 모델 파일 지정")
-        sec1_title.setStyleSheet("color: #00e5ff; font-weight: bold; font-size: 13px;")
-        mt_layout.addWidget(sec1_title)
+        self.sec1_header, self.sec1_icon, self.sec1_title = self._make_section_header(
+            "model", "로컬 GGUF 모델 파일 지정")
+        mt_layout.addWidget(self.sec1_header)
 
         sec1_desc = QLabel("원하는 llama.cpp 호환 `.gguf` 모델 파일을 지정하면 오디스 대화 엔진에 즉시 적용됩니다.")
         sec1_desc.setStyleSheet("color: #94a3b8; font-size: 11px;")
@@ -266,20 +266,29 @@ class OrdisPersonaDialog(FramelessDialog):
         self.model_path_edit = QLineEdit()
         self.model_path_edit.setText(self.persona_manager.get_model_path())
         self.model_path_edit.setPlaceholderText("GGUF 모델 파일 전체 경로 (예: models/my_model.gguf)")
-        self.btn_browse = QPushButton("📁 찾아보기...")
+        self.btn_browse = QPushButton(" 찾아보기")
+        browse_pix = load_icon_pixmap("browse")
+        if browse_pix and not browse_pix.isNull():
+            self.btn_browse.setIcon(QIcon(browse_pix))
+            self.btn_browse.setIconSize(QSize(18, 18))
+        self.btn_browse.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_browse.setStyleSheet("""
             QPushButton {
-                background: #1e293b;
+                background: rgba(0, 229, 255, 0.08);
                 color: #00e5ff;
-                border: 1px solid #334155;
+                border: 1px solid rgba(0, 229, 255, 0.45);
                 border-radius: 6px;
-                padding: 6px 12px;
+                padding: 6px 14px;
                 font-size: 11px;
                 font-weight: bold;
             }
             QPushButton:hover {
-                background: #334155;
+                background: rgba(0, 229, 255, 0.18);
                 color: #ffffff;
+                border: 1px solid #00e5ff;
+            }
+            QPushButton:pressed {
+                background: rgba(0, 229, 255, 0.28);
             }
         """)
         self.btn_browse.clicked.connect(self.browse_model_file)
@@ -288,9 +297,9 @@ class OrdisPersonaDialog(FramelessDialog):
         mt_layout.addLayout(path_box)
 
         # Section 2: Context Length (n_ctx)
-        sec2_title = QLabel("📏 컨텍스트 길이 (Context Size / Token Window)")
-        sec2_title.setStyleSheet("color: #00e5ff; font-weight: bold; font-size: 13px; margin-top: 10px;")
-        mt_layout.addWidget(sec2_title)
+        self.sec2_header, self.sec2_icon, self.sec2_title = self._make_section_header(
+            "context", "컨텍스트 길이 (Context Size / Token Window)", top_margin=10)
+        mt_layout.addWidget(self.sec2_header)
 
         sec2_desc = QLabel("대화 기억 및 공략 문맥 길이를 조절합니다. (4096 = 기본 권장, 8192/16384 = 대용량 컨텍스트)")
         sec2_desc.setStyleSheet("color: #94a3b8; font-size: 11px;")
@@ -307,33 +316,46 @@ class OrdisPersonaDialog(FramelessDialog):
         # Quick preset buttons
         preset_box = QHBoxLayout()
         preset_box.setSpacing(6)
+        self.ctx_preset_buttons = {}
         for val in [2048, 4096, 8192, 16384]:
             btn = QPushButton(f"{val}")
+            btn.setCheckable(True)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
             btn.setStyleSheet("""
                 QPushButton {
                     background: #162030;
                     color: #94a3b8;
                     border: 1px solid #24324d;
-                    border-radius: 6px;
-                    padding: 5px 8px;
+                    border-radius: 10px;
+                    padding: 4px 10px;
                     font-size: 11px;
+                    font-weight: bold;
                 }
                 QPushButton:hover {
                     background: #24324d;
                     color: #00e5ff;
+                    border: 1px solid rgba(0, 229, 255, 0.45);
+                }
+                QPushButton:checked {
+                    background: rgba(0, 229, 255, 0.18);
+                    color: #00e5ff;
+                    border: 1px solid #00e5ff;
                 }
             """)
             btn.clicked.connect(lambda _, v=val: self.context_size_spin.setValue(v))
+            self.ctx_preset_buttons[val] = btn
             preset_box.addWidget(btn)
+        self.context_size_spin.valueChanged.connect(self._sync_ctx_presets)
+        self._sync_ctx_presets(self.context_size_spin.value())
 
         ctx_box.addWidget(self.context_size_spin)
         ctx_box.addLayout(preset_box)
         mt_layout.addLayout(ctx_box)
 
         # Section 3: GPU Offload Layers
-        sec3_title = QLabel("⚡ GPU 가속 레이어 수 (n_gpu_layers)")
-        sec3_title.setStyleSheet("color: #00e5ff; font-weight: bold; font-size: 13px; margin-top: 10px;")
-        mt_layout.addWidget(sec3_title)
+        self.sec3_header, self.sec3_icon, self.sec3_title = self._make_section_header(
+            "gpu", "GPU 가속 레이어 수 (n_gpu_layers)", top_margin=10)
+        mt_layout.addWidget(self.sec3_header)
 
         gpu_box = QHBoxLayout()
         self.gpu_layers_spin = QSpinBox()
@@ -348,7 +370,7 @@ class OrdisPersonaDialog(FramelessDialog):
         mt_layout.addLayout(gpu_box)
 
         mt_layout.addStretch()
-        self.tab_widget.addTab(model_tab, "🧠 로컬 모델 & 엔진")
+        self.tab_widget.addTab(model_tab, "로컬 모델 & 엔진")
 
         # -------------------------------------------------------------
         # 3. Bottom Action Buttons (Save & Apply / Cancel)
@@ -427,6 +449,28 @@ class OrdisPersonaDialog(FramelessDialog):
         target_btn.setChecked(True)
         self.on_mode_changed()
 
+    def _make_section_header(self, icon_name, text, top_margin=0):
+        """Build a HUD section header: glyph icon from assets/icons + cyan title label."""
+        header = QWidget()
+        h_layout = QHBoxLayout(header)
+        h_layout.setContentsMargins(0, top_margin, 0, 0)
+        h_layout.setSpacing(8)
+        icon_lbl = QLabel()
+        icon_lbl.setFixedSize(20, 20)
+        pix = load_icon_pixmap(icon_name)
+        if pix and not pix.isNull():
+            icon_lbl.setPixmap(pix.scaled(20, 20, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+        title_lbl = QLabel(text)
+        title_lbl.setStyleSheet("color: #00e5ff; font-weight: bold; font-size: 13px;")
+        h_layout.addWidget(icon_lbl)
+        h_layout.addWidget(title_lbl)
+        h_layout.addStretch()
+        return header, icon_lbl, title_lbl
+
+    def _sync_ctx_presets(self, value):
+        for val, btn in self.ctx_preset_buttons.items():
+            btn.setChecked(val == value)
+
     def _populate_model_combo(self):
         self.model_combo.clear()
         self.model_combo.addItem("직접 지정 / 외부 파일", "")
@@ -436,7 +480,7 @@ class OrdisPersonaDialog(FramelessDialog):
             for fname in os.listdir(models_dir):
                 if fname.lower().endswith(".gguf"):
                     rel_p = f"models/{fname}"
-                    self.model_combo.addItem(f"📦 {fname}", rel_p)
+                    self.model_combo.addItem(fname, rel_p)
 
         curr = self.persona_manager.get_model_path()
         for i in range(self.model_combo.count()):

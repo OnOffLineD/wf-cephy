@@ -232,3 +232,41 @@ def test_settings_buttons_clickable_after_drag(qapp, drag_source):
                 assert sm.get_mode() == "tactical"
                 assert sm.get_context_size() == 8192
             assert not dlg.isVisible()
+
+
+def test_settings_dialog_hud_icons_and_no_emojis(qapp):
+    with tempfile.TemporaryDirectory() as tmpdir:
+        sm = SettingsManager(config_path=os.path.join(tmpdir, "test_settings.json"))
+        dlg = SettingsDialog(persona_manager=sm)
+
+        # Section headers carry HUD glyph pixmaps (model / context / gpu)
+        for icon_lbl in (dlg.sec1_icon, dlg.sec2_icon, dlg.sec3_icon):
+            pix = icon_lbl.pixmap()
+            assert pix is not None and not pix.isNull()
+        assert dlg.sec1_title.text() == "로컬 GGUF 모델 파일 지정"
+        assert dlg.sec2_title.text() == "컨텍스트 길이 (Context Size / Token Window)"
+        assert dlg.sec3_title.text() == "GPU 가속 레이어 수 (n_gpu_layers)"
+
+        # Browse button uses the browse icon
+        assert not dlg.btn_browse.icon().isNull()
+        assert dlg.btn_browse.text() == " 찾아보기"
+
+        emojis = ("🧠", "📏", "⚡", "📁", "📦", "🎲", "🛡", "🎯", "✏")
+        texts = [dlg.sec1_title.text(), dlg.sec2_title.text(), dlg.sec3_title.text(),
+                 dlg.btn_browse.text(), dlg.lbl_custom_title.text()]
+        texts += [b.text() for b in (dlg.radio_random, dlg.radio_caretaker, dlg.radio_glitch,
+                                     dlg.radio_tactical, dlg.radio_custom)]
+        texts += [dlg.model_combo.itemText(i) for i in range(dlg.model_combo.count())]
+        for t in texts:
+            assert not any(e in t for e in emojis), t
+
+        # Context preset chips highlight the matching value
+        dlg.context_size_spin.setValue(8192)
+        assert dlg.ctx_preset_buttons[8192].isChecked()
+        assert not dlg.ctx_preset_buttons[4096].isChecked()
+        dlg.ctx_preset_buttons[2048].click()
+        assert dlg.context_size_spin.value() == 2048
+        assert dlg.ctx_preset_buttons[2048].isChecked()
+        assert not dlg.ctx_preset_buttons[8192].isChecked()
+        dlg.context_size_spin.setValue(3000)
+        assert not any(b.isChecked() for b in dlg.ctx_preset_buttons.values())
