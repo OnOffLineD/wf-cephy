@@ -820,6 +820,15 @@ class OrdisCompanionApp(QWidget):
 
             def diagnose_in_background():
                 try:
+                    # Second F9 while a riven is pending: read the opened riven card and finish the report.
+                    if self.diagnoser.has_pending_riven():
+                        riven_stats = self.diagnoser.extract_riven_stats_from_screen(img)
+                        if riven_stats:
+                            res = self.diagnoser.resume_pending_riven(riven_stats)
+                            bd = res.get('calculation_breakdown')
+                            act = {'calculation_breakdown': bd, 'on_show_breakdown': self.on_show_calculation_breakdown, 'breakdown_data': res} if bd else None
+                            self.chat_reply_signal.emit("세팔론 오디스", res.get('message', '분석 완료'), False, act)
+                            return
                     res = self.diagnoser.diagnose_screenshot(img)
                     if res.get('is_riven_compare'):
                         self.chat_reply_signal.emit("세팔론 오디스", res['message'], False, self._riven_compare_action(res))

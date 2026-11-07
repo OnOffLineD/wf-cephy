@@ -26,7 +26,7 @@ except ImportError:
 from scripts.wf_data_indexer import WFDataIndexer
 from scripts.jamo_matcher import match_mods_jamo
 from scripts.build_store import BuildStore, GRID_SLOTS, RIVEN_MOD, canonical_slot, is_riven_name, slot_order
-from scripts.riven_reroll_reader import STAT_DISPLAY, looks_like_reroll_screen, read_reroll_screen
+from scripts.riven_reroll_reader import STAT_DISPLAY, looks_like_reroll_screen, parse_stat_line, read_reroll_screen
 from scripts.innate_traits import BONUS_ELEMENTS, BONUS_MAX, BONUS_MIN, bonus_in, is_adversary, parse_bonus_answer, set_bonus
 
 
@@ -1057,6 +1057,25 @@ class ScreenModAnalyzer:
         if res.get("review_message"):
             res["review_message"] = clarified_prefix + res["review_message"]
         return res
+
+    def extract_riven_stats_from_screen(self, img) -> Optional[Dict[str, float]]:
+        """Read riven card stat lines (e.g. '+150% 치명타 확률') off the screen; None unless 2+ usable stats."""
+        text = self.ocr_image(img)
+        if not text or text.startswith("[OCR Error]"):
+            return None
+        stats: Dict[str, float] = {}
+        for line in text.splitlines():
+            parsed = parse_stat_line(line)
+            if parsed is None:
+                # The label sometimes comes before the value: '치명타 확률 +150%'.
+                m = re.match(r"^\s*([가-힣][가-힣\s]*?)\s*([+-]\s*\d+(?:\.\d+)?)\s*%", line)
+                parsed = parse_stat_line(f"{m.group(2)}% {m.group(1)}") if m else None
+            if parsed and parsed.get("key"):
+                stats[parsed["key"]] = parsed["value"]
+        elements = [stats[e] for e in ("heat", "cold", "electric", "toxin") if e in stats]
+        if elements:
+            stats["elemental_damage"] = sum(elements)
+        return stats if len([k for k in stats if k != "elemental_damage"]) >= 2 else None
 
     def has_pending_riven(self) -> bool:
         return hasattr(self, 'pending_riven_context') and self.pending_riven_context is not None
