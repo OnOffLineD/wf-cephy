@@ -18,6 +18,12 @@ MIN_MODEL_BYTES = 1000000000
 STARTUP_TIMEOUT_SECONDS = 300
 JOB_OBJECT_EXTENDED_LIMIT_INFORMATION = 9
 JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x2000
+BELOW_NORMAL_PRIORITY_CLASS = 0x00004000
+
+
+def llm_thread_count() -> int:
+    """Leave cores free for the UI: half the CPUs, capped at 4."""
+    return max(1, min(4, (os.cpu_count() or 4) // 2))
 
 
 class _IoCounters(ctypes.Structure):
@@ -104,7 +110,13 @@ class EmbeddedLLMRunner:
         self.last_error = ""
         self._log_file = None
         self._start_lock = threading.Lock()
+        self._is_starting = False
+        self.state = "idle"  # idle | starting | ready | failed
         atexit.register(self.stop_server)
+
+    def is_starting(self) -> bool:
+        """True while start_server is downloading/launching/waiting for the model to load."""
+        return self._is_starting
 
     def _launch(self) -> bool:
         os.makedirs(os.path.dirname(self.log_path), exist_ok=True)
@@ -115,9 +127,13 @@ class EmbeddedLLMRunner:
             '--host', self.host,
             '--port', str(self.port),
             '-ngl', str(self.n_gpu_layers),
-            '-c', str(self.context_size)
+            '-c', str(self.context_size),
+            '-t', str(llm_thread_count())
         ]
-        flags = subprocess.CREATE_NEW_PROCESS_GROUP | getattr(subprocess, 'CREATE_NO_WINDOW', 0x08000000)
+        # Lower priority so model loading never starves the UI thread of CPU.
+        flags = (subprocess.CREATE_NEW_PROCESS_GROUP
+                 | getattr(subprocess, 'CREATE_NO_WINDOW', 0x08000000)
+                 | getattr(subprocess, 'BELOW_NORMAL_PRIORITY_CLASS', BELOW_NORMAL_PRIORITY_CLASS))
         try:
             self.process = subprocess.Popen(args, stdout=self._log_file, stderr=subprocess.STDOUT, creationflags=flags)
         except OSError as e:
@@ -133,16 +149,28 @@ class EmbeddedLLMRunner:
 
     def start_server(self, wait_ready=True, timeout=STARTUP_TIMEOUT_SECONDS) -> bool:
         if self.is_healthy():
+            self.state = "ready"
             return True
-        with self._start_lock:
-            already_running = self.process is not None and self.process.poll() is None
-            if not already_running:
-                self.last_error = ""
-                if not self.ensure_binaries_exist() or not self.ensure_model_exists():
-                    return False
-                if not self._launch():
-                    return False
-        return self.wait_for_ready(timeout=timeout) if wait_ready else True
+        self._is_starting = True
+        self.state = "starting"
+        ok = False
+        try:
+            with self._start_lock:
+                already_running = self.process is not None and self.process.poll() is None
+                if not already_running:
+                    self.last_error = ""
+                    if not self.ensure_binaries_exist() or not self.ensure_model_exists():
+                        return False
+                    if not self._launch():
+                        return False
+            ok = self.wait_for_ready(timeout=timeout) if wait_ready else True
+            return ok
+        finally:
+            self._is_starting = False
+            if not ok:
+                self.state = "failed"
+            elif wait_ready:
+                self.state = "ready"
 
     def stop_server(self):
         # Only this app's own process: other llama-server instances on the machine are not ours to kill.
@@ -156,6 +184,7 @@ class EmbeddedLLMRunner:
         job, self.job_object = self.job_object, None
         close_job(job)
         self._close_log()
+        self.state = "idle"
 
     def _close_log(self):
         log_file, self._log_file = self._log_file, None

@@ -93,6 +93,61 @@ def test_wait_stops_early_when_process_dies():
     runner.process = None
 
 
+def test_launch_limits_threads_and_lowers_priority(tmp_path):
+    runner = EmbeddedLLMRunner()
+    runner.log_path = str(tmp_path / "logs" / "llama-server.log")
+    with patch("scripts.embedded_llm_runner.subprocess.Popen") as popen, \
+            patch("scripts.embedded_llm_runner.assign_kill_on_close_job", return_value=None):
+        assert runner._launch() is True
+    args = popen.call_args.args[0]
+    threads = int(args[args.index("-t") + 1])
+    assert 1 <= threads <= 4
+    assert popen.call_args.kwargs["creationflags"] & 0x00004000
+    runner._close_log()
+    runner.process = None
+
+
+def test_is_starting_is_true_only_while_starting(tmp_path):
+    runner = EmbeddedLLMRunner()
+    runner.is_healthy = MagicMock(return_value=False)
+    runner.ensure_binaries_exist = MagicMock(return_value=True)
+    runner.ensure_model_exists = MagicMock(return_value=True)
+    runner._launch = MagicMock(return_value=True)
+    seen = []
+
+    def fake_wait(timeout=10):
+        seen.append(runner.is_starting())
+        return True
+
+    runner.wait_for_ready = fake_wait
+    assert runner.is_starting() is False
+    assert runner.start_server(wait_ready=True) is True
+    assert seen == [True]
+    assert runner.is_starting() is False
+    assert runner.state == "ready"
+
+    runner.wait_for_ready = MagicMock(return_value=False)
+    assert runner.start_server(wait_ready=True) is False
+    assert runner.is_starting() is False
+    assert runner.state == "failed"
+
+
+def test_orchestrator_answers_immediately_while_model_loads():
+    from scripts.llm_orchestrator import LLM_LOADING_MESSAGE, LLMOrchestrator
+    orch = LLMOrchestrator.__new__(LLMOrchestrator)
+    orch.runner = MagicMock()
+    orch.runner.is_starting.return_value = True
+    orch.runner.is_healthy.return_value = False
+    orch.llama_server_url = "http://127.0.0.1:1/v1/chat/completions"
+    started = time.time()
+    with patch("scripts.llm_orchestrator.requests.post") as post:
+        reply = orch._call_llm("system", "안녕")
+    assert time.time() - started < 1
+    assert reply == LLM_LOADING_MESSAGE and "적재" in reply
+    orch.runner.wait_for_ready.assert_not_called()
+    post.assert_not_called()
+
+
 def test_failed_download_leaves_no_partial_file(tmp_path):
     runner = EmbeddedLLMRunner(model_path=str(tmp_path / "m.gguf"))
     with patch("scripts.embedded_llm_runner.requests.get", side_effect=requests.ConnectionError()):
