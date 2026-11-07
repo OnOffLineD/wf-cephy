@@ -16,6 +16,11 @@ except ImportError:
 from scripts.path_config import get_path
 
 class LayeredPetRenderer(QWidget):
+    CANVAS_W, CANVAS_H = 160, 180
+    JUMP_IMPULSE = -18.0
+    STRETCH_X, STRETCH_Y = 0.85, 1.25
+    SQUISH_X, SQUISH_Y = 1.15, 0.80
+
     def __init__(self, asset_dir: Optional[str] = None, parent=None):
         super().__init__(parent)
         self.asset_dir = asset_dir or get_path("assets", "character")
@@ -43,7 +48,19 @@ class LayeredPetRenderer(QWidget):
         self.motion_target_rot = 0.0
         self._held_dirs = set()
 
-        self.setFixedSize(140, 140)
+        # Jelly squash & stretch (1.0 = rest); phase: None -> "airborne" -> squish on landing
+        self.morph_scale_x = 1.0
+        self.morph_scale_y = 1.0
+        self.morph_target_scale_x = 1.0
+        self.morph_target_scale_y = 1.0
+        self._morph_phase: Optional[str] = None
+
+        # Melee two-hand slash impulses (x, y), spring back to (0, 0)
+        self.hand_motion_l = (0.0, 0.0)
+        self.hand_motion_r = (0.0, 0.0)
+
+        # Canvas has top/side headroom so the halo never clips at jump apex + stretch
+        self.setFixedSize(self.CANVAS_W, self.CANVAS_H)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
 
         # 1. Floating sine-wave bounce timer (40ms ~ 25 FPS)
@@ -84,6 +101,29 @@ class LayeredPetRenderer(QWidget):
                 curr = target
             setattr(self, f"motion_offset_{axis}", curr)
 
+        # Landing: once the jump has nearly come down, kick a squish that springs back to 1.0
+        if self._morph_phase == "airborne" and self.motion_offset_y > -3.0:
+            self._morph_phase = None
+            self.morph_scale_x, self.morph_scale_y = self.SQUISH_X, self.SQUISH_Y
+        for axis in ("x", "y"):
+            curr = getattr(self, f"morph_scale_{axis}")
+            target = getattr(self, f"morph_target_scale_{axis}")
+            curr += (target - curr) * 0.3
+            if abs(target - curr) < 0.005:
+                curr = target
+            setattr(self, f"morph_scale_{axis}", curr)
+
+        for side in ("l", "r"):
+            hx, hy = getattr(self, f"hand_motion_{side}")
+            hx, hy = hx * 0.75, hy * 0.75
+            if abs(hx) < 0.01 and abs(hy) < 0.01:
+                hx, hy = 0.0, 0.0
+            setattr(self, f"hand_motion_{side}", (hx, hy))
+
+    def body_rect(self) -> QRect:
+        """128x128 sprite rect with 40px top headroom (jump -18 + stretch overshoot + bob)."""
+        return QRect(16, 40, 128, 128)
+
     def apply_motion_action(self, action: str, is_down: bool):
         """React to an in-game input: WASD lean (held), jump/melee/shoot impulses (on press)."""
         if action in ("w", "a", "s", "d"):
@@ -96,9 +136,14 @@ class LayeredPetRenderer(QWidget):
             self.motion_target_y = (4.0 if "s" in held else 0.0) - (4.0 if "w" in held else 0.0)
             self.motion_target_rot = (4.0 if "d" in held else 0.0) - (4.0 if "a" in held else 0.0)
         elif is_down and action == "jump":
-            self.motion_offset_y += -18.0
+            # Clamp so spamming Space can't stack the jump past the canvas headroom
+            self.motion_offset_y = max(self.motion_offset_y + self.JUMP_IMPULSE, self.JUMP_IMPULSE)
+            self.morph_scale_x, self.morph_scale_y = self.STRETCH_X, self.STRETCH_Y
+            self._morph_phase = "airborne"
         elif is_down and action == "melee":
-            self.motion_offset_rot += 25.0
+            # Two-hand slash: right hand cuts diagonally forward, left hand recoils into guard
+            self.hand_motion_r = (24.0, -18.0)
+            self.hand_motion_l = (-12.0, 8.0)
         elif is_down and action == "shoot":
             self.motion_offset_x += -3.0
             self.motion_offset_y += 2.0
@@ -142,9 +187,10 @@ class LayeredPetRenderer(QWidget):
 
         jlx, jly = self._compute_jitter()
         jrx, jry = self._compute_jitter()
+        (mlx, mly), (mrx, mry) = self.hand_motion_l, self.hand_motion_r
         return {
-            "left": (x_lh + jlx, y_lh + jly),
-            "right": (x_rh + jrx, y_rh + jry),
+            "left": (x_lh + jlx + mlx, y_lh + jly + mly),
+            "right": (x_rh + jrx + mrx, y_rh + jry + mry),
         }
 
     def _cycle_mouth_frame(self):
@@ -232,11 +278,11 @@ class LayeredPetRenderer(QWidget):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
 
-        w, h = self.width(), self.height()
-        target_rect = QRect(6, 6, w - 12, h - 12)
+        target_rect = self.body_rect()
 
         # 1. Multi-phase transforms: body (breath + tilt), hands (lagging inertia, gesture, jitter)
-        cx, cy = w / 2.0, h / 2.0
+        center = target_rect.center()
+        cx, cy = float(center.x()), float(center.y())
         y_body, rot_body = self._compute_body_transform(self.tick)
         hand_offsets = self._compute_hand_offsets(self.tick)
 
@@ -245,6 +291,7 @@ class LayeredPetRenderer(QWidget):
         def apply_body_transform():
             painter.translate(cx + mx, cy + y_body + my)
             painter.rotate(rot_body + mrot)
+            painter.scale(self.morph_scale_x, self.morph_scale_y)
             painter.translate(-cx, -cy)
 
         painter.save()

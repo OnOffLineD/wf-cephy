@@ -91,7 +91,7 @@ def test_chat_panel_show_pauses_and_hide_resumes(qapp, monkeypatch):
 
 
 @pytest.mark.parametrize("action,attr,sign", [
-    ("jump", "motion_offset_y", -1), ("melee", "motion_offset_rot", 1), ("shoot", "motion_offset_x", -1),
+    ("jump", "motion_offset_y", -1), ("shoot", "motion_offset_x", -1),
 ])
 def test_impulse_kicks_then_settles_to_zero(qapp, action, attr, sign):
     r = LayeredPetRenderer()
@@ -100,6 +100,47 @@ def test_impulse_kicks_then_settles_to_zero(qapp, action, attr, sign):
     for _ in range(60):
         r._on_bounce_tick()
     assert (r.motion_offset_x, r.motion_offset_y, r.motion_offset_rot) == (0, 0, 0)
+
+
+def test_melee_slashes_hands_without_body_rotation(qapp):
+    r = LayeredPetRenderer()
+    rest = r._compute_hand_offsets(r.tick)
+    r.apply_motion_action("melee", True)
+    assert r.motion_offset_rot == 0
+    assert r.hand_motion_r == (24.0, -18.0) and r.hand_motion_l == (-12.0, 8.0)
+    hit = r._compute_hand_offsets(r.tick)
+    assert hit["right"][0] - rest["right"][0] == pytest.approx(24.0)
+    assert hit["left"][1] - rest["left"][1] == pytest.approx(8.0)
+    for _ in range(60):
+        r._on_bounce_tick()
+        assert r.motion_offset_rot == 0
+    assert r.hand_motion_r == (0.0, 0.0) and r.hand_motion_l == (0.0, 0.0)
+
+
+def test_jump_stretches_then_squishes_back_to_rest(qapp):
+    r = LayeredPetRenderer()
+    r.apply_motion_action("jump", True)
+    assert r.morph_scale_y > 1.15 and r.morph_scale_x < 1.0
+    squished = False
+    for _ in range(60):
+        r._on_bounce_tick()
+        squished = squished or (r.morph_scale_y < 1.0 and r.morph_scale_x > 1.0)
+    assert squished
+    assert (r.morph_scale_x, r.morph_scale_y) == (1.0, 1.0)
+
+
+def test_jump_apex_stays_inside_canvas(qapp):
+    r = LayeredPetRenderer()
+    rect = r.body_rect()
+    assert r.rect().contains(rect)
+    for _ in range(3):  # spamming Space must not stack past the headroom
+        r.apply_motion_action("jump", True)
+    assert rect.y() + r.motion_offset_y >= 0
+    # Worst case: stretch around the sprite center plus max breathing bob still clears the top.
+    cy = rect.center().y()
+    stretched_top = cy - (cy - rect.y()) * r.morph_scale_y + r.motion_offset_y
+    r.intensity = 3
+    assert stretched_top - r._amplitude() >= 0
 
 
 def test_wasd_lean_holds_then_returns(qapp):
