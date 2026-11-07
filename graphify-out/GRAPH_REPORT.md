@@ -1,23 +1,23 @@
 # Graph Report - 2.7 WarframeOptimizer  (2026-11-08)
 
 ## Corpus Check
-- 185 files · ~959,168 words
+- 185 files · ~959,739 words
 - Verdict: corpus is large enough that graph structure adds value.
-- Unclassified: 37 file(s) not represented in the graph (top: .toml 20, .csv 8, (none) 3)
+- Unclassified: 38 file(s) not represented in the graph (top: .toml 21, .csv 8, (none) 3)
 
 ## Summary
-- 2051 nodes · 5109 edges · 108 communities (88 shown, 20 thin omitted)
+- 2054 nodes · 5113 edges · 111 communities (91 shown, 20 thin omitted)
 - Extraction: 90% EXTRACTED · 10% INFERRED · 0% AMBIGUOUS · INFERRED: 495 edges (avg confidence: 0.88)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `213a96be`
+- Built from commit: `ae792e29`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
 ## Community Hubs (Navigation)
 - test_settings_and_frameless_dialogs.py
-- FramelessDialog
+- Project Accumulated Experience Library (Harness² Recursion)
 - OrdisCompanionApp
 - LLMOrchestrator
 - LocalPipelineRunner
@@ -50,6 +50,7 @@
 - WorldStateTracker
 - Domain Context & Architecture Memory (Warframe Companion)
 - Propose–Probe–Compose Workflow Protocol (Harness² Standard)
+- sys
 - Multi-Agent Orchestration & RBAC Guidelines
 - Domain Context & Architecture Memory
 - Propose–Probe–Compose Workflow Protocol (Harness² Standard)
@@ -63,7 +64,7 @@
 - os
 - test_companion_app.py
 - test_elements.py
-- test_riven_recovery.py
+- GuideRetriever
 - PersonaManager
 - DropIndex
 - pytest
@@ -72,8 +73,8 @@
 - test_mod_matching.py
 - GameInputListener
 - test_chat_intent.py
-- json
-- GameDataUpdater
+- apply_frameless_shell
+- innate_traits.py
 - test_game_input_listener.py
 - test_game_data.py
 - game_catalog.py
@@ -81,30 +82,32 @@
 - WarframeDamageEngine
 - orchestra.py
 - test_damage_formulas.py
-- build_character_assets.py
 - screen_mod_analyzer.py
 - BuildEditDialog
 - OrdisPersonaDialog
-- test_morphing_tab_bar.py
+- decompose_hangul
 - MorphingTabBar
 - orchestra-kit/orchestra.py
 - HudButton
-- ._riven_compare_action
+- GameCatalog
 - test_damage_breakdown_dialog.py
 - WFDataIndexer
 - test_innate_traits.py
 - LayeredPetRenderer
-- OptimizerHTTPHandler
+- .diagnose_screenshot
 - generate_ui_assets.py
 - AGENTS.md — 다중 AI 개발 운영 규약 (범용)
 - test_emotion_animation.py
 - YOLOSlotDetector
 - unittest_mock
-- qapp
+- desktop_companion.py
+- RivenQuickInputDialog
+- DataIngestor
 - 2. 🧠 [핵심 아키텍처] 1-Token GBNF 도메인 분류 & 동적 도구 문법 파이프라인
 - orchestra-kit
 - 4. 핵심 모듈
 - .refresh_world_events
+- test_formula_vs_game.py
 - 🎨 세팔론 오디스 의인화 레이어 에셋 제작 가이드 (NanoBanana / AI Image Guide)
 - 🎨 세팔론 오디스 의인화 레이어 에셋 제작 가이드 (NanoBanana / AI Image Guide)
 - test_ocr_benchmark.py
@@ -144,34 +147,34 @@
 ## Import Cycles
 - None detected.
 
-## Communities (108 total, 20 thin omitted)
+## Communities (111 total, 20 thin omitted)
 
 ### Community 0 - "test_settings_and_frameless_dialogs.py"
-Cohesion: 0.15
-Nodes (5): _drag(), qapp(), test_frameless_dialog_stays_on_top(), test_settings_buttons_clickable_after_drag(), test_settings_dialog_frameless_and_assets()
+Cohesion: 0.14
+Nodes (7): FramelessDialog, RivenCompareDialog, _drag(), qapp(), test_all_popup_dialogs_frameless(), test_settings_buttons_clickable_after_drag(), test_settings_dialog_frameless_and_assets()
 
-### Community 1 - "FramelessDialog"
-Cohesion: 0.06
-Nodes (21): [2026-11-07] UI/UX 2도 HUD 글리프 및 고무줄 텐션 모핑 버튼 전면 도입 (T-UI-1 ~ T-UI-3), EXP-001: Embedded Python과 시스템 Python 간 패키지 격리 및 Pytest 탐색 충돌 방지, EXP-002: Windows 환경 한글 인코딩 및 파일 입출력 안전성, EXP-003: Harness 초기 구축 및 3대 게이트 검증 연동, EXP-004: 패널 총계와 위키 수식 대조, EXP-005: 테스트가 실제 사용자 환경을 건드림, EXP-006: 계산식 보기 버튼 클릭 시 앱 종료, EXP-007: 긴 대화에서 공략 답변이 원문 나열로 바뀜 (+13 more)
+### Community 1 - "Project Accumulated Experience Library (Harness² Recursion)"
+Cohesion: 0.11
+Nodes (14): [2026-11-07] UI/UX 2도 HUD 글리프 및 고무줄 텐션 모핑 버튼 전면 도입 (T-UI-1 ~ T-UI-3), EXP-001: Embedded Python과 시스템 Python 간 패키지 격리 및 Pytest 탐색 충돌 방지, EXP-002: Windows 환경 한글 인코딩 및 파일 입출력 안전성, EXP-003: Harness 초기 구축 및 3대 게이트 검증 연동, EXP-004: 패널 총계와 위키 수식 대조, EXP-005: 테스트가 실제 사용자 환경을 건드림, EXP-006: 계산식 보기 버튼 클릭 시 앱 종료, EXP-007: 긴 대화에서 공략 답변이 원문 나열로 바뀜 (+6 more)
 
 ### Community 2 - "OrdisCompanionApp"
-Cohesion: 0.16
+Cohesion: 0.15
 Nodes (5): main(), OrdisCompanionApp, test_ordis_companion_headless_and_tabs(), test_chat_panel_show_pauses_and_hide_resumes(), test_chat_popup_draggable()
 
 ### Community 3 - "LLMOrchestrator"
-Cohesion: 0.14
-Nodes (11): LLMOrchestrator, test_works_with_llm_server_off(), test_chat_mood_and_intensity_prefix_gbnf(), test_chat_todo_explicit_add_uses_last_topic_and_adds_at_once(), test_guide_prompt_uses_persona_text_not_raw_dict(), test_smalltalk_prompt_has_memory_and_mood_instruction(), test_orchestrator_chat_strips_tag_and_provides_mood(), test_chat_answer_reaches_the_waiting_scan() (+3 more)
+Cohesion: 0.13
+Nodes (12): OptimizerHTTPHandler, LLMOrchestrator, test_works_with_llm_server_off(), test_chat_mood_and_intensity_prefix_gbnf(), test_chat_todo_explicit_add_uses_last_topic_and_adds_at_once(), test_guide_prompt_uses_persona_text_not_raw_dict(), test_smalltalk_prompt_has_memory_and_mood_instruction(), test_orchestrator_chat_strips_tag_and_provides_mood() (+4 more)
 
 ### Community 4 - "LocalPipelineRunner"
-Cohesion: 0.07
-Nodes (9): run_server(), start_llama_server(), LocalPipelineRunner, main(), class_methods(), runner(), test_insert_goes_into_class_before_module_aliases(), test_insert_goes_into_last_class_before_main_guard() (+1 more)
+Cohesion: 0.08
+Nodes (7): LocalPipelineRunner, main(), class_methods(), runner(), test_insert_goes_into_class_before_module_aliases(), test_insert_goes_into_last_class_before_main_guard(), test_module_without_class_inserts_top_level_function()
 
 ### Community 5 - "optimizer_engine.py"
-Cohesion: 0.12
-Nodes (21): CombatState, DamageSimulator, ModConfig, WeaponStats, OptimizerEngine, OptimizerRequest, SurvivalEvaluator, WarframeModConfig (+13 more)
+Cohesion: 0.09
+Nodes (22): CodexSheetImporter, CombatState, DamageSimulator, ModConfig, WeaponStats, OptimizerEngine, OptimizerRequest, SurvivalEvaluator (+14 more)
 
 ### Community 6 - "riven_reroll_reader.py"
-Cohesion: 0.10
+Cohesion: 0.11
 Nodes (21): test_boxes(), RivenRollEditDialog, _add_stat(), _bright_inverted(), format_riven_stats(), _gray(), looks_like_reroll_screen(), _match_label() (+13 more)
 
 ### Community 7 - "probe.mjs"
@@ -195,24 +198,24 @@ Cohesion: 0.15
 Nodes (12): 0. 다중 AI 협업 대원칙, 1. 3대 역할 분담 매트릭스, 2. Tier 판정 (오케스트레이터의 작업 분기), 3. 표준 협업 흐름 (Propose → Build → Probe → Compose), 4.1 외과수술적 컨텍스트 스코핑 (Graphify-First Gate), 4.2 작업 패킷 명세 (`.orchestra/tasks/<ID>.toml`), 4. Graphify-First 맥락 절약 및 작업 패킷 규칙, 5. 최종 검수 기준표 (Fail-Closed) (+4 more)
 
 ### Community 12 - ".resolve_domain_tool"
-Cohesion: 0.16
-Nodes (6): 1. 📌 프로젝트 개요 (Overview), 핵심 기능 매트릭스, 4.4. 채팅, build_gbnf_tool_grammar(), test_guide_grammar_gives_each_tool_only_its_own_argument(), test_step2_rejects_a_call_with_another_tools_arguments()
+Cohesion: 0.17
+Nodes (5): 핵심 기능 매트릭스, 4.4. 채팅, build_gbnf_tool_grammar(), test_guide_grammar_gives_each_tool_only_its_own_argument(), test_step2_rejects_a_call_with_another_tools_arguments()
 
 ### Community 13 - "Antigravity Universal Orchestration Rules (v2.0): Graphify & Local Worker Protocol"
 Cohesion: 0.13
 Nodes (14): 0. Autonomous Environment Bootstrap (Run Once Per Project), 1. Role & Structural Workload Partitioning (No Line-Count Guessing), 2. Dependency & Context Discovery (Graphify-First Hard Gate), 3.1 Mode A: Tier 2 Surgical Method Patch & Upsert (`--mode patch`), 3.2 Mode B: Tier 3 New Component Generation (`--mode create`), 3.3 Windows Shell Safety (`[T]` Generic Notation) & 8k Budget Guardrails, 3. Local Worker CLI Dispatch Protocol (v2.0 Enhancements), 4. Zero Post-Inspection & Circuit Breaker Protocol (+6 more)
 
 ### Community 14 - "EmbeddedLLMRunner"
-Cohesion: 0.07
-Nodes (30): 3. 💻 개발 환경 요구사항 및 빠른 시작 (Quick Start), 실행 및 검증 명령어, 요구사항, 4.1. 앱과 런타임, CodexSheetImporter, DataIngestor, assign_kill_on_close_job(), _BasicLimitInformation (+22 more)
+Cohesion: 0.12
+Nodes (23): 3. 💻 개발 환경 요구사항 및 빠른 시작 (Quick Start), 실행 및 검증 명령어, 요구사항, 4.1. 앱과 런타임, assign_kill_on_close_job(), close_job(), EmbeddedLLMRunner, _ExtendedLimitInformation (+15 more)
 
 ### Community 15 - "DesktopPet"
-Cohesion: 0.16
+Cohesion: 0.18
 Nodes (3): DesktopPet, test_desktop_pet_layered_renderer_integration(), test_layered_pet_renderer_headless()
 
 ### Community 16 - "test_guide_search.py"
-Cohesion: 0.06
-Nodes (22): add(), _parse_item(), _compact(), _grams(), GuideRetriever, _split_long_section(), _strip_particle(), doc_titles() (+14 more)
+Cohesion: 0.07
+Nodes (16): add(), _parse_item(), doc_titles(), drops(), orc(), retriever(), test_covered_questions_find_their_doc(), test_drop_answers_name_the_item() (+8 more)
 
 ### Community 17 - "1. 데미지 버킷 분류 (Damage Buckets)"
 Cohesion: 0.14
@@ -221,10 +224,6 @@ Nodes (13): 01. Warframe Damage Formulas & Buckets, 1. 데미지 버킷 분류 (
 ### Community 18 - "2. 상태이상 메커니즘 (Status Effects)"
 Cohesion: 0.17
 Nodes (11): 02. Warframe Enemy Scaling & Status Effects (Post-Jade Shadows Spec), 1.1. 체력 및 실드 스케일링, 1.2. 방어력 개편 (Update 36: Armor Cap at 2,700), 1. 적 레벨 스케일링 공식 (Enemy Scaling), 2.1. 바이러스 (Viral), 2.2. 절단 (Slash DoT - Bleed), 2.3. 화염 (Heat DoT - Ignite), 2.4. 부식 (Corrosive) (+3 more)
-
-### Community 19 - "ScreenModAnalyzer"
-Cohesion: 0.12
-Nodes (8): ScreenModAnalyzer, test_real_riven_flow_with_element_opens_dialog(), test_interactive_weapon_clarification(), test_orchestrator_interactive_chat_routing(), test_supporter_bot_upgrades(), results(), analyzer(), test_screen_mod_analyzer_diagnosis()
 
 ### Community 20 - "04. Warframe External Synergy & Level-Cap Matrix"
 Cohesion: 0.20
@@ -272,7 +271,7 @@ Nodes (47): added_lines_from_diff(), after_review(), build_round(), bullets(), c
 
 ### Community 31 - "WorldStateTracker"
 Cohesion: 0.07
-Nodes (38): Step 2: 동적 도구 필터링 & GBNF 문법 조립 (`select_domain_tools`, `resolve_domain_tool`), 감정/강도 + 대화 분리 출력을 위한 프리픽스 GBNF (`CHAT_MOOD_GRAMMAR`), 4.5. 월드 상태와 숙제, cetus_estimate(), format_remaining(), format_seconds(), _parse_cetus(), _parse_duviri() (+30 more)
+Nodes (36): Step 2: 동적 도구 필터링 & GBNF 문법 조립 (`select_domain_tools`, `resolve_domain_tool`), 4.5. 월드 상태와 숙제, cetus_estimate(), format_remaining(), format_seconds(), _parse_cetus(), _parse_duviri(), _parse_mission() (+28 more)
 
 ### Community 32 - "Domain Context & Architecture Memory (Warframe Companion)"
 Cohesion: 0.40
@@ -281,6 +280,10 @@ Nodes (4): 1. Core Architecture Overview, 2. Key Entities & Data Models, 3. Comm
 ### Community 33 - "Propose–Probe–Compose Workflow Protocol (Harness² Standard)"
 Cohesion: 0.40
 Nodes (4): Phase 1. Propose (가설 및 후보안 수립), Phase 2. Probe (격리 검증 및 스모크 테스트), Phase 3. Compose (최적안 채택 및 지식 누적), Propose–Probe–Compose Workflow Protocol (Harness² Standard)
+
+### Community 34 - "sys"
+Cohesion: 0.11
+Nodes (8): append_experience(), run_server(), start_llama_server(), _BasicLimitInformation, _IoCounters, _kernel32(), llm_thread_count(), append_experience()
 
 ### Community 35 - "Multi-Agent Orchestration & RBAC Guidelines"
 Cohesion: 0.40
@@ -311,36 +314,36 @@ Cohesion: 0.40
 Nodes (4): 1. Phase Status Overview, 2. Active Inter-Agent Packets, 3. Future Roadmap Backlog (Phase 6 Candidates - User Approved for Memo), Project Progress & Verification Board (Warframe Companion)
 
 ### Community 48 - "test_build_chat_and_dialogs.py"
-Cohesion: 0.08
-Nodes (23): format_change(), RivenQuickInputDialog, hidden_panel(), last_bubble_buttons(), orc(), panel(), qapp(), scan() (+15 more)
+Cohesion: 0.09
+Nodes (19): format_change(), hidden_panel(), last_bubble_buttons(), orc(), panel(), qapp(), scan(), shared_analyzer() (+11 more)
 
 ### Community 49 - "os"
 Cohesion: 0.11
-Nodes (7): append_experience(), get_path(), get_user_data_path(), PathConfig, write_json_atomic(), append_experience(), test_missing_data_is_said_out_loud_and_logged()
+Nodes (7): get_path(), get_user_data_path(), PathConfig, write_json_atomic(), _http_get(), test_daily_reset_keeps_weekly_done(), test_old_integer_week_key_does_not_reset_same_week()
 
 ### Community 50 - "test_companion_app.py"
-Cohesion: 0.07
-Nodes (16): ChatBubble, qimage_to_pil(), render_chat_markup(), drain(), panel(), qapp(), test_failed_llm_start_is_reported_in_chat(), test_llm_ready_is_announced_in_chat() (+8 more)
+Cohesion: 0.06
+Nodes (19): ChatBubble, handle_uncaught_exception(), qimage_to_pil(), render_chat_markup(), drain(), panel(), qapp(), test_failed_llm_start_is_reported_in_chat() (+11 more)
 
 ### Community 51 - "test_elements.py"
-Cohesion: 0.12
-Nodes (23): combine_elements(), faction_multipliers(), breakdown(), idx(), test_faction_multiplier(), test_four_primaries_two_pairs(), test_game_panel_types(), test_innate_electricity_key_combines() (+15 more)
+Cohesion: 0.13
+Nodes (21): combine_elements(), faction_multipliers(), breakdown(), idx(), test_faction_multiplier(), test_four_primaries_two_pairs(), test_game_panel_types(), test_innate_electricity_key_combines() (+13 more)
 
-### Community 52 - "test_riven_recovery.py"
-Cohesion: 0.12
-Nodes (18): is_riven_name(), slot_order(), looks_like_riven_card(), analyzer(), qapp(), scan(), shared_analyzer(), test_codex_riven_entries_are_not_mod_candidates() (+10 more)
+### Community 52 - "GuideRetriever"
+Cohesion: 0.16
+Nodes (7): _compact(), _grams(), GuideRetriever, _split_long_section(), _strip_particle(), test_docs_reload_when_a_file_appears(), test_long_sections_are_cut_at_line_ends()
 
 ### Community 53 - "PersonaManager"
 Cohesion: 0.19
 Nodes (6): PersonaManager, test_orchestrator_integration(), test_persona_dialog_headless(), test_persona_manager_defaults(), test_persona_manager_modes_and_persistence(), test_persona_manager_random_mode()
 
 ### Community 54 - "DropIndex"
-Cohesion: 0.21
+Cohesion: 0.23
 Nodes (4): _chance_text(), DropIndex, _rotated(), test_relic_availability_comes_from_current_drop_tables()
 
 ### Community 55 - "pytest"
-Cohesion: 0.14
-Nodes (17): damage_engine(), firearm(), test_expected_between_min_and_max(), test_faction_applies_to_all_rolls(), test_modded_multishot_scales_without_panel(), test_optional_sections_only_with_data(), test_panel_total_already_includes_multishot(), test_riven_crit_adds_to_panel() (+9 more)
+Cohesion: 0.16
+Nodes (16): damage_engine(), firearm(), test_expected_between_min_and_max(), test_faction_applies_to_all_rolls(), test_modded_multishot_scales_without_panel(), test_optional_sections_only_with_data(), test_panel_total_already_includes_multishot(), test_riven_crit_adds_to_panel() (+8 more)
 
 ### Community 56 - "ShortTermMemory"
 Cohesion: 0.26
@@ -355,96 +358,100 @@ Cohesion: 0.26
 Nodes (10): analyzer(), names(), test_exclusive_mods_stay_exclusive(), test_mods_also_sold_by_conclave_are_not_pvp(), test_rifle_mods_allowed_on_snipers_and_bows(), test_thrown_melee_mods_allowed_on_glaives(), test_top_match_from_real_ocr(), test_weapon_augment_kept_when_weapon_is_only_inferred() (+2 more)
 
 ### Community 59 - "GameInputListener"
-Cohesion: 0.18
+Cohesion: 0.17
 Nodes (5): EXP-013: 인게임 키 입력 연동 펫 모션의 완벽 차단(Zero-Trace) 3중 방어선 및 동적 핫 토글 연동, GameInputListener, _get_async_key_state(), _get_foreground_title(), _user32()
 
 ### Community 60 - "test_chat_intent.py"
 Cohesion: 0.14
 Nodes (17): intent(), llm_offline(), orc(), test_casual_messages_are_smalltalk(), test_chat_asks_before_adding_or_deleting(), test_chat_falls_back_to_smalltalk_when_the_todo_names_nothing(), test_chat_ticks_an_existing_item_for_a_todo_message(), test_chat_todo_explicit_add_from_model_tool_is_done_at_once() (+9 more)
 
-### Community 61 - "json"
-Cohesion: 0.13
-Nodes (10): format_report(), fake_item(), FakeServer, test_check_only_reads_version_markers_and_sees_changes(), test_check_runs_once_a_day(), test_export_with_raw_line_breaks_is_accepted(), test_old_korean_entries_survive_and_archwing_tag_is_removed(), test_shrunken_download_is_refused() (+2 more)
+### Community 61 - "apply_frameless_shell"
+Cohesion: 0.12
+Nodes (4): EXP-012: Qt6 startSystemMove 네이티브 DWM 드래그 도입 및 대형 컨테이너 위젯 드래그 간섭 제거, apply_frameless_shell(), move(), press()
 
-### Community 62 - "GameDataUpdater"
-Cohesion: 0.16
-Nodes (5): check(), DataValidationError, GameDataUpdater, _load_list(), test_wfcd_numbers_are_compared_with_the_official_ones()
+### Community 62 - "innate_traits.py"
+Cohesion: 0.29
+Nodes (7): apply_innate_traits(), bonus_in(), describe(), is_adversary(), load_traits(), selected_wheel(), trait_for()
 
 ### Community 63 - "test_game_input_listener.py"
-Cohesion: 0.15
-Nodes (10): make_listener(), pressed(), qapp(), test_each_key_emits_down_then_up(), test_game_input_listener_disabled_stops_timer_and_no_api_calls(), test_impulse_kicks_then_settles_to_zero(), test_jump_stretches_then_squishes_back_to_rest(), test_no_polling_when_warframe_not_foreground() (+2 more)
+Cohesion: 0.29
+Nodes (6): make_listener(), pressed(), qapp(), test_game_input_listener_disabled_stops_timer_and_no_api_calls(), test_no_polling_when_warframe_not_foreground(), test_pause_releases_held_and_blocks_detection()
 
 ### Community 64 - "test_game_data.py"
-Cohesion: 0.09
-Nodes (16): decompress_index(), parse_index(), index_bytes(), orc(), retriever(), snapshot(), test_any_failure_changes_no_files(), test_catalog_joins_korean_and_english_by_unique_name() (+8 more)
+Cohesion: 0.05
+Nodes (31): check(), DataValidationError, decompress_index(), format_report(), GameDataUpdater, _load_list(), parse_index(), fake_item() (+23 more)
 
 ### Community 65 - "game_catalog.py"
-Cohesion: 0.17
-Nodes (11): build_catalog(), add(), english_names(), clean_text(), _compact(), GameCatalog, _ranked_entry(), _rounded() (+3 more)
+Cohesion: 0.33
+Nodes (8): build_catalog(), add(), english_names(), clean_text(), _ranked_entry(), _rounded(), _warframe_entry(), _weapon_entry()
 
 ### Community 66 - "BuildStore"
-Cohesion: 0.12
-Nodes (26): BuildStore, canonical_slot(), test_build_vault_tab_empty_and_saved_build(), analyzer(), card(), scan_result(), shared_analyzer(), test_adopt_new_roll_updates_build_and_next_compare_starts_from_it() (+18 more)
+Cohesion: 0.06
+Nodes (45): BuildStore, canonical_slot(), is_riven_name(), slot_order(), looks_like_riven_card(), test_build_vault_tab_empty_and_saved_build(), analyzer(), qapp() (+37 more)
 
 ### Community 67 - "WarframeDamageEngine"
-Cohesion: 0.25
-Nodes (10): 4.3. 데미지 계산, WarframeDamageEngine, test_engine_physical_bucket(), test_impact_bonus_adds_to_impact_instead_of_replacing_it(), test_elemental_and_base_damage_buckets(), test_firearm_duty_cycle_sustained(), test_in_game_crit_tiers_and_rolls(), test_melee_duty_cycle_no_reload() (+2 more)
+Cohesion: 0.24
+Nodes (10): 4.3. 데미지 계산, WarframeDamageEngine, test_riven_element_uses_riven_slot(), test_sacrificial_set_scales_faction_bonus(), test_elemental_and_base_damage_buckets(), test_firearm_duty_cycle_sustained(), test_in_game_crit_tiers_and_rolls(), test_melee_duty_cycle_no_reload() (+2 more)
 
 ### Community 68 - "orchestra.py"
 Cohesion: 0.08
-Nodes (51): main(), run_domain_sanity(), run_graph_check(), run_tests(), added_lines_from_diff(), after_review(), build_round(), bullets() (+43 more)
+Nodes (49): added_lines_from_diff(), after_review(), build_round(), bullets(), cmd_check(), cmd_clean(), cmd_init(), cmd_merge() (+41 more)
 
 ### Community 69 - "test_damage_formulas.py"
 Cohesion: 0.11
-Nodes (15): arsenal_total(), bleed_tick(), effective_fire_rate(), shooting_proportion(), total_crit_chance(), total_crit_mult(), idx(), _mod() (+7 more)
-
-### Community 71 - "build_character_assets.py"
-Cohesion: 0.67
-Nodes (4): build_all(), make_blank(), overlay_rgba(), save_scaled()
+Nodes (16): arsenal_total(), bleed_tick(), effective_fire_rate(), shooting_proportion(), total_crit_chance(), total_crit_mult(), idx(), _mod() (+8 more)
 
 ### Community 72 - "screen_mod_analyzer.py"
-Cohesion: 0.14
-Nodes (5): set_bonus(), decompose_hangul(), match_mods_jamo(), smart_match(), test_orchestrator_answers_immediately_while_model_loads()
+Cohesion: 0.12
+Nodes (6): set_bonus(), test_orchestrator_answers_immediately_while_model_loads(), analyzer(), test_fullscreen_warframe_diagnosis(), test_tight_crop_8_cards_miter(), test_tight_crop_with_chat_resumption()
 
 ### Community 73 - "BuildEditDialog"
 Cohesion: 0.33
 Nodes (3): BuildEditDialog, test_edit_dialog_rejects_unknown_names(), test_edit_dialog_shows_and_returns_slots()
 
-### Community 74 - "OrdisPersonaDialog"
-Cohesion: 0.16
-Nodes (3): load_icon_pixmap(), OrdisPersonaDialog, test_settings_tabs_use_hud_icons_and_banner_logo_centered()
+### Community 75 - "decompose_hangul"
+Cohesion: 0.35
+Nodes (3): decompose_hangul(), match_mods_jamo(), smart_match()
 
-### Community 75 - "test_morphing_tab_bar.py"
-Cohesion: 0.39
-Nodes (6): _make_bar(), qapp(), test_add_tab_with_icons(), test_backward_switch_leads_with_left_edge(), test_indicator_settles_on_target(), test_switch_tab_emits_signal()
+### Community 76 - "MorphingTabBar"
+Cohesion: 0.12
+Nodes (10): _lerp(), _mix(), render_glyph(), MorphingTabBar, _make_bar(), qapp(), test_add_tab_with_icons(), test_backward_switch_leads_with_left_edge() (+2 more)
 
 ### Community 77 - "orchestra-kit/orchestra.py"
 Cohesion: 0.08
-Nodes (49): added_lines_from_diff(), after_review(), build_round(), bullets(), cmd_check(), cmd_clean(), cmd_init(), cmd_merge() (+41 more)
+Nodes (51): main(), run_domain_sanity(), run_graph_check(), run_tests(), added_lines_from_diff(), after_review(), build_round(), bullets() (+43 more)
 
 ### Community 78 - "HudButton"
-Cohesion: 0.09
-Nodes (11): HudButton, _lerp(), _mix(), render_glyph(), qapp(), test_busy_starts_and_stops_timer(), test_clicked_signal(), test_compact_size_hint_is_32() (+3 more)
+Cohesion: 0.11
+Nodes (7): HudButton, test_busy_starts_and_stops_timer(), test_clicked_signal(), test_compact_size_hint_is_32(), test_hover_unfolds_width(), test_icon_loading_and_fallback_paint(), test_non_icon_only_always_shows_label()
+
+### Community 79 - "GameCatalog"
+Cohesion: 0.27
+Nodes (3): _compact(), GameCatalog, test_shipped_catalog_has_each_kind_with_korean_text()
 
 ### Community 80 - "test_damage_breakdown_dialog.py"
-Cohesion: 0.14
-Nodes (13): DamageBreakdownDialog, handle_uncaught_exception(), card(), test_uncaught_exception_handler_survives_without_stderr(), qapp(), rows(), test_copy_button_copies_selection(), test_copy_without_selection_copies_breakdown_text() (+5 more)
+Cohesion: 0.16
+Nodes (12): DamageBreakdownDialog, qapp(), rows(), test_copy_button_copies_selection(), test_copy_without_selection_copies_breakdown_text(), test_dialog_paints_opaque_dark_card_with_cyan_border(), test_real_riven_flow_with_element_opens_dialog(), test_riven_options_never_break_the_table() (+4 more)
 
 ### Community 81 - "WFDataIndexer"
-Cohesion: 0.11
-Nodes (9): 4.2. 스크린샷 진단, WFDataIndexer, idx(), analyzer(), test_fullscreen_warframe_diagnosis(), test_tight_crop_8_cards_miter(), test_tight_crop_with_chat_resumption(), test_warframe_and_tricky_weapon_indexing() (+1 more)
+Cohesion: 0.16
+Nodes (4): 4.2. 스크린샷 진단, WFDataIndexer, test_warframe_and_tricky_weapon_indexing(), test_wfcd_korean_name_indexing()
 
 ### Community 82 - "test_innate_traits.py"
-Cohesion: 0.11
-Nodes (25): apply_innate_traits(), bonus_in(), describe(), is_adversary(), load_traits(), parse_bonus_answer(), selected_wheel(), trait_for() (+17 more)
+Cohesion: 0.14
+Nodes (19): parse_bonus_answer(), analyzer(), ix(), mods(), motovore(), scan(), test_adversary_weapons_are_recognised(), test_asks_for_the_bonus_and_applies_the_answer() (+11 more)
 
 ### Community 84 - "LayeredPetRenderer"
-Cohesion: 0.12
-Nodes (3): LayeredPetRenderer, test_jump_apex_stays_inside_canvas(), test_melee_slashes_hands_without_body_rotation()
+Cohesion: 0.13
+Nodes (7): LayeredPetRenderer, test_each_key_emits_down_then_up(), test_impulse_kicks_then_settles_to_zero(), test_jump_apex_stays_inside_canvas(), test_jump_stretches_then_squishes_back_to_rest(), test_melee_slashes_hands_without_body_rotation(), test_wasd_lean_holds_then_returns()
+
+### Community 85 - ".diagnose_screenshot"
+Cohesion: 0.29
+Nodes (4): test_interactive_weapon_clarification(), test_orchestrator_interactive_chat_routing(), test_supporter_bot_upgrades(), test_screen_mod_analyzer_diagnosis()
 
 ### Community 86 - "generate_ui_assets.py"
-Cohesion: 0.24
-Nodes (6): build_all(), ensure_dirs(), generate_btn_cancel(), generate_btn_save(), generate_ordis_logo(), generate_settings_icon()
+Cohesion: 0.17
+Nodes (10): build_all(), make_blank(), overlay_rgba(), save_scaled(), build_all(), ensure_dirs(), generate_btn_cancel(), generate_btn_save() (+2 more)
 
 ### Community 87 - "AGENTS.md — 다중 AI 개발 운영 규약 (범용)"
 Cohesion: 0.15
@@ -455,12 +462,20 @@ Cohesion: 0.28
 Nodes (7): EmotionParser, _make_renderer(), test_emotion_parser_fallback_inference(), test_emotion_parser_standard_tags(), test_glitch_jitter_offset(), test_hand_offsets_differ_left_right(), test_talking_gesture_offset_active()
 
 ### Community 90 - "unittest_mock"
-Cohesion: 0.18
+Cohesion: 0.22
 Nodes (3): check_hotkeys(), test_capture_fullscreen_execution(), test_capture_fullscreen_methods_exist()
 
+### Community 91 - "desktop_companion.py"
+Cohesion: 0.21
+Nodes (3): load_icon_pixmap(), qapp(), qapp()
+
+### Community 92 - "RivenQuickInputDialog"
+Cohesion: 0.31
+Nodes (5): RivenQuickInputDialog, test_quick_input_curse_is_negative(), test_quick_input_values_are_percents(), test_riven_quick_input_has_opaque_card(), test_riven_quick_input_dialog_and_shorthand()
+
 ### Community 94 - "2. 🧠 [핵심 아키텍처] 1-Token GBNF 도메인 분류 & 동적 도구 문법 파이프라인"
-Cohesion: 0.25
-Nodes (7): 2. 🧠 [핵심 아키텍처] 1-Token GBNF 도메인 분류 & 동적 도구 문법 파이프라인, 4. 📂 주요 디렉터리 및 핵심 파일 구조, 5. ⚠️ 유지보수 주의사항 (Gotchas), Step 1: 1-Token 도메인 분류 (`LLMOrchestrator.classify_intent`), 🛰️ Warframe Optimizer / Desktop Companion 프로젝트 인수인계서 (Handover Guide), 신규 도메인/도구 확장 방법 (인수인계 가이드), 파이프라인 흐름도
+Cohesion: 0.18
+Nodes (9): 1. 📌 프로젝트 개요 (Overview), 2. 🧠 [핵심 아키텍처] 1-Token GBNF 도메인 분류 & 동적 도구 문법 파이프라인, 4. 📂 주요 디렉터리 및 핵심 파일 구조, 5. ⚠️ 유지보수 주의사항 (Gotchas), Step 1: 1-Token 도메인 분류 (`LLMOrchestrator.classify_intent`), 🛰️ Warframe Optimizer / Desktop Companion 프로젝트 인수인계서 (Handover Guide), 감정/강도 + 대화 분리 출력을 위한 프리픽스 GBNF (`CHAT_MOOD_GRAMMAR`), 신규 도메인/도구 확장 방법 (인수인계 가이드) (+1 more)
 
 ### Community 95 - "orchestra-kit"
 Cohesion: 0.22
@@ -479,8 +494,8 @@ Cohesion: 0.33
 Nodes (5): 1. 📐 에셋 기본 규격, 2. 📂 디렉터리 및 파일 명명 규칙, 3. 🍌 나노바나나 (NanoBanana) 생성 프롬프트 템플릿 추천, 4. 🛡️ 자동 폴백 (안전망), 🎨 세팔론 오디스 의인화 레이어 에셋 제작 가이드 (NanoBanana / AI Image Guide)
 
 ### Community 102 - "test_ocr_benchmark.py"
-Cohesion: 0.29
-Nodes (7): mod_matched(), normalize_mod(), stat_matches(), test_high_res_panel_stats(), test_mod_recall(), test_panel_stats(), test_unnameable_weapon_is_not_guessed()
+Cohesion: 0.16
+Nodes (9): mod_matched(), normalize_mod(), results(), stat_matches(), test_high_res_panel_stats(), test_mod_recall(), test_panel_stats(), test_unnameable_weapon_is_not_guessed() (+1 more)
 
 ### Community 103 - "review.md"
 Cohesion: 0.40
@@ -504,17 +519,17 @@ Nodes (5): 1. 강철의 길 (Steel Path), 2. 주간 리셋 컨텐츠 (매주 월
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `OrdisCompanionApp` connect `OrdisCompanionApp` to `test_settings_and_frameless_dialogs.py`, `FramelessDialog`, `LLMOrchestrator`, `riven_reroll_reader.py`, `EmbeddedLLMRunner`, `DesktopPet`, `ScreenModAnalyzer`, `WorldStateTracker`, `.compare_riven_rolls`, `.add_chat_bubble`, `test_build_chat_and_dialogs.py`, `os`, `test_companion_app.py`, `test_riven_recovery.py`, `GameDataUpdater`, `test_game_input_listener.py`, `BuildStore`, `BuildEditDialog`, `OrdisPersonaDialog`, `MorphingTabBar`, `HudButton`, `._riven_compare_action`, `test_damage_breakdown_dialog.py`, `.refresh_checklist_ui`, `unittest_mock`, `.refresh_world_events`?**
-  _High betweenness centrality (0.107) - this node is a cross-community bridge._
+- **Why does `ScreenModAnalyzer` connect `ScreenModAnalyzer` to `OrdisCompanionApp`, `LLMOrchestrator`, `.add_chat_bubble`, `test_build_chat_and_dialogs.py`, `pytest`, `test_mod_matching.py`, `BuildStore`, `WarframeDamageEngine`, `.extract_left_panel_stats`, `screen_mod_analyzer.py`, `decompose_hangul`, `test_damage_breakdown_dialog.py`, `WFDataIndexer`, `test_innate_traits.py`, `.refresh_checklist_ui`, `.diagnose_screenshot`, `YOLOSlotDetector`, `desktop_companion.py`, `test_ocr_benchmark.py`?**
+  _High betweenness centrality (0.105) - this node is a cross-community bridge._
 - **Are the 14 inferred relationships involving `ScreenModAnalyzer` (e.g. with `4.2. 스크린샷 진단` and `OrdisCompanionApp`) actually correct?**
   _`ScreenModAnalyzer` has 14 INFERRED edges - model-reasoned connections that need verification._
-- **Should `FramelessDialog` be split into smaller, more focused modules?**
-  _Cohesion score 0.06086956521739131 - nodes in this community are weakly interconnected._
-- **Why does `ScreenModAnalyzer` connect `ScreenModAnalyzer` to `OrdisCompanionApp`, `LLMOrchestrator`, `.compare_riven_rolls`, `.add_chat_bubble`, `test_build_chat_and_dialogs.py`, `os`, `test_riven_recovery.py`, `pytest`, `test_mod_matching.py`, `BuildStore`, `WarframeDamageEngine`, `.extract_left_panel_stats`, `screen_mod_analyzer.py`, `test_damage_breakdown_dialog.py`, `WFDataIndexer`, `test_innate_traits.py`, `YOLOSlotDetector`, `unittest_mock`, `test_ocr_benchmark.py`?**
-  _High betweenness centrality (0.105) - this node is a cross-community bridge._
+- **Should `test_settings_and_frameless_dialogs.py` be split into smaller, more focused modules?**
+  _Cohesion score 0.1368421052631579 - nodes in this community are weakly interconnected._
+- **Why does `OrdisCompanionApp` connect `OrdisCompanionApp` to `test_settings_and_frameless_dialogs.py`, `Project Accumulated Experience Library (Harness² Recursion)`, `LLMOrchestrator`, `riven_reroll_reader.py`, `EmbeddedLLMRunner`, `ScreenModAnalyzer`, `WorldStateTracker`, `.add_chat_bubble`, `test_build_chat_and_dialogs.py`, `test_companion_app.py`, `test_game_input_listener.py`, `test_game_data.py`, `BuildStore`, `BuildEditDialog`, `OrdisPersonaDialog`, `MorphingTabBar`, `HudButton`, `test_damage_breakdown_dialog.py`, `.refresh_checklist_ui`, `unittest_mock`, `desktop_companion.py`, `RivenQuickInputDialog`, `.refresh_world_events`?**
+  _High betweenness centrality (0.098) - this node is a cross-community bridge._
 - **Are the 19 inferred relationships involving `OrdisCompanionApp` (e.g. with `EXP-011: Frameless 다이얼로그 드래그 후 자식 위젯 클릭 불능 버그 및 WindowStaysOnTopHint / Mouse Release 동기화` and `4.1. 앱과 런타임`) actually correct?**
   _`OrdisCompanionApp` has 19 INFERRED edges - model-reasoned connections that need verification._
-- **Should `LLMOrchestrator` be split into smaller, more focused modules?**
-  _Cohesion score 0.14039408866995073 - nodes in this community are weakly interconnected._
-- **Why does `LLMOrchestrator` connect `LLMOrchestrator` to `OrdisCompanionApp`, `LocalPipelineRunner`, `.resolve_domain_tool`, `EmbeddedLLMRunner`, `test_guide_search.py`, `ScreenModAnalyzer`, `test_build_chat_and_dialogs.py`, `os`, `PersonaManager`, `DropIndex`, `pytest`, `ShortTermMemory`, `test_chat_routing_comprehensive.py`, `test_chat_intent.py`, `GameDataUpdater`, `test_game_data.py`, `BuildStore`, `screen_mod_analyzer.py`, `test_innate_traits.py`, `OptimizerHTTPHandler`, `test_emotion_animation.py`, `unittest_mock`, `2. 🧠 [핵심 아키텍처] 1-Token GBNF 도메인 분류 & 동적 도구 문법 파이프라인`?**
-  _High betweenness centrality (0.087) - this node is a cross-community bridge._
+- **Should `Project Accumulated Experience Library (Harness² Recursion)` be split into smaller, more focused modules?**
+  _Cohesion score 0.10526315789473684 - nodes in this community are weakly interconnected._
+- **Why does `LLMOrchestrator` connect `LLMOrchestrator` to `OrdisCompanionApp`, `.resolve_domain_tool`, `EmbeddedLLMRunner`, `test_guide_search.py`, `sys`, `test_build_chat_and_dialogs.py`, `os`, `GuideRetriever`, `PersonaManager`, `DropIndex`, `pytest`, `ShortTermMemory`, `test_chat_routing_comprehensive.py`, `test_chat_intent.py`, `test_game_data.py`, `BuildStore`, `screen_mod_analyzer.py`, `test_innate_traits.py`, `.refresh_checklist_ui`, `.diagnose_screenshot`, `test_emotion_animation.py`, `desktop_companion.py`, `2. 🧠 [핵심 아키텍처] 1-Token GBNF 도메인 분류 & 동적 도구 문법 파이프라인`?**
+  _High betweenness centrality (0.084) - this node is a cross-community bridge._

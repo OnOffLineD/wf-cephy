@@ -192,3 +192,22 @@
   - 파일 시스템 패턴 매칭에서 `fnmatch`는 쉘의 glob과 달리 `/`를 경계로 인식하지 않으므로, 보호 경로는 디렉토리 프리픽스나 정밀 접두어(`0*.md`)를 지정해 하위 디렉토리와의 이름 공간 충돌을 방지해야 한다.
 
 
+---
+
+### EXP-015: Qt WA_TranslucentBackground 환경의 QDialog 배경 투과 버그와 FramelessDialog.paintEvent 불투명 렌더링
+- **기록일자**: 2026-11-08
+- **현상**:
+  - `FramelessDialog`를 상속받은 `DamageBreakdownDialog`(데미지 분석창)의 상단 헤더 및 하단 버튼 영역 뒤로 윈도우 바탕화면 및 탐색기가 투명하게 비쳐 보이는 버그 발생.
+  - 원인: `WA_TranslucentBackground`가 켜져 있으면 OS DWM 레벨에서 윈도우 표면이 완전 투명해지는데, top-level `QDialog`의 스타일시트 `background-color`는 Windows DWM에서 신뢰성 있게 그려지지 않음. 자식 위젯이 없는 빈 여백 영역(타이틀바, 버튼 레이아웃)이 그대로 투명 구멍(Hole)으로 남게 됨.
+- **해결책**:
+  1. **`FramelessDialog.paintEvent` 전역 불투명 카드 렌더링**:
+     - `FramelessDialog` 기본 클래스에 `paintEvent`를 오버라이드하고, `QPainter(self)`로 안티앨리어싱을 켠 뒤 불투명 다크 배경(`#0c1017`)과 1.5px 사이언 테두리(`#00d2ff`)를 가진 14px 라운드 사각형을 직접 렌더링.
+     - 둥근 모서리 바깥쪽은 완벽히 투명(`alpha=0`)하게 유지되면서도, 다이얼로그 내부 영역은 100% 불투명(`alpha=255`, `#0c1017`)하게 채워져 하위 바탕화면 투과를 원천 차단.
+  2. **`DamageBreakdownDialog` 스타일시트 보존 및 여백 정비**:
+     - `apply_dark_theme()`에서 1줄짜리 `QDialog` 스타일로 전체 스타일을 덮어쓰던 문제를 제거하고, `QTabWidget`, `QTabBar`, `QPushButton`의 워프레임 테마를 통합 관리.
+     - 하단 복사/닫기 버튼의 hover/pressed 상태와 여백(`margins(14, 12, 14, 14)`)을 완비.
+- **교훈**:
+  - `WA_TranslucentBackground`를 사용하는 프레임리스 다이얼로그는 스타일시트에만 의존하지 말고, 베이스 클래스의 `paintEvent`에서 직접 `QPainter.drawRoundedRect`로 불투명 배경을 그려주어야 어떤 자식 레이아웃 구성에서도 투명 구멍이 뚫리지 않는다.
+
+
+

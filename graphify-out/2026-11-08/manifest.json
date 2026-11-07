@@ -132,9 +132,9 @@
     "semantic_hash": "b429a7a5ec064164881604004dd22b48"
   },
   "scripts/desktop_companion.py": {
-    "mtime": 1794059816.103,
-    "seen": 1794059987.9751272,
-    "ast_hash": "37b5b8de31602c359b3500102db95db2",
+    "mtime": 1794068334.537,
+    "seen": 1794068494.0018518,
+    "ast_hash": "5d91e43d8e09adbd26cf78186780bd57",
     "semantic_hash": ""
   },
   "scripts/embedded_llm_runner.py": {
@@ -390,9 +390,9 @@
     "semantic_hash": "d7604ed05213ec59f9be2e4ddcec80db"
   },
   "tests/test_companion_ui_tabs.py": {
-    "mtime": 1794028711.938,
-    "seen": 1794029471.1295493,
-    "ast_hash": "d2abdde7bdeb6bcc3ebe7083ee5c388c",
+    "mtime": 1794068334.556,
+    "seen": 1794068494.0247006,
+    "ast_hash": "b6b77eeee9cad42f19d50653a8cdd316",
     "semantic_hash": ""
   },
   "tests/test_riven_diagnosis_workflow.py": {
@@ -1326,9 +1326,9 @@
     "semantic_hash": ""
   },
   ".orchestra/PROGRESS.md": {
-    "mtime": 1794067436.196,
-    "seen": 1794067461.679782,
-    "ast_hash": "5e67b31ecf5cd9e807823f3baad38e51",
+    "mtime": 1794068337.359,
+    "seen": 1794068494.0443327,
+    "ast_hash": "84b1fa5bc90d55d45097af1c9bb0a337",
     "semantic_hash": ""
   },
   ".orchestra/prompts/builder.md": {
