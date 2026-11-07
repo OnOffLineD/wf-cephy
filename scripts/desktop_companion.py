@@ -54,6 +54,7 @@ from scripts.morphing_tab_bar import MorphingTabBar
 from scripts.hud_widgets import HudButton
 from scripts.persona_dialog import OrdisPersonaDialog
 from scripts.layered_pet_renderer import LayeredPetRenderer
+from scripts.game_input_listener import GameInputListener
 
 
 def handle_uncaught_exception(exc_type, exc, tb, panel=None, log_path=None):
@@ -119,6 +120,11 @@ class DesktopPet(QWidget):
         self.avatar.set_mood("idle")
         layout.addWidget(self.avatar)
         self.setLayout(layout)
+
+        # Zero-touch in-game input -> pet motion (polls only while Warframe is foreground)
+        self.input_listener = GameInputListener(parent=self)
+        self.input_listener.motion_event_signal.connect(self.avatar.apply_motion_action)
+        self.input_listener.start()
 
         # Initial bottom-right placement
         screen = QApplication.primaryScreen().geometry()
@@ -1119,10 +1125,17 @@ class OrdisCompanionApp(QWidget):
             if index == 2:
                 self.refresh_world_events()
 
+    def _set_game_input_paused(self, paused: bool):
+        listener = getattr(getattr(self, 'pet', None), 'input_listener', None)
+        if listener is not None:
+            listener.pause() if paused else listener.resume()
+
     def animate_show(self, pet_rect=None):
         if hasattr(self, '_anim_group') and self._anim_group:
             self._anim_group.stop()
-    
+        # Chat panel open: typing must not drive the pet.
+        self._set_game_input_paused(True)
+
         if pet_rect is not None and not getattr(self, '_user_moved', False):
             self.reposition_above_pet(pet_rect)
     
@@ -1178,6 +1191,7 @@ class OrdisCompanionApp(QWidget):
             self._anim_group.stop()
         # Invalidate any pending show fail-safe so it cannot re-raise opacity mid-hide.
         self._show_token = getattr(self, '_show_token', 0) + 1
+        self._set_game_input_paused(False)
 
         curr_geo = self.geometry()
         end_geo = QRect(curr_geo.x(), curr_geo.y() + 24, curr_geo.width(), curr_geo.height())
