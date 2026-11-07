@@ -109,7 +109,13 @@ class FramelessDialog(QDialog):
         self._drag_pos = QPoint()
         self.title_label = None
         self._frameless_title_label = None
-        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
+        # StaysOnTop matches the always-on-top companion app so dragging does not
+        # drop this dialog behind its parent (Z-order inversion / focus loss).
+        self.setWindowFlags(
+            Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.Dialog
+            | Qt.WindowType.WindowStaysOnTopHint
+        )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setStyleSheet(FRAMELESS_DIALOG_STYLE)
 
@@ -133,8 +139,21 @@ class FramelessDialog(QDialog):
             super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):
+        # Always end the drag, then re-activate so child widgets accept clicks at once.
         self._drag_pos = QPoint()
-        super().mouseReleaseEvent(event)
+        if event.button() == Qt.MouseButton.LeftButton:
+            event.accept()
+            if self.isVisible():
+                self.activateWindow()
+                self.raise_()
+        else:
+            super().mouseReleaseEvent(event)
+
+    def bind_drag_events(self, widget: QWidget):
+        """Route a container widget's mouse events to this dialog's drag handlers."""
+        widget.mousePressEvent = self.mousePressEvent
+        widget.mouseMoveEvent = self.mouseMoveEvent
+        widget.mouseReleaseEvent = self.mouseReleaseEvent
 
     def create_title_bar(self, title: str = "", on_close=None, icon_name: Optional[str] = None, icon_path: Optional[str] = None) -> QFrame:
         """Create a draggable top bar with title, optional icon, and close button."""
@@ -170,21 +189,9 @@ class FramelessDialog(QDialog):
         close_btn.clicked.connect(on_close or self.reject)
         h_layout.addWidget(close_btn)
 
-        # Forward mouse events from header to dialog for smooth dragging
-        def header_press(event):
-            if event.button() == Qt.MouseButton.LeftButton:
-                self._drag_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
-                event.accept()
-        def header_move(event):
-            if event.buttons() == Qt.MouseButton.LeftButton and hasattr(self, '_drag_pos') and not self._drag_pos.isNull():
-                self.move(event.globalPosition().toPoint() - self._drag_pos)
-                event.accept()
-        def header_release(event):
-            self._drag_pos = QPoint()
-
-        header.mousePressEvent = header_press
-        header.mouseMoveEvent = header_move
-        header.mouseReleaseEvent = header_release
+        # Forward mouse events from header to the dialog's own drag handlers
+        # (global coordinates are used, so header-local positions are irrelevant).
+        self.bind_drag_events(header)
 
         return header
 

@@ -162,3 +162,73 @@ def test_chat_popup_draggable(qapp):
     )
     panel.mouseReleaseEvent(release_event)
     panel.close()
+
+
+def _drag(target, start_global, delta):
+    """Simulate press -> move -> release on `target` using global coordinates."""
+    btn, nob, mod = Qt.MouseButton.LeftButton, Qt.MouseButton.NoButton, Qt.KeyboardModifier.NoModifier
+    end_global = start_global + delta
+    target.mousePressEvent(QMouseEvent(QMouseEvent.Type.MouseButtonPress, QPointF(5.0, 5.0), start_global, btn, btn, mod))
+    target.mouseMoveEvent(QMouseEvent(QMouseEvent.Type.MouseMove, QPointF(5.0, 5.0) + delta, end_global, btn, btn, mod))
+    release = QMouseEvent(QMouseEvent.Type.MouseButtonRelease, QPointF(5.0, 5.0) + delta, end_global, btn, nob, mod)
+    target.mouseReleaseEvent(release)
+    return release
+
+
+def test_frameless_dialog_stays_on_top(qapp):
+    dlg = SettingsDialog(persona_manager=SettingsManager(config_path=os.path.join(tempfile.gettempdir(), "t_ui5_top.json")))
+    assert bool(dlg.windowFlags() & Qt.WindowType.WindowStaysOnTopHint) is True
+    assert bool(dlg.windowFlags() & Qt.WindowType.FramelessWindowHint) is True
+    assert bool(DamageBreakdownDialog().windowFlags() & Qt.WindowType.WindowStaysOnTopHint) is True
+
+
+@pytest.mark.parametrize("drag_source", ["header", "card"])
+def test_settings_buttons_clickable_after_drag(qapp, drag_source):
+    try:
+        from PyQt6.QtTest import QTest
+        from PyQt6.QtWidgets import QFrame, QDialog
+    except ImportError:
+        from PySide6.QtTest import QTest
+        from PySide6.QtWidgets import QFrame, QDialog
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        sm = SettingsManager(config_path=os.path.join(tmpdir, "s.json"))
+        for which in ("cancel", "save"):
+            dlg = SettingsDialog(persona_manager=sm)
+            dlg.move(QPoint(100, 100))
+            dlg.show()
+            qapp.processEvents()
+            start = dlg.frameGeometry().topLeft()
+
+            source = dlg.findChild(QFrame, "framelessHeader") if drag_source == "header" else dlg.main_card
+            assert source is not None
+            release = _drag(source, QPointF(float(start.x() + 20), float(start.y() + 20)), QPointF(60.0, 40.0))
+            qapp.processEvents()
+
+            # Dialog moved, drag state cleared, release accepted
+            assert dlg.frameGeometry().topLeft() == start + QPoint(60, 40)
+            assert dlg._drag_pos.isNull()
+            assert release.isAccepted()
+
+            # A stray move after release must not drag the dialog anymore
+            moved_pos = dlg.pos()
+            dlg.mouseMoveEvent(QMouseEvent(QMouseEvent.Type.MouseMove, QPointF(1.0, 1.0), QPointF(900.0, 900.0),
+                                           Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier))
+            assert dlg.pos() == moved_pos
+
+            fired = []
+            if which == "cancel":
+                dlg.btn_cancel.clicked.connect(lambda: fired.append("cancel"))
+                QTest.mouseClick(dlg.btn_cancel, Qt.MouseButton.LeftButton)
+                assert fired == ["cancel"]
+                assert dlg.result() == QDialog.DialogCode.Rejected
+            else:
+                dlg.radio_tactical.setChecked(True)
+                dlg.context_size_spin.setValue(8192)
+                dlg.btn_save.clicked.connect(lambda: fired.append("save"))
+                QTest.mouseClick(dlg.btn_save, Qt.MouseButton.LeftButton)
+                assert fired == ["save"]
+                assert dlg.result() == QDialog.DialogCode.Accepted
+                assert sm.get_mode() == "tactical"
+                assert sm.get_context_size() == 8192
+            assert not dlg.isVisible()
