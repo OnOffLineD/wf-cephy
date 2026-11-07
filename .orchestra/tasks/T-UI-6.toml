@@ -1,0 +1,54 @@
+# Task packet. Written by the orchestrator (CEO), never by the builder.
+id    = "T-UI-6"
+title = "모델 로딩 비동기 격리 및 초기 실행 UI 안정화"
+tier  = 2
+
+goal = """
+소프트웨어 첫 실행 시 로컬 LLM(3GB+ GGUF 모델) 로딩 중에 CPU/IO 기아로 인해 UI 스레드가 블로킹되거나 윈도우가 고스팅/반투명 프리징되는 현상을 완전히 해결한다.
+1. EmbeddedLLMRunner가 llama-server 실행 시 적정 스레드 수(-t min(4, cpu_count)) 제한 및 BELOW_NORMAL_PRIORITY_CLASS 우선순위를 부여하여 UI 스레드 반응성을 최우선 보장한다.
+2. EmbeddedLLMRunner에 is_starting() 상태 플래그 및 현재 상태 추적을 추가하고, LLMOrchestrator가 모델 로딩 중 질의 시 5초간 동기 블로킹 대신 안내 메시지를 즉시 반환하여 프리징을 방지한다.
+3. OrdisCompanionApp의 animate_show/animate_hide 애니메이션이 중간 오파시티에서 멈추거나 투명 상태로 남아 마우스 이벤트를 방해하지 않도록 finished 시그널에서 hide() 및 최종 오파시티(0.94/0.0)를 명시적으로 확정한다.
+4. 모델 로딩 중에도 메신저 창, 숙제 탭, 성계 현황, 화면 캡처(F9), 모딩 진단 등 소프트웨어의 모든 핵심 기능이 100% 정상 작동함을 보장한다.
+"""
+
+[scope]
+allow = [
+  "scripts/embedded_llm_runner.py",
+  "scripts/desktop_companion.py",
+  "scripts/llm_orchestrator.py",
+  "tests/test_embedded_llm_runner.py",
+  "tests/test_companion_app.py"
+]
+forbid = [
+  "orchestra.py",
+  "AGENTS.md",
+  "GEMINI.md"
+]
+max_files = 5
+max_diff_lines = 350
+
+[context]
+hints = [
+  "scripts/embedded_llm_runner.py: EmbeddedLLMRunner._launch() - llama-server 명령행에 -t (스레드 수 제한, 예: max(1, min(4, (os.cpu_count() or 4) // 2))) 추가 및 flags에 subprocess.BELOW_NORMAL_PRIORITY_CLASS (0x00004000) 반영",
+  "scripts/embedded_llm_runner.py: EmbeddedLLMRunner에 self._is_starting 플래그 및 is_starting() 메서드 추가 (start_server 시작 시 True, wait_for_ready 완료/실패 시 False)",
+  "scripts/llm_orchestrator.py: LLMOrchestrator._call_llm() - self.runner.is_starting()일 때 5초 대기 대신 '대화 엔진을 메모리에 적재 중입니다. 잠시 후 다시 말씀해 주십시오' 친절한 안내 즉시 반환",
+  "scripts/desktop_companion.py: animate_hide() - self._anim_group.finished.connect(self._on_hide_finished)로 애니메이션 종료 시 확실히 self.hide() 및 setWindowOpacity(0.0) 수행, animate_show()도 완료 시 setWindowOpacity(0.94) 보장",
+  "scripts/desktop_companion.py: start_llm_in_background() - 모델 준비 상태가 정상적으로 비동기 보고되며 UI 로딩 피드백 유지"
+]
+
+[acceptance]
+cases = [
+  "EmbeddedLLMRunner provides is_starting() property/method indicating active startup",
+  "llama-server flags contain BELOW_NORMAL_PRIORITY_CLASS and -t thread limitation",
+  "animate_hide connects finished signal to hide() and ensures opacity is reset",
+  "LLMOrchestrator does not block synchronously for 5 seconds when runner.is_starting() is True",
+  "All test cases in test_embedded_llm_runner.py and test_companion_app.py pass"
+]
+commands = [
+  "python -m pytest -q tests/test_embedded_llm_runner.py",
+  "python -m pytest -q tests/test_companion_app.py",
+  "python -m pytest -q tests/test_chat_intent.py"
+]
+
+[limits]
+max_attempts = 3

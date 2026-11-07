@@ -1,0 +1,62 @@
+# Task packet. Written by the orchestrator (CEO), never by the builder.
+id    = "T-UI-10"
+title = "startSystemMove 네이티브 창 이동 도입 및 드래그 후 클릭 불능 버그 근본 해결"
+tier  = 2
+
+goal = """
+설정창(OrdisPersonaDialog) 및 FramelessDialog 기반 팝업 다이얼로그를 마우스로 드래그하여 이동시킨 후 내부 버튼(취소, 저장, 탭, 라디오 등)이 클릭되지 않는 버그를 근본적으로 해결한다.
+
+[근본 원인 및 필수 조치 사항]
+1. Qt6 공식 네이티브 창 드래그(startSystemMove) 전면 도입:
+   - 기존의 소프트웨어 self.move() 방식은 DWM 렌더링 루프와 마우스 릴리즈 이벤트 간 타이밍 어긋남, 빠른 드래그 시 release 유실로 인한 _drag_pos 고착을 유발함.
+   - FramelessDialog.mousePressEvent() 및 create_title_bar()의 헤더 마우스 이벤트에서 마우스 왼쪽 버튼 클릭 시:
+     wh = self.windowHandle()
+     if wh and hasattr(wh, "startSystemMove"):
+         self._drag_pos = QPoint()
+         wh.startSystemMove()
+         event.accept()
+         return
+     를 우선 호출하여 Windows OS DWM 네이티브 창 이동으로 완전히 위임한다.
+   - windowHandle()이 아직 없거나 headless 환경인 경우에만 기존의 _drag_pos 기반 self.move()로 안전하게 폴백(fallback)한다.
+
+2. main_card 전체에 걸린 드래그 이벤트 간섭 제거:
+   - scripts/persona_dialog.py에서 main_card 전체에 self.bind_drag_events(main_card)를 걸어두어, 사용자가 라디오 버튼, 탭, 취소/저장 버튼 주변을 클릭할 때 미세한 마우스 떨림만으로도 main_card의 마우스 핸들러가 가로채어 버튼의 click 이벤트를 취소시키는 치명적 문제가 있었음.
+   - 따라서 scripts/persona_dialog.py에서 main_card에 대한 무분별한 bind_drag_events 호출을 완전히 제거한다!
+   - 창 이동은 사용자가 직관적으로 잡는 상단 헤더 바(create_title_bar로 생성된 framelessHeader)를 통해서만 안전하게 수행되도록 역할을 분리한다.
+
+3. 마우스 릴리즈 및 드래그 상태 리셋 완전성:
+   - mouseReleaseEvent()에서 _drag_pos = QPoint()를 확실히 수행하고, 마우스 그랩이나 이벤트 고착이 발생하지 않도록 정상 처리한다.
+
+4. 회귀 방지 단위 테스트:
+   - tests/test_settings_and_frameless_dialogs.py에서 헤더 드래그 시뮬레이션 후 btn_cancel, btn_save, 라디오 버튼 클릭이 확실히 동작함을 검증하고, main_card 클릭 시에도 자식 위젯의 클릭 이벤트가 정상 소비됨을 확인한다.
+"""
+
+[scope]
+allow = [
+  "scripts/frameless_dialog.py",
+  "scripts/persona_dialog.py",
+  "tests/test_settings_and_frameless_dialogs.py"
+]
+forbid = []
+max_files = 3
+max_diff_lines = 160
+
+[context]
+hints = [
+  "scripts/frameless_dialog.py: FramelessDialog.mousePressEvent() - windowHandle().startSystemMove() 도입 및 fallback",
+  "scripts/frameless_dialog.py: FramelessDialog.create_title_bar() - header 드래그 시 startSystemMove 우선 연동",
+  "scripts/persona_dialog.py: OrdisPersonaDialog.init_ui() - main_card에 걸린 bind_drag_events 제거하고 상단 헤더로 드래그 일원화",
+  "tests/test_settings_and_frameless_dialogs.py - 헤더 드래그 후 클릭 정상 작동 단위 테스트 검증"
+]
+
+[acceptance]
+cases = [
+  "wh = dlg.windowHandle(); hasattr(wh, 'startSystemMove') is True",
+  "헤더를 드래그한 후 btn_cancel, btn_save 클릭 시 정상적으로 rejected / accepted 시그널 발생 및 다이얼로그 종료/저장 수행"
+]
+commands = [
+  "python -m pytest tests/test_settings_and_frameless_dialogs.py -q"
+]
+
+[limits]
+max_attempts = 3

@@ -138,3 +138,18 @@
   3. **드래그 라우팅 일원화**: `bind_drag_events(widget)` 유틸리티를 통해 헤더(`framelessHeader`) 및 메인 카드(`mainCard`)의 마우스 이벤트를 다이얼로그 자체 핸들러로 깔끔하게 위임하여 마우스 그래빙 유실 원천 차단.
 - **교훈**:
   - Always-On-Top 플래그를 사용하는 애플리케이션 위에서 구동되는 모든 프레임리스 서브 윈도우/다이얼로그는 반드시 동일한 Top-most 속성과 릴리즈 후 재활성화(`activateWindow`) 로직을 일관되게 갖추어야 DWM 상의 입력 유실을 방지할 수 있다.
+
+
+---
+
+### EXP-012: Qt6 startSystemMove 네이티브 DWM 드래그 도입 및 대형 컨테이너 위젯 드래그 간섭 제거
+- **기록일자**: 2026-11-07
+- **현상**:
+  - 소프트웨어 기반 `move()` 드래그는 마우스 빠른 이동 시 `mouseReleaseEvent` 유실로 `_drag_pos`가 고착되는 현상이 발생.
+  - 더 심각한 원인: 대형 프레임 위젯(`main_card`) 전체에 마우스 드래그 핸들러를 바인딩해 두어, 사용자가 버튼, 탭, 라디오 버튼, 콤보박스 주변을 클릭할 때 손가락의 1~2픽셀 미세 떨림(micro-jitter)만으로도 `main_card`의 드래그 핸들러가 가로채어 자식 위젯의 `clicked` 시그널이 취소(cancel)됨.
+- **해결책**:
+  1. **Qt6 네이티브 `startSystemMove` 전면 도입**: `FramelessDialog.mousePressEvent()`에서 `wh = self.windowHandle(); if wh and hasattr(wh, "startSystemMove"): wh.startSystemMove()`를 호출하여 Windows OS DWM이 마우스 그랩과 릴리즈를 100% 직접 관리하도록 위임.
+  2. **컨테이너 위젯 드래그 간섭 완전 제거**: `main_card` 전체에 걸려 있던 무분별한 `bind_drag_events`를 완전히 제거하고, 창 이동은 상단 전용 타이틀바(`framelessHeader`)를 통해서만 명확하게 수행되도록 역할을 분리.
+- **교훈**:
+  - 프레임리스 윈도우의 드래그 구현 시 대형 컨테이너(`mainCard` 등)에 마우스 이벤트를 덮어씌우는 것은 자식 위젯의 클릭을 캔슬시키는 안티패턴이다.
+  - 창 이동은 상단 전용 헤더 바로 국한하고, Qt6에서는 OS 네이티브 창 이동(`startSystemMove`)을 사용하는 것이 가장 견고하다.

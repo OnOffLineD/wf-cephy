@@ -1,0 +1,52 @@
+# Task packet. Written by the orchestrator (CEO), never by the builder.
+id    = "T-UI-8"
+title = "설정창 드래그 후 프리징 해결 및 탭 아이콘·배너 수직 정렬 고도화"
+tier  = 2
+
+goal = """
+워프레임 컴패니언 설정창(OrdisPersonaDialog / FramelessDialog)에서 발견된 3가지 결함을 해결한다:
+1. [드래그 후 프리징 해결]: 팝업창을 드래그하여 위치를 옮긴 후 버튼 클릭 시 창이 프리징/먹통되는 문제를 근본 해결한다.
+   - FramelessDialog.mouseReleaseEvent에서 DWM 포커스 충돌 및 이벤트 루프 블로킹을 유발하는 불필요한 activateWindow() 및 raise_() 강제 호출을 제거하고, super().mouseReleaseEvent(event)를 정상 호출한다.
+   - bind_drag_events(widget) 구현 시, 자식 위젯(버튼, 탭, 스핀박스, 라디오버튼 등)이 존재하는 위치(childAt(pos) is not None and childAt(pos) != widget)에서는 마우스 이벤트를 가로채지 않고 통과/ignore()하여 자식 위젯들이 정상적으로 마우스 호버/클릭 이벤트를 수신하도록 보장한다. (자식 위젯이 없는 순수 카드 여백 및 header에서만 드래그 동작)
+   - tests/test_settings_and_frameless_dialogs.py의 기존 테스트 test_settings_buttons_clickable_after_drag가 새 로직과 일치하도록 필요시 테스트 갱신을 허용한다.
+2. [탭 아이콘 고도화]: 탭 0번에 남아있던 기본 텍스트 이모지(🎭)를 완전히 제거하고, load_icon_pixmap('persona') 및 load_icon_pixmap('model')을 QIcon으로 적용하여 두 탭 모두 사이안 네온 HUD 아이콘(18x18)과 깔끔한 텍스트('성격 및 페르소나', '로컬 모델 & 엔진')로 일관되게 정돈한다.
+3. [배너 로고 수직 중앙 정렬]: 세팔론 오디스 배너 프레임 내부에서 오디스 로고가 상단으로 치우치지 않도록 banner_layout 및 logo_lbl에 수직 중앙 정렬(Qt.AlignmentFlag.AlignVCenter / AlignCenter)을 적용하여 텍스트와 완벽히 정렬한다.
+"""
+
+[scope]
+allow = [
+  "scripts/frameless_dialog.py",
+  "scripts/persona_dialog.py",
+  "tests/test_settings_and_frameless_dialogs.py"
+]
+forbid = [
+  "orchestra.py",
+  "AGENTS.md",
+  "GEMINI.md"
+]
+max_files = 3
+max_diff_lines = 250
+
+[context]
+hints = [
+  "scripts/frameless_dialog.py: FramelessDialog.mouseReleaseEvent() - _drag_pos = QPoint() 처리 후 불필요한 activateWindow()/raise_() 제거하고 super().mouseReleaseEvent(event) 호출",
+  "scripts/frameless_dialog.py: bind_drag_events(widget) - widget의 mousePressEvent에서 pos = event.position().toPoint(), child = widget.childAt(pos); child is not None and child is not widget이면 event.ignore()하고 리턴하여 자식 위젯이 클릭을 소비하도록 함",
+  "scripts/persona_dialog.py: self.tab_widget.addTab() - '🎭 성격 및 페르소나' 대신 load_icon_pixmap('persona')를 QIcon으로 부착하여 '성격 및 페르소나'로 등록, 탭 2도 load_icon_pixmap('model') QIcon 부착. self.tab_widget.setIconSize(QSize(18, 18)) 설정",
+  "scripts/persona_dialog.py: banner_layout 및 logo_lbl - banner_layout.setAlignment(Qt.AlignmentFlag.AlignVCenter), logo_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter), banner_layout.addWidget(logo_lbl, alignment=Qt.AlignmentFlag.AlignVCenter) 적용",
+  "tests/test_settings_and_frameless_dialogs.py: test_settings_buttons_clickable_after_drag는 card 여백 좌표를 유지하므로 통과하며, 탭 아이콘 및 🎭 부재 검사, 로고 정렬 검사 단언 추가"
+]
+
+[acceptance]
+cases = [
+  "Tab 0 and Tab 1 of OrdisPersonaDialog use QIcon with persona and model icons, and do not contain 🎭 emoji",
+  "Logo in the Cephalon Ordis banner has AlignVCenter alignment and is vertically centered with the text",
+  "Dragging dialog from header bar or card margin moves dialog and does not freeze on subsequent clicks",
+  "Existing test suite test_settings_and_frameless_dialogs.py and test_persona_customization.py pass cleanly"
+]
+commands = [
+  "python -m pytest -q tests/test_settings_and_frameless_dialogs.py",
+  "python -m pytest -q tests/test_persona_customization.py"
+]
+
+[limits]
+max_attempts = 3

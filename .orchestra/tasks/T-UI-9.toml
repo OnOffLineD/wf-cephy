@@ -1,0 +1,48 @@
+# Task packet. Written by the orchestrator (CEO), never by the builder.
+id    = "T-UI-9"
+title = "첫 실행 시 GPU/IO 경합 프리징 및 애니메이션 고착 근본 해결"
+tier  = 2
+
+goal = """
+앱 첫 실행 시 모델 로딩(VRAM 할당) 및 Google Drive I/O 부하 중에도
+메인 패널과 펫이 0.2 투명도에서 고착(Ghosting)되거나 Windows 응답 없음(Event 1002 Hang)으로 강제 종료되지 않고,
+UI 이벤트 루프와 렌더링이 독립적이고 안정적으로 구동되도록 한다.
+"""
+
+[scope]
+allow = [
+  "scripts/desktop_companion.py",
+  "scripts/layered_pet_renderer.py",
+  "main_companion.py",
+  "scripts/persona_dialog.py",
+  "tests/test_companion_app.py"
+]
+forbid = [
+  "scripts/warframe_damage_engine.py",
+  "scripts/damage_formulas.py"
+]
+max_files = 5
+max_diff_lines = 160
+
+[context]
+hints = [
+  "scripts/desktop_companion.py: animate_show() - QPropertyAnimation 객체들(anim_opacity, anim_geo)이 로컬 변수라 GC로 수거되거나 프레임 드롭 시 finished 시그널이 누락되어 0.2 투명도에 멈춤. self._anim_opacity, self._anim_geo, self._anim_group으로 참조 유지하고 QTimer.singleShot(350, ...) fail-safe로 setWindowOpacity(0.94) 및 최종 geometry 보장.",
+  "scripts/desktop_companion.py: handle_uncaught_exception() - pythonw.exe 환경에서 sys.stderr는 None이므로 sys.stderr.write() 호출 시 AttributeError 크래시 발생. if sys.stderr is not None: 가드 필수.",
+  "scripts/layered_pet_renderer.py: paintEvent() - os.path.exists(self.layers_dir)가 매 40ms(초당 25회)마다 호출되어 Google Drive VFS I/O 병목 유발. __init__에서 self.has_layers로 1회 캐싱하고 paintEvent에서는 self.has_layers만 참조.",
+  "main_companion.py: main() - panel.start_llm_in_background()가 app.exec() 전 즉시 실행되어 UI 첫 렌더링과 GPU VRAM 적재가 정면 충돌. QTimer.singleShot(1000, panel.start_llm_in_background)로 지연 기동(Staggered Startup) 적용.",
+  "scripts/persona_dialog.py: init_ui() - banner_layout의 logo_lbl과 text_col 수직 중앙 정렬(AlignVCenter) 확실히 일치."
+]
+
+[acceptance]
+cases = [
+  "panel.animate_show() 후 fail-safe 타임아웃 또는 완료 시 panel.windowOpacity() >= 0.94 확정",
+  "sys.stderr = None 인 pythonw.exe 가상 환경에서도 handle_uncaught_exception()이 크래시 없이 통과",
+  "LayeredPetRenderer 인스턴스가 self.has_layers 캐시를 가지고 paintEvent()에서 디스크 stat을 반복하지 않음",
+  "main_companion.py에서 LLM 백그라운드 기동이 QTimer.singleShot(1000, ...)으로 안전하게 지연 예약됨"
+]
+commands = [
+  "python -m pytest -q tests/test_companion_app.py tests/test_embedded_llm_runner.py tests/test_settings_and_frameless_dialogs.py"
+]
+
+[limits]
+max_attempts = 3
