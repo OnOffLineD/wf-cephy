@@ -35,3 +35,16 @@ payload:
   issue: "none"
 @[/AGENT_PACKET]
 ```
+
+---
+
+## 3. Future Roadmap Backlog (Phase 6 Candidates - User Approved for Memo)
+
+| ID | Item | Scope | Description |
+| :--- | :--- | :--- | :--- |
+| **F-01** | **스마트 실시간 알림 (펫 말풍선 + 균열 필터)** | UI / WorldState | Focus Assist 우회 Always-on-top 펫 말풍선 큐 알림, 성유물 균열(강철의 길/생존 등) 커스텀 필터 알림 |
+| **F-02** | **리벤 롤 등급(S/A/B/F) & DPS 기반 유효옵 판정** | Core / UI | `omegaAttenuation` 기반 순수 롤 백분율 판정 + 기존 엔진 역산(해당 옵션 제거 시 DPS 감소율) 기반 유효옵/무해한 마옵 평가 |
+| **F-03** | **PyTorch 의존성 제거 (ONNX) 및 포터블 경량화** | Core / Build | YOLO `slot_detector.pt` -> ONNX 변환으로 수 GB PyTorch 제거, onedir 및 모델 분리 다운로드 파이프라인 |
+| **F-04** | **공통 스택 버프 모델 (인카논/아케인 램프업)** | Core | 메타 10~15개 인카논/아케인의 시간축 스택 누적 및 실전 DPS 램프업/감쇄 커브 시뮬레이션 |
+| **F-05** | **워프레임 전용 봉고캣 파쿠르/CPS 카운터** | UI / Pet | `Ctrl+Space` 불릿점프/파쿠르 횟수 집계, 단발무기 광클(CPS) vs 연사력 진단, 오디스 실시간 글리치 반응 |
+

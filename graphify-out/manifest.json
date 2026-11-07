@@ -108,14 +108,14 @@
     "semantic_hash": "e756d8bca2bdaffb1ccb15619e81fb2e"
   },
   "data/user_checklist.json": {
-    "mtime": 1794046900.392,
-    "seen": 1794049018.882499,
-    "ast_hash": "c79897df75bba0bfae63bf704b5383fe",
+    "mtime": 1794059815.762,
+    "seen": 1794059987.95758,
+    "ast_hash": "ac5e6669ffb0fa4e804a21339d68375b",
     "semantic_hash": ""
   },
   "main_companion.py": {
-    "mtime": 1794042034.766,
-    "seen": 1794043103.5328214,
+    "mtime": 1794059816.06,
+    "seen": 1794059987.9692276,
     "ast_hash": "57967c10c3609df09a7f1fec2bee57d1",
     "semantic_hash": ""
   },
@@ -132,9 +132,9 @@
     "semantic_hash": "b429a7a5ec064164881604004dd22b48"
   },
   "scripts/desktop_companion.py": {
-    "mtime": 1794048820.414,
-    "seen": 1794049018.8989403,
-    "ast_hash": "c987ab24b94874e6636566ec1a3f425e",
+    "mtime": 1794059816.103,
+    "seen": 1794059987.9751272,
+    "ast_hash": "37b5b8de31602c359b3500102db95db2",
     "semantic_hash": ""
   },
   "scripts/embedded_llm_runner.py": {
@@ -144,9 +144,9 @@
     "semantic_hash": ""
   },
   "scripts/llm_orchestrator.py": {
-    "mtime": 1794033615.776,
-    "seen": 1794043103.5442562,
-    "ast_hash": "83623e8c4019a28b911d8399aff48b12",
+    "mtime": 1794052866.466,
+    "seen": 1794059987.9807713,
+    "ast_hash": "48769efdda97a746b738f7697f40aa7c",
     "semantic_hash": ""
   },
   "scripts/riven_ocr_analyzer.py": {
@@ -168,15 +168,15 @@
     "semantic_hash": ""
   },
   "scripts/world_state_tracker.py": {
-    "mtime": 1794028711.6,
-    "seen": 1794029471.126561,
-    "ast_hash": "1d5aa8634cf0b6d3f3e1424c1d172ac9",
+    "mtime": 1794052866.526,
+    "seen": 1794059987.989215,
+    "ast_hash": "0d1fbf6a9da6303f6a716e91514465cb",
     "semantic_hash": ""
   },
   "scripts/screen_mod_analyzer.py": {
-    "mtime": 1794028711.418,
-    "seen": 1794029471.1256106,
-    "ast_hash": "838bac0e365384a20f3e2c205ae7950a",
+    "mtime": 1794055817.819,
+    "seen": 1794059987.9864995,
+    "ast_hash": "2cd5123c4c6f571e9b4627d9d9760980",
     "semantic_hash": ""
   },
   "tests/test_wfcd_indexing.py": {
@@ -222,9 +222,9 @@
     "semantic_hash": "4d84892ed066c7299149f1dd6451c12b"
   },
   "data/user_checklist.json.meta.json": {
-    "mtime": 1794046811.694,
-    "seen": 1794049018.8825023,
-    "ast_hash": "912509d1f57cabd0e4b21c49e9cc5681",
+    "mtime": 1794059815.778,
+    "seen": 1794059987.9575825,
+    "ast_hash": "7ea427e31f80d8e4f1baa32a055f879f",
     "semantic_hash": ""
   },
   "data/weapon_arcanes.json": {
@@ -348,9 +348,9 @@
     "semantic_hash": ""
   },
   "scripts/short_term_memory.py": {
-    "mtime": 1794028711.465,
-    "seen": 1794029471.1256163,
-    "ast_hash": "0b85834c8738e1ed79c7aef2553aa2ef",
+    "mtime": 1794052866.507,
+    "seen": 1794059987.9869494,
+    "ast_hash": "85fc3236457817106fa7e97f574d0791",
     "semantic_hash": ""
   },
   "scripts/yolo_slot_detector.py": {
@@ -396,9 +396,9 @@
     "semantic_hash": ""
   },
   "tests/test_riven_diagnosis_workflow.py": {
-    "mtime": 1792337609.986,
-    "seen": 1794028215.3024912,
-    "ast_hash": "8ec635eacdf793d03df5db26da7abfc9",
+    "mtime": 1794055817.898,
+    "seen": 1794059988.0046108,
+    "ast_hash": "e44a547ec6f945833fd9028806c48725",
     "semantic_hash": ""
   },
   "tests/test_screen_capture_hotkeys.py": {
@@ -426,9 +426,9 @@
     "semantic_hash": ""
   },
   "scripts/riven_quick_dialog.py": {
-    "mtime": 1794029273.407,
-    "seen": 1794029471.1256037,
-    "ast_hash": "37b35ece504f6809ac7bc2efc5223700",
+    "mtime": 1794055817.8,
+    "seen": 1794059987.9860651,
+    "ast_hash": "8b8b415e21672e186a3a18e3fc83e2ad",
     "semantic_hash": ""
   },
   "scripts/warframe_damage_engine.py": {
@@ -978,9 +978,9 @@
     "semantic_hash": ""
   },
   "data/persona_config.json": {
-    "mtime": 1794046898.304,
-    "seen": 1794049018.8787494,
-    "ast_hash": "d1e3e4344971fdaf228b210a49d6388b",
+    "mtime": 1794059815.746,
+    "seen": 1794059987.954514,
+    "ast_hash": "64a68550ff26f511dec41e0291457a1b",
     "semantic_hash": ""
   },
   "scripts/build_edit_dialog.py": {
@@ -1056,20 +1056,20 @@
     "semantic_hash": ""
   },
   "tests/test_build_chat_and_dialogs.py": {
-    "mtime": 1794028711.775,
-    "seen": 1794029471.1291556,
-    "ast_hash": "9d09ef4d1bff0270a4ad6fc41cbfb232",
+    "mtime": 1794055817.858,
+    "seen": 1794059987.9935212,
+    "ast_hash": "fe477109cf20d9e5bdbecc772dcd8da7",
     "semantic_hash": ""
   },
   "tests/test_chat_intent.py": {
-    "mtime": 1794028711.832,
-    "seen": 1794029471.129157,
-    "ast_hash": "21ea1a27e78245dfbc7366d9339968d6",
+    "mtime": 1794052866.549,
+    "seen": 1794059987.9935231,
+    "ast_hash": "f198c484fdd8f822767c5988fafe3a01",
     "semantic_hash": ""
   },
   "tests/test_companion_app.py": {
-    "mtime": 1794042034.861,
-    "seen": 1794043103.5597725,
+    "mtime": 1794059816.122,
+    "seen": 1794059987.993774,
     "ast_hash": "4c6197bcde1c382ebb2f184e06a76b93",
     "semantic_hash": ""
   },
@@ -1158,9 +1158,9 @@
     "semantic_hash": ""
   },
   "tests/test_world_state.py": {
-    "mtime": 1794028712.586,
-    "seen": 1794029471.1327856,
-    "ast_hash": "e65586633f8a4bade2e293e14e7a5ab3",
+    "mtime": 1794052866.589,
+    "seen": 1794059988.0101802,
+    "ast_hash": "11006b76f626c7a90c85c6b3f6f14f46",
     "semantic_hash": ""
   },
   "assets/character/ASSET_GUIDE.md": {
@@ -1326,8 +1326,8 @@
     "semantic_hash": ""
   },
   ".orchestra/PROGRESS.md": {
-    "mtime": 1794048823.232,
-    "seen": 1794049018.9411018,
+    "mtime": 1794059815.709,
+    "seen": 1794059988.013072,
     "ast_hash": "b02fe56b1e69974eda7782ca0ac5a625",
     "semantic_hash": ""
   },

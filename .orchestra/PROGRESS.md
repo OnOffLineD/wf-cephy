@@ -34,3 +34,4 @@
 - 2026-11-07 19:52:43 T-PET-3 READY_FOR_REVIEW (attempts 1, review rounds 0)
 - 2026-11-07 19:53:35 T-PET-3 verdict PASS -> APPROVED
 - 2026-11-07 19:53:43 T-PET-3 MERGED
+- 2026-11-08 00:36:01 T-RAG-1 ESCALATED (attempts 3, review rounds 0)
