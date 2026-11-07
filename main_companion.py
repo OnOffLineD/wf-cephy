@@ -12,8 +12,10 @@ if ROOT_DIR not in sys.path:
 
 try:
     from PyQt6.QtWidgets import QApplication
+    from PyQt6.QtCore import QTimer
 except ImportError:
     from PySide6.QtWidgets import QApplication
+    from PySide6.QtCore import QTimer
 from scripts.desktop_companion import DesktopPet, OrdisCompanionApp, handle_uncaught_exception
 
 def main():
@@ -26,7 +28,8 @@ def main():
     panel = OrdisCompanionApp()
     sys.excepthook = lambda *exc_info: handle_uncaught_exception(*exc_info, panel=panel)
     app.aboutToQuit.connect(panel.llm_runner.stop_server)
-    panel.start_llm_in_background()
+    # Staggered startup: let the UI paint its first frames before VRAM loading starts.
+    QTimer.singleShot(1000, panel.start_llm_in_background)
     panel.check_game_data_in_background()
 
     # Floating pet widget (shown by default)

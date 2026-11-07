@@ -190,6 +190,7 @@ class OrdisPersonaDialog(FramelessDialog):
         sub_lbl.setWordWrap(True)
         text_col.addWidget(sub_lbl)
         banner_layout.addLayout(text_col)
+        banner_layout.setAlignment(text_col, Qt.AlignmentFlag.AlignVCenter)
 
         pt_layout.addWidget(banner_frame)
 

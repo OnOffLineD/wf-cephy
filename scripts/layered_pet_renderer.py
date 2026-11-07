@@ -20,6 +20,8 @@ class LayeredPetRenderer(QWidget):
         super().__init__(parent)
         self.asset_dir = asset_dir or get_path("assets", "character")
         self.layers_dir = os.path.join(self.asset_dir, "layers")
+        # Stat the disk once; paintEvent runs ~25x/s and Drive VFS stats are slow.
+        self.has_layers = os.path.exists(self.layers_dir)
 
         self.mood = "idle"
         self.secondary_mood: Optional[str] = None
@@ -206,8 +208,8 @@ class LayeredPetRenderer(QWidget):
         painter.save()
         apply_body_transform()
 
-        # Check if layered files exist
-        has_layers = os.path.exists(self.layers_dir)
+        # Cached in __init__ to avoid a disk stat every frame
+        has_layers = self.has_layers
 
         # 2. Try drawing multi-layer composable parts
         drawn_any = False

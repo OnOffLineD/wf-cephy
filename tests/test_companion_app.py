@@ -160,6 +160,57 @@ def test_show_and_hide_animations_settle_final_opacity(qapp, panel):
     assert abs(panel.windowOpacity() - 0.94) < 0.02
 
 
+def test_show_failsafe_settles_opacity_when_finished_is_dropped(qapp, panel):
+    panel.animate_show()
+    # Simulate a dropped frame / lost `finished` signal: stop() does not emit finished.
+    panel._anim_group.stop()
+    panel.setWindowOpacity(0.2)
+    assert panel._anim_opacity is not None and panel._anim_geo is not None
+    drain(qapp, panel, lambda: panel.windowOpacity() >= 0.94)
+    assert panel.windowOpacity() >= 0.94
+    assert panel.geometry() == panel._show_target_geo
+
+
+def test_uncaught_exception_handler_survives_without_stderr(tmp_path, monkeypatch):
+    from scripts.desktop_companion import handle_uncaught_exception
+    monkeypatch.setattr("sys.stderr", None)
+    log = tmp_path / "err.log"
+    try:
+        raise ValueError("boom")
+    except ValueError as e:
+        handle_uncaught_exception(type(e), e, e.__traceback__, log_path=str(log))
+    assert "boom" in log.read_text(encoding="utf-8")
+
+
+def test_pet_renderer_caches_layer_dir_check(qapp, tmp_path, monkeypatch):
+    import scripts.layered_pet_renderer as lpr
+    pet = lpr.LayeredPetRenderer(asset_dir=str(tmp_path))
+    try:
+        assert pet.has_layers is False
+        calls = []
+        real_exists = lpr.os.path.exists
+        monkeypatch.setattr(lpr.os.path, "exists", lambda p: calls.append(p) or real_exists(p))
+        pet.grab()  # warm the pixmap cache (runs paintEvent)
+        calls.clear()
+        for _ in range(3):
+            pet.grab()
+        assert calls == []
+    finally:
+        pet.bounce_timer.stop()
+        pet.deleteLater()
+
+
+def test_main_companion_defers_llm_start():
+    import ast, pathlib
+    src = (pathlib.Path(__file__).resolve().parent.parent / "main_companion.py").read_text(encoding="utf-8")
+    calls = [n for n in ast.walk(ast.parse(src)) if isinstance(n, ast.Call)]
+    deferred = [c for c in calls if ast.unparse(c.func) == "QTimer.singleShot"
+                and ast.unparse(c.args[0]) == "1000"
+                and ast.unparse(c.args[1]) == "panel.start_llm_in_background"]
+    direct = [c for c in calls if ast.unparse(c.func) == "panel.start_llm_in_background"]
+    assert deferred and not direct
+
+
 def test_name_translator_uses_codex_korean(panel):
     assert panel.tracker.name_translator("Braton") == "브래튼"
     assert panel.tracker.name_translator("없는무기") == "없는무기"
