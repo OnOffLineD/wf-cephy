@@ -147,3 +147,23 @@ def test_riven_quick_input_dialog_and_shorthand(analyzer):
     res = analyzer.resume_pending_riven("cc 150 cd 120 ms 80")
     assert res["success"] is True
 
+
+def test_extract_riven_stats_from_screen_reads_card(analyzer):
+    analyzer.ocr_image = MagicMock(return_value="Torid Crita-visican\n+150.0% 치명타 확률\n+120.0% 치명타 피해\n-30.0% 멀티샷")
+    stats = analyzer.extract_riven_stats_from_screen(Image.new("RGB", (600, 800)))
+    assert stats == pytest.approx({"crit_chance": 1.5, "crit_damage": 1.2, "multishot": -0.3})
+
+
+def test_extract_riven_stats_from_screen_label_first_and_elements(analyzer):
+    analyzer.ocr_image = MagicMock(return_value="치명타 확률 +100%\n화염 +90%")
+    stats = analyzer.extract_riven_stats_from_screen(Image.new("RGB", (600, 800)))
+    assert stats["crit_chance"] == pytest.approx(1.0)
+    assert stats["heat"] == pytest.approx(0.9)
+    assert stats["elemental_damage"] == pytest.approx(0.9)
+
+
+@pytest.mark.parametrize("text", ["", "Torid 무기 정보\n랭크 8", "+150.0% 치명타 확률", "[OCR Error] boom"])
+def test_extract_riven_stats_from_screen_none_without_stats(analyzer, text):
+    analyzer.ocr_image = MagicMock(return_value=text)
+    assert analyzer.extract_riven_stats_from_screen(Image.new("RGB", (600, 800))) is None
+

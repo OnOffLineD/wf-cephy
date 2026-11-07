@@ -3,18 +3,18 @@ from typing import Dict
 try:
     from PyQt6.QtWidgets import (
         QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
-        QPushButton, QComboBox, QGridLayout
+        QPushButton, QComboBox, QGridLayout, QFrame
     )
     from PyQt6.QtCore import Qt
 except ImportError:
     from PySide6.QtWidgets import (
         QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
-        QPushButton, QComboBox, QGridLayout
+        QPushButton, QComboBox, QGridLayout, QFrame
     )
     from PySide6.QtCore import Qt
 
 from scripts.riven_reroll_reader import parse_riven_input
-from scripts.frameless_dialog import FramelessDialog
+from scripts.frameless_dialog import FramelessDialog, FRAMELESS_CARD_STYLE
 
 STAT_CHOICES = ['치확', '치피', '멀샷', '피해', '공속', '탄창', '재장전', '화염', '냉기', '전기', '독성', '충격', '관통', '베기', '상태이상']
 
@@ -27,7 +27,15 @@ class RivenQuickInputDialog(FramelessDialog):
         self.init_ui()
 
     def init_ui(self):
-        layout = QVBoxLayout(self)
+        # WA_TranslucentBackground leaves the dialog itself unpainted, so an opaque card carries the background.
+        root_layout = QVBoxLayout(self)
+        root_layout.setContentsMargins(0, 0, 0, 0)
+        self.card = QFrame(self)
+        self.card.setObjectName('framelessCard')
+        self.card.setStyleSheet(FRAMELESS_CARD_STYLE)
+        root_layout.addWidget(self.card)
+        layout = QVBoxLayout(self.card)
+        layout.setContentsMargins(14, 10, 14, 14)
         header = self.create_title_bar(title=self.windowTitle(), on_close=self.reject)
         layout.addWidget(header)
 

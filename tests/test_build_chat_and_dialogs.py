@@ -267,3 +267,53 @@ def test_delete_confirmation_button_deletes(qapp, panel):
     assert panel.diagnoser.build_store.get_build("Vulkar") is not None
     last_bubble_buttons(panel)["🗑️ 삭제"].click()
     assert panel.diagnoser.build_store.get_build("Vulkar") is None
+
+
+def test_riven_quick_input_has_opaque_card(qapp):
+    from scripts.riven_quick_dialog import QFrame
+    dialog = RivenQuickInputDialog()
+    card = dialog.findChild(QFrame, "framelessCard")
+    assert card is not None
+    assert "background-color" in card.styleSheet()
+    assert dialog.quick_input.parent() is card
+
+
+class _SyncThread:
+    def __init__(self, target, daemon=None):
+        self.target = target
+
+    def start(self):
+        self.target()
+
+
+@pytest.fixture
+def hidden_panel(panel, monkeypatch):
+    # process_screen_image() pops the window up; keep it hidden so later window tests are unaffected.
+    monkeypatch.setattr("scripts.desktop_companion.threading.Thread", _SyncThread)
+    monkeypatch.setattr(panel, "show", lambda: None)
+    return panel
+
+
+def test_riven_second_f9_reads_card_and_resumes(hidden_panel):
+    panel = hidden_panel
+    d = panel.diagnoser
+    stats = {"crit_chance": 1.5, "crit_damage": 1.2}
+    d.has_pending_riven = MagicMock(return_value=True)
+    d.extract_riven_stats_from_screen = MagicMock(return_value=stats)
+    d.resume_pending_riven = MagicMock(return_value={"success": True, "message": "리벤 리포트"})
+    d.diagnose_screenshot = MagicMock()
+    panel.process_screen_image(object())
+    d.resume_pending_riven.assert_called_once_with(stats)
+    d.diagnose_screenshot.assert_not_called()
+
+
+def test_riven_pending_without_card_falls_back_to_diagnosis(hidden_panel):
+    panel = hidden_panel
+    d = panel.diagnoser
+    d.has_pending_riven = MagicMock(return_value=True)
+    d.extract_riven_stats_from_screen = MagicMock(return_value=None)
+    d.resume_pending_riven = MagicMock()
+    d.diagnose_screenshot = MagicMock(return_value={"message": "분석 완료"})
+    panel.process_screen_image(object())
+    d.resume_pending_riven.assert_not_called()
+    d.diagnose_screenshot.assert_called_once()
