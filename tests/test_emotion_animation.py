@@ -93,6 +93,64 @@ def test_layered_pet_renderer_headless():
     renderer.blink()
     assert renderer.is_blinking is True
 
+def _make_renderer():
+    os.environ["QT_QPA_PLATFORM"] = "offscreen"
+    try:
+        from PyQt6.QtWidgets import QApplication
+    except ImportError:
+        from PySide6.QtWidgets import QApplication
+    from scripts.layered_pet_renderer import LayeredPetRenderer
+
+    app = QApplication.instance() or QApplication([])
+    renderer = LayeredPetRenderer()
+    renderer.bounce_timer.stop()
+    return app, renderer
+
+def test_hand_offsets_differ_left_right():
+    app, renderer = _make_renderer()
+    renderer.set_mood("idle")
+    for tick in (5, 17, 40, 123):
+        offsets = renderer._compute_hand_offsets(tick)
+        (lx, ly), (rx, ry) = offsets["left"], offsets["right"]
+        assert ly != pytest.approx(ry)
+    # No talking / no glitch -> deterministic
+    assert renderer._compute_hand_offsets(17) == renderer._compute_hand_offsets(17)
+    # Painting with independent transforms must not crash
+    assert not renderer.grab().isNull()
+
+def test_talking_gesture_offset_active():
+    app, renderer = _make_renderer()
+    renderer.set_mood("idle")
+    base = renderer._compute_hand_offsets(30)
+    assert renderer._compute_gesture_offset() == 0.0
+
+    renderer.start_talking()
+    for _ in range(3):
+        renderer._on_bounce_tick()
+    assert renderer.talk_tick == 3
+    gesture = renderer._compute_gesture_offset()
+    assert abs(gesture) > 1.0
+    talking = renderer._compute_hand_offsets(30)
+    assert talking["right"][1] == pytest.approx(base["right"][1] + gesture)
+    assert talking["left"] == base["left"]
+    assert not renderer.grab().isNull()
+
+    renderer.stop_talking()
+    assert renderer._compute_gesture_offset() == 0.0
+
+def test_glitch_jitter_offset():
+    app, renderer = _make_renderer()
+    renderer.set_mood("idle")
+    assert renderer._compute_jitter() == (0, 0)
+
+    renderer.set_mood("glitch")
+    jitters = [renderer._compute_jitter() for _ in range(50)]
+    assert all(-2 <= jx <= 2 and -2 <= jy <= 2 for jx, jy in jitters)
+    assert any(j != (0, 0) for j in jitters)
+    hand_samples = {renderer._compute_hand_offsets(10)["left"] for _ in range(50)}
+    assert len(hand_samples) > 1
+    assert not renderer.grab().isNull()
+
 def test_desktop_pet_layered_renderer_integration():
     os.environ["QT_QPA_PLATFORM"] = "offscreen"
     try:
