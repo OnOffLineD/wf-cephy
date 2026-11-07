@@ -59,7 +59,12 @@ from scripts.layered_pet_renderer import LayeredPetRenderer
 def handle_uncaught_exception(exc_type, exc, tb, panel=None, log_path=None):
     """PyQt ends the whole app on an exception in a button handler, so log it and keep running instead."""
     details = "".join(traceback.format_exception(exc_type, exc, tb))
-    sys.stderr.write(details)
+    # pythonw.exe has no console, so sys.stderr is None there.
+    if sys.stderr is not None:
+        try:
+            sys.stderr.write(details)
+        except Exception:
+            pass
     log_path = log_path or get_user_data_path('logs', 'app-errors.log')
     try:
         os.makedirs(os.path.dirname(log_path), exist_ok=True)
@@ -1129,32 +1134,51 @@ class OrdisCompanionApp(QWidget):
         self.raise_()
         self.activateWindow()
     
-        anim_opacity = QPropertyAnimation(self, b'windowOpacity')
-        anim_opacity.setDuration(240)
-        anim_opacity.setStartValue(0.0)
-        anim_opacity.setEndValue(0.94)
-        anim_opacity.setEasingCurve(QEasingCurve.Type.InQuad)
-    
-        anim_geo = QPropertyAnimation(self, b'geometry')
-        anim_geo.setDuration(240)
-        anim_geo.setStartValue(start_geo)
-        anim_geo.setEndValue(target_geo)
-        anim_geo.setEasingCurve(QEasingCurve.Type.InQuad)
-    
+        # Keep strong references so the animations are never garbage-collected mid-flight.
+        self._anim_opacity = QPropertyAnimation(self, b'windowOpacity')
+        self._anim_opacity.setDuration(240)
+        self._anim_opacity.setStartValue(0.0)
+        self._anim_opacity.setEndValue(0.945)
+        self._anim_opacity.setEasingCurve(QEasingCurve.Type.InQuad)
+
+        self._anim_geo = QPropertyAnimation(self, b'geometry')
+        self._anim_geo.setDuration(240)
+        self._anim_geo.setStartValue(start_geo)
+        self._anim_geo.setEndValue(target_geo)
+        self._anim_geo.setEasingCurve(QEasingCurve.Type.InQuad)
+
+        self._show_target_geo = target_geo
+        self._show_token = getattr(self, '_show_token', 0) + 1
         self._anim_group = QParallelAnimationGroup(self)
-        self._anim_group.addAnimation(anim_opacity)
-        self._anim_group.addAnimation(anim_geo)
+        self._anim_group.addAnimation(self._anim_opacity)
+        self._anim_group.addAnimation(self._anim_geo)
         self._anim_group.finished.connect(self._on_show_finished)
         self._anim_group.start()
+        # Fail-safe: under GPU/IO contention frames (and `finished`) can be dropped.
+        token = self._show_token
+        QTimer.singleShot(350, lambda: self._show_failsafe(token))
+
+    def _show_failsafe(self, token):
+        # Ignore stale timers from an earlier show, or if a hide started since.
+        if token != getattr(self, '_show_token', None) or not self.isVisible():
+            return
+        if self.windowOpacity() < 0.94:
+            self._on_show_finished()
 
     def _on_show_finished(self):
         # Never leave the panel stuck at a mid-animation, half-transparent opacity.
-        self.setWindowOpacity(0.94)
+        # 0.945, not 0.94: Qt stores opacity in 8 bits and 0.94 would read back as 0.937.
+        self.setWindowOpacity(0.945)
+        target_geo = getattr(self, '_show_target_geo', None)
+        if target_geo is not None and self.geometry() != target_geo:
+            self.setGeometry(target_geo)
 
     def animate_hide(self):
         if hasattr(self, '_anim_group') and self._anim_group:
             self._anim_group.stop()
-    
+        # Invalidate any pending show fail-safe so it cannot re-raise opacity mid-hide.
+        self._show_token = getattr(self, '_show_token', 0) + 1
+
         curr_geo = self.geometry()
         end_geo = QRect(curr_geo.x(), curr_geo.y() + 24, curr_geo.width(), curr_geo.height())
     
