@@ -30,6 +30,7 @@ class LayeredPetRenderer(QWidget):
         self.is_blinking = False
         self.mouth_frame_index = 0
         self.tick = 0
+        self.talk_tick = 0
 
         self.setFixedSize(140, 140)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
@@ -57,7 +58,52 @@ class LayeredPetRenderer(QWidget):
 
     def _on_bounce_tick(self):
         self.tick = (self.tick + 1) % 10000
+        if self.is_talking:
+            self.talk_tick = (self.talk_tick + 1) % 10000
         self.update()
+
+    # ---- Multi-phase motion math (pure functions of state; testable headless) ----
+    def _amplitude(self) -> float:
+        return 2 + (self.intensity * 0.8)
+
+    def _compute_gesture_offset(self) -> float:
+        """Talking rhythm gesture for the right hand (0 when silent)."""
+        if not self.is_talking:
+            return 0.0
+        return math.sin(self.talk_tick * 0.25) * 5
+
+    def _compute_jitter(self):
+        """High-frequency glitch tremor; (0, 0) unless mood is 'glitch'."""
+        if self.mood != "glitch":
+            return (0, 0)
+        return (random.randint(-2, 2), random.randint(-2, 2))
+
+    def _compute_body_transform(self, tick: int):
+        """Returns (y_body, rot_body_degrees)."""
+        amp = self._amplitude()
+        y_body = math.sin(tick * 0.08) * amp
+        rot_body = math.sin(tick * 0.04) * 1.5
+        if self.is_talking:
+            # Nodding: up to +1.5 deg extra tilt synced to the talk rhythm
+            rot_body += 1.5 * abs(math.sin(self.talk_tick * 0.25))
+        return y_body, rot_body
+
+    def _compute_hand_offsets(self, tick: int):
+        """Returns {'left': (x, y), 'right': (x, y)} with phase lag, gesture and jitter."""
+        amp = self._amplitude()
+        y_body, _ = self._compute_body_transform(tick)
+        x_lh = math.cos(tick * 0.06 + 0.5) * 1.5
+        y_lh = y_body * 0.4 + math.sin(tick * 0.10 + 1.4) * (amp * 1.3)
+        x_rh = 0.0
+        y_rh = y_body * 0.4 + math.sin(tick * 0.09 + 2.8) * (amp * 1.3)
+        y_rh += self._compute_gesture_offset()
+
+        jlx, jly = self._compute_jitter()
+        jrx, jry = self._compute_jitter()
+        return {
+            "left": (x_lh + jlx, y_lh + jly),
+            "right": (x_rh + jrx, y_rh + jry),
+        }
 
     def _cycle_mouth_frame(self):
         if self.is_talking:
@@ -88,6 +134,7 @@ class LayeredPetRenderer(QWidget):
     def start_talking(self, duration_ms: int = 0):
         self.is_talking = True
         self.mouth_frame_index = 1
+        self.talk_tick = 0
         if not self.talk_timer.isActive():
             self.talk_timer.start(120)
 
@@ -143,15 +190,21 @@ class LayeredPetRenderer(QWidget):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
 
-        # 1. Floating sine-wave offset (amplitude increases with intensity)
-        amp = 2 + (self.intensity * 0.8)
-        y_offset = int(math.sin(self.tick * 0.12) * amp)
-
-        painter.save()
-        painter.translate(0, y_offset)
-
         w, h = self.width(), self.height()
         target_rect = QRect(6, 6, w - 12, h - 12)
+
+        # 1. Multi-phase transforms: body (breath + tilt), hands (lagging inertia, gesture, jitter)
+        cx, cy = w / 2.0, h / 2.0
+        y_body, rot_body = self._compute_body_transform(self.tick)
+        hand_offsets = self._compute_hand_offsets(self.tick)
+
+        def apply_body_transform():
+            painter.translate(cx, cy + y_body)
+            painter.rotate(rot_body)
+            painter.translate(-cx, -cy)
+
+        painter.save()
+        apply_body_transform()
 
         # Check if layered files exist
         has_layers = os.path.exists(self.layers_dir)
@@ -193,12 +246,17 @@ class LayeredPetRenderer(QWidget):
                 painter.drawPixmap(target_rect, mouth_pix)
                 drawn_any = True
 
-            # Layer E: Hands
-            hand_pix = self._load_layer_pixmap("hands", f"hand_{self.mood}.png") or self._load_layer_pixmap("hands", "hand_idle.png")
-            if hand_pix:
-                painter.drawPixmap(target_rect, hand_pix)
+        painter.restore()
+
+        if has_layers:
+            # Layer E: Hands (independent transforms outside the body transform)
+            if self._draw_hands(painter, target_rect, hand_offsets):
                 drawn_any = True
 
+        painter.save()
+        apply_body_transform()
+
+        if has_layers:
             # Layer F: VFX (blush, sweat, tears, sparks)
             vfx_name = self.vfx or ("glitch" if self.mood == "glitch" else None)
             if vfx_name:
@@ -219,6 +277,41 @@ class LayeredPetRenderer(QWidget):
             self._draw_procedural_chibi(painter, target_rect)
 
         painter.restore()
+
+    def _resolve_hand_pixmaps(self):
+        """Returns (left, right, unified). Split L/R files take priority;
+        mood-specific art wins over default art; unified hand_*.png is the fallback."""
+        mood = self.mood
+        left = self._load_layer_pixmap("hands", f"hand_left_{mood}.png")
+        right = self._load_layer_pixmap("hands", f"hand_right_{mood}.png")
+        if left and right:
+            return left, right, None
+        unified_mood = self._load_layer_pixmap("hands", f"hand_{mood}.png") if mood != "idle" else None
+        if unified_mood:
+            return None, None, unified_mood
+        left = self._load_layer_pixmap("hands", "hand_left.png")
+        right = self._load_layer_pixmap("hands", "hand_right.png")
+        if left and right:
+            return left, right, None
+        return None, None, self._load_layer_pixmap("hands", "hand_idle.png")
+
+    def _draw_hands(self, painter: QPainter, rect: QRect, offsets) -> bool:
+        left, right, unified = self._resolve_hand_pixmaps()
+        if left and right:
+            for pix, (dx, dy) in ((left, offsets["left"]), (right, offsets["right"])):
+                painter.save()
+                painter.translate(dx, dy)
+                painter.drawPixmap(rect, pix)
+                painter.restore()
+            return True
+        if unified:
+            (lx, ly), (rx, ry) = offsets["left"], offsets["right"]
+            painter.save()
+            painter.translate((lx + rx) / 2.0, (ly + ry) / 2.0)
+            painter.drawPixmap(rect, unified)
+            painter.restore()
+            return True
+        return False
 
     def _draw_procedural_chibi(self, p: QPainter, rect: QRect):
         cx = rect.center().x()
