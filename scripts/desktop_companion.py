@@ -713,7 +713,16 @@ class OrdisCompanionApp(QWidget):
             return
 
         # Process chat todo command
-        cmd_res = self.tracker.process_chat_todo_command(text)
+        recent_topic = None
+        memory = getattr(getattr(self, 'orchestrator', None), 'memory', None)
+        if memory is not None:
+            # "오늘 할 일로 추가해줘" leaves the target out; the topic just talked about fills it in.
+            kws = memory.get_recent_keywords()
+            recent_topic = ' '.join(kws[:2]) if isinstance(kws, list) and kws else None
+        if recent_topic:
+            cmd_res = self.tracker.process_chat_todo_command(text, context_keyword=recent_topic)
+        else:
+            cmd_res = self.tracker.process_chat_todo_command(text)
         if cmd_res is not None:
             self.refresh_checklist_ui()
             self.add_chat_bubble('세팔론 오디스', cmd_res['message'], is_user=False)

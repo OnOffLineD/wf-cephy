@@ -234,4 +234,29 @@ def test_chat_mood_and_intensity_prefix_gbnf():
         assert res["report"] == "오퍼레이터님! 오늘도 전장을 --피로 물들이고-- 평화롭게 수호하십시오!"
 
 
+@pytest.mark.parametrize("query", ["오늘 할 일로 추가해줘", "숙제에 등록해줘"])
+def test_todo_add_orders_are_classified_as_todo(orc, query):
+    assert orc.classify_intent(query) == "TODO"
+
+
+def test_chat_todo_explicit_add_uses_last_topic_and_adds_at_once(tmp_path):
+    orc = LLMOrchestrator()
+    orc.todo_tracker = WorldStateTracker(data_file=str(tmp_path / "checklist.json"))
+    orc.todo_tracker.load_checklist()
+    orc.chat_smalltalk = MagicMock(return_value="[MOOD:happy:1] 잡담")
+    orc.memory.add_turn("신스 디컨스트럭트 어디서 나와?", "신스 디컨스트럭트는 ...")
+    res = orc.chat("오늘 할 일로 추가해줘")
+    assert res["type"] == "TODO_DONE"
+    assert "신스 디컨스트럭트" in [i["text"] for i in orc.todo_tracker.load_checklist()]
+    orc.chat_smalltalk.assert_not_called()
+
+
+def test_chat_todo_explicit_add_from_model_tool_is_done_at_once(tmp_path):
+    orc, mock_res = _todo_orc(tmp_path, '{"tool": "add_todo", "args": {"task": "나이트웨이브"}}')
+    with patch("scripts.llm_orchestrator.requests.post", return_value=mock_res):
+        res = orc.chat("나이트웨이브 넣어줘")
+    assert res["type"] == "TODO_DONE"
+    assert "나이트웨이브" in [i["text"] for i in orc.todo_tracker.load_checklist()]
+
+
 
