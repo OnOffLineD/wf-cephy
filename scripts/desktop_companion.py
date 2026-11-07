@@ -1144,7 +1144,12 @@ class OrdisCompanionApp(QWidget):
         self._anim_group = QParallelAnimationGroup(self)
         self._anim_group.addAnimation(anim_opacity)
         self._anim_group.addAnimation(anim_geo)
+        self._anim_group.finished.connect(self._on_show_finished)
         self._anim_group.start()
+
+    def _on_show_finished(self):
+        # Never leave the panel stuck at a mid-animation, half-transparent opacity.
+        self.setWindowOpacity(0.94)
 
     def animate_hide(self):
         if hasattr(self, '_anim_group') and self._anim_group:
@@ -1169,13 +1174,19 @@ class OrdisCompanionApp(QWidget):
         self._anim_group.addAnimation(anim_opacity)
         self._anim_group.addAnimation(anim_geo)
     
-        self._anim_group.finished.connect(lambda: self._on_animation_finished(curr_geo))
-    
+        self._hide_restore_geo = curr_geo
+        self._anim_group.finished.connect(self._on_hide_finished)
+
         self._anim_group.start()
-    
-    def _on_animation_finished(self, curr_geo):
+
+    def _on_hide_finished(self):
+        # Fully transparent then hidden, so an invisible window can never swallow mouse clicks.
+        self.setWindowOpacity(0.0)
         self.hide()
-        self.setGeometry(curr_geo)
+        geo = getattr(self, '_hide_restore_geo', None)
+        if geo is not None:
+            self.setGeometry(geo)
+        # Restored while hidden so plain show() paths (tray/hotkey) are not invisible.
         self.setWindowOpacity(0.94)
 
     def open_settings_dialog(self):

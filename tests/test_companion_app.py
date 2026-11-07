@@ -149,6 +149,17 @@ def test_other_message_clears_pending_review(qapp, panel):
     assert panel._pending_mod_review is None
 
 
+def test_show_and_hide_animations_settle_final_opacity(qapp, panel):
+    panel.animate_show()
+    drain(qapp, panel, lambda: panel._anim_group.state() == panel._anim_group.State.Stopped)
+    assert abs(panel.windowOpacity() - 0.94) < 0.02
+    panel.animate_hide()
+    drain(qapp, panel, lambda: not panel.isVisible())
+    assert not panel.isVisible()
+    # Reset while hidden, so a later plain show() is not an invisible click-blocker.
+    assert abs(panel.windowOpacity() - 0.94) < 0.02
+
+
 def test_name_translator_uses_codex_korean(panel):
     assert panel.tracker.name_translator("Braton") == "브래튼"
     assert panel.tracker.name_translator("없는무기") == "없는무기"

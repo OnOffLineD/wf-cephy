@@ -15,6 +15,8 @@ from scripts.persona_manager import PersonaManager
 from scripts.emotion_parser import EmotionParser
 from scripts.update_game_data import GameDataUpdater, format_report
 
+LLM_LOADING_MESSAGE = "대화 엔진을 메모리에 적재 중입니다. 잠시 후 다시 말씀해 주십시오, 오퍼레이터님."
+
 MOOD_INSTRUCTION = (
     "답변 맨 첫머리에 반드시 현재 감정과 감정 정도(1=약, 2=중, 3=강)를 "
     "[MOOD:tactical|proud|worried|happy|glitch:1|2|3] 형식의 태그로 쓰세요."
@@ -162,6 +164,11 @@ class LLMOrchestrator:
         # Convert system_prompt to string if it's a dict
         if isinstance(system_prompt, dict):
             system_prompt = system_prompt.get("prompt") or str(system_prompt)
+
+        # While a multi-GB model is still loading, answer at once instead of blocking the caller.
+        is_starting = getattr(self.runner, "is_starting", None) if self.runner else None
+        if callable(is_starting) and is_starting() is True:
+            return LLM_LOADING_MESSAGE
 
         # Wait up to 5 seconds for health if self.runner is starting
         if self.runner and hasattr(self.runner, "is_healthy"):
