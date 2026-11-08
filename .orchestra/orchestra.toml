@@ -16,7 +16,7 @@ setup = [
 [builder]
 # Prompt goes to stdin unless an argument contains {prompt}.
 # Verify flags against `claude --help` for your installed version.
-cmd = ["claude", "-p", "--output-format", "json",
+cmd = ["claude", "-p", "--model", "opus", "--effort", "high", "--output-format", "json",
        "--permission-mode", "acceptEdits", "--max-turns", "40",
        "--allowedTools", "Read,Edit,Write,Glob,Grep,Bash(git status:*),Bash(git diff:*),Bash(python:*),Bash(pytest:*)"]
 resume_args = ["--resume", "{session_id}"]   # [] to always start fresh
