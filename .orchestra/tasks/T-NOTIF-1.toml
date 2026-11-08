@@ -1,0 +1,47 @@
+id    = "T-NOTIF-1"
+title = "재사용 가능한 스마트 알림 및 펫 말풍선 큐 아키텍처"
+tier  = 2
+
+goal = """
+세팔론 오디스 데스크톱 펫과 연동되는 재사용 가능한 스마트 알림 및 말풍선(Speech Bubble) 시스템을 구축한다.
+1. scripts/pet_speech_bubble.py: DWM 투과 방지(paintEvent), 네온 사이언 테두리/다크 바디, 펫 조준 삼각 꼬리표, 페이드인/아웃 애니메이션, 호버 일시정지, 클릭 액션 콜백을 갖춘 PetSpeechBubbleWidget 구현.
+2. scripts/notification_coordinator.py: 싱글톤 NotificationCoordinator, SpeechBubblePayload, NotificationPriority(LOW, NORMAL, HIGH, CRITICAL) 큐 관리 및 선점/디바운스 처리 구현.
+3. scripts/desktop_pet.py: 펫 위치 기반 말풍선 앵커 좌표 제공 연동.
+4. tests/test_speech_bubble.py: 큐잉, 우선순위 선점, 타이머 라이프사이클, 콜백 동작 100% 단위 테스트 검증.
+"""
+
+[scope]
+allow = [
+  "scripts/pet_speech_bubble.py",
+  "scripts/notification_coordinator.py",
+  "scripts/desktop_pet.py",
+  "tests/test_speech_bubble.py"
+]
+forbid = [
+  "scripts/warframe_damage_engine.py",
+  "rules/**"
+]
+max_files = 4
+max_diff_lines = 350
+
+[context]
+hints = [
+  "scripts/frameless_dialog.py: EXP-015의 paintEvent 불투명 렌더링(#0c1017 다크 카드 + #00e5ff 네온 테두리) 및 Qt6 크로스 임포트 패턴 참조",
+  "scripts/desktop_pet.py: DesktopPet 클래스 위치 및 앵커 좌표 계산(펫 머리 위/우측)",
+  "NotificationCoordinator: 전역 1줄 호출 가능 인터페이스 NotificationCoordinator.get_instance().notify(...)",
+  "우선순위 선점: 잡담(LOW/NORMAL) 노출 중 긴급(HIGH/CRITICAL) 알림 수신 시 즉시 전환"
+]
+
+[acceptance]
+cases = [
+  "NotificationCoordinator.get_instance().notify()가 유효한 말풍선 위젯을 띄우고 큐를 관리함",
+  "HIGH 우선순위 알림이 LOW 우선순위 알림을 선점(preempt)함",
+  "말풍선 클릭 시 on_click_action 콜백이 실행됨",
+  "pytest tests/test_speech_bubble.py 100% 통과"
+]
+commands = [
+  "python -m pytest tests/test_speech_bubble.py"
+]
+
+[limits]
+max_attempts = 3
