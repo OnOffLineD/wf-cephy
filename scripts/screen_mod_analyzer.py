@@ -804,10 +804,14 @@ class ScreenModAnalyzer:
         slot_boxes = []
         equipped_slot_count = 0
 
+        is_fullscreen, offset_x, base_w = self._detect_screen_layout(img)
+        ar = w / float(h) if h > 0 else 1.77
+        min_slots = 7 if (not is_fullscreen and (h < 550 or ar >= 2.0)) else 4
+
         if self.yolo_detector and self.yolo_detector.is_available():
             try:
                 layout = self.yolo_detector.detect_layout(img)
-                if layout.get("total_detected", 0) >= 4:
+                if layout.get("total_detected", 0) >= min_slots:
                     for s_name in ["AuraStance", "Exilus"]:
                         s_info = layout.get("special_slots", {}).get(s_name)
                         if s_info and s_info.get("box"):
@@ -816,13 +820,11 @@ class ScreenModAnalyzer:
                         s_info = layout["main_slots"][k]
                         if s_info and s_info.get("box"):
                             slot_boxes.append((k, s_info["box"], s_info.get("is_empty", False), s_info.get("is_riven", False)))
-                    if len(slot_boxes) >= 4:
+                    if len(slot_boxes) >= min_slots:
                         yolo_used = True
                         equipped_slot_count = layout.get("equipped_slot_count", 0)
             except Exception:
                 yolo_used = False
-
-        is_fullscreen, offset_x, base_w = self._detect_screen_layout(img)
 
         if not yolo_used:
             ar = w / float(h) if h > 0 else 1.77
