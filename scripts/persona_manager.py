@@ -172,6 +172,13 @@ class PersonaManager:
         self.config["motion_enabled"] = bool(enabled)
         self.save_config()
 
+    def get_llm_enabled(self) -> bool:
+        return bool(self.config.get("llm_enabled", True))
+
+    def set_llm_enabled(self, enabled: bool):
+        self.config["llm_enabled"] = bool(enabled)
+        self.save_config()
+
 
 SettingsManager = PersonaManager
 

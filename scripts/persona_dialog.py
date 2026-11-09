@@ -246,6 +246,12 @@ class OrdisPersonaDialog(FramelessDialog):
         mt_layout.setContentsMargins(14, 14, 14, 14)
         mt_layout.setSpacing(12)
 
+        # Master switch: OFF frees the VRAM; diagnosis and damage math keep working without the LLM.
+        self.cb_llm_enabled = QCheckBox("로컬 LLM (오디스 AI 대화 엔진) 활성화")
+        self.cb_llm_enabled.setChecked(self.persona_manager.get_llm_enabled())
+        self.cb_llm_enabled.setStyleSheet("color: #e2e8f0; font-size: 12px; font-weight: bold;")
+        mt_layout.addWidget(self.cb_llm_enabled)
+
         # Section 1: GGUF Model Path Selection
         self.sec1_header, self.sec1_icon, self.sec1_title = self._make_section_header(
             "model", "로컬 GGUF 모델 파일 지정")
@@ -589,6 +595,7 @@ class OrdisPersonaDialog(FramelessDialog):
         self.persona_manager.set_gpu_layers(gpu_layers)
 
         self.persona_manager.set_motion_enabled(self.cb_motion.isChecked())
+        self.persona_manager.set_llm_enabled(self.cb_llm_enabled.isChecked())
 
         self.accept()
 

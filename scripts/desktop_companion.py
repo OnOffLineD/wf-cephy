@@ -367,6 +367,14 @@ class ChatBubble(QWidget):
 # -------------------------------------------------------------------------
 # 4. Main Companion Window (KakaoTalk Style + Side Checklist)
 # -------------------------------------------------------------------------
+def apply_llm_cli_flags(pm, argv) -> None:
+    """start_companion.bat passes the console Y/N answer as --enable-llm / --disable-llm."""
+    if '--disable-llm' in argv:
+        pm.set_llm_enabled(False)
+    elif '--enable-llm' in argv:
+        pm.set_llm_enabled(True)
+
+
 class OrdisCompanionApp(QWidget):
     chat_reply_signal = pyqtSignal(str, str, bool, object)
     world_events_signal = pyqtSignal(str)
@@ -378,6 +386,7 @@ class OrdisCompanionApp(QWidget):
         super().__init__()
         self.orchestrator = LLMOrchestrator()
         pm = self.orchestrator.persona_manager
+        apply_llm_cli_flags(pm, sys.argv)
         self.llm_runner = EmbeddedLLMRunner(
             model_path=pm.get_model_path(),
             context_size=pm.get_context_size(),
@@ -414,10 +423,17 @@ class OrdisCompanionApp(QWidget):
 
         threading.Thread(target=check, daemon=True).start()
 
-    def start_llm_in_background(self):
+    def start_llm_in_background(self, download_binaries=False):
+        if not self.orchestrator.persona_manager.get_llm_enabled():
+            self.chat_reply_signal.emit(
+                "세팔론 오디스", "ℹ️ 로컬 LLM이 비활성화 상태입니다. 모딩 진단과 수식 계산은 정상 이용하실 수 있습니다.", False, None)
+            return
+
         # Can download a 3GB model on first run, so it must never block the UI thread.
         def start():
-            if self.llm_runner.start_server(wait_ready=True):
+            # Settings toggle ON after a "N" at the console: llama.cpp was never fetched, so get it now.
+            binaries_ok = not download_binaries or self.llm_runner.ensure_binaries_exist()
+            if binaries_ok and self.llm_runner.start_server(wait_ready=True):
                 self.chat_reply_signal.emit("세팔론 오디스", "✅ 대화 엔진 준비가 끝났습니다, 오퍼레이터님!", False, None)
                 return
             reason = self.llm_runner.last_error or "알 수 없는 오류"
@@ -1432,8 +1448,9 @@ class OrdisCompanionApp(QWidget):
         old_ctx = pm.get_context_size()
         old_gpu = pm.get_gpu_layers()
         old_motion = pm.get_motion_enabled()
+        old_llm = pm.get_llm_enabled()
 
-        dlg = OrdisPersonaDialog(pm, parent=self)
+        dlg =OrdisPersonaDialog(pm, parent=self)
         if dlg.exec() == QDialog.DialogCode.Accepted:
             persona = pm.get_active_persona()
             new_model = pm.get_model_path()
@@ -1460,17 +1477,24 @@ class OrdisCompanionApp(QWidget):
                 )
 
             if model_changed:
-                model_name = os.path.basename(new_model)
-                self.add_chat_bubble(
-                    "세팔론 오디스",
-                    f"⚙️ 모델 설정이 변경되었습니다. (모델: {model_name}, 컨텍스트: {new_ctx} 토큰, GPU: {new_gpu} 레이어)\n새 설정을 적용하기 위해 대화 엔진을 재시작합니다...",
-                    is_user=False
-                )
-                self.llm_runner.stop_server()
                 self.llm_runner.model_path = new_model if os.path.isabs(new_model) else get_path(new_model)
                 self.llm_runner.context_size = new_ctx
                 self.llm_runner.n_gpu_layers = new_gpu
-                self.start_llm_in_background()
+
+            new_llm = pm.get_llm_enabled()
+            if old_llm and not new_llm:
+                self.llm_runner.stop_server()
+                self.add_chat_bubble("세팔론 오디스", "🛑 로컬 LLM이 비활성화되었습니다. VRAM이 반환되었습니다.", is_user=False)
+            elif new_llm and (model_changed or not old_llm):
+                if model_changed:
+                    model_name = os.path.basename(new_model)
+                    self.add_chat_bubble(
+                        "세팔론 오디스",
+                        f"⚙️ 모델 설정이 변경되었습니다. (모델: {model_name}, 컨텍스트: {new_ctx} 토큰, GPU: {new_gpu} 레이어)\n새 설정을 적용하기 위해 대화 엔진을 재시작합니다...",
+                        is_user=False
+                    )
+                    self.llm_runner.stop_server()
+                self.start_llm_in_background(download_binaries=not old_llm)
 
     open_persona_dialog = open_settings_dialog
 
