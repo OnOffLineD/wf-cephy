@@ -18,10 +18,10 @@ from scripts.path_config import get_path, get_user_data_path
 MODEL_URL = 'https://huggingface.co/bartowski/google_gemma-4-E2B-it-GGUF/resolve/main/google_gemma-4-E2B-it-Q4_K_M.gguf'
 MIN_MODEL_BYTES = 1000000000
 # Official llama.cpp CPU build, pinned so the download is reproducible; newer releases are preferred when reachable.
-LLAMA_BIN_TAG = 'b6500'
+LLAMA_BIN_TAG = 'b12223'
 LLAMA_BIN_ASSET_SUFFIX = 'bin-win-cpu-x64.zip'
 LLAMA_BIN_URL = f'https://github.com/ggml-org/llama.cpp/releases/download/{LLAMA_BIN_TAG}/llama-{LLAMA_BIN_TAG}-{LLAMA_BIN_ASSET_SUFFIX}'
-LLAMA_RELEASE_API = 'https://api.github.com/repos/ggml-org/llama.cpp/releases/latest'
+LLAMA_RELEASE_API = 'https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=5'
 # Measured 31~114s from a synced Google Drive folder.
 STARTUP_TIMEOUT_SECONDS = 300
 JOB_OBJECT_EXTENDED_LIMIT_INFORMATION = 9
@@ -274,9 +274,12 @@ class EmbeddedLLMRunner:
         try:
             response = requests.get(LLAMA_RELEASE_API, timeout=(10, 20))
             response.raise_for_status()
-            for asset in response.json().get('assets', []):
-                if asset.get('name', '').endswith(LLAMA_BIN_ASSET_SUFFIX):
-                    return asset['browser_download_url']
+            data = response.json()
+            items = data if isinstance(data, list) else [data]
+            for item in items:
+                for asset in item.get('assets', []):
+                    if asset.get('name', '').endswith(LLAMA_BIN_ASSET_SUFFIX):
+                        return asset['browser_download_url']
         except (requests.RequestException, ValueError, KeyError, AttributeError):
             pass
         return LLAMA_BIN_URL
