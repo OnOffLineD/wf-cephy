@@ -159,7 +159,8 @@ class WFDataIndexer:
                     'puncture': 0.0, 'elemental_damage': 0.0,
                     'status_damage': 0.0, 'slam_damage': 0.0, 'heavy_damage_bonus': 0.0, 'finisher_damage': 0.0,
                     'weak_point_damage': 0.0, 'combo_crit': 0.0, 'combo_status': 0.0, 'status_type_damage': 0.0,
-                    'heavy_crit_chance': 0.0, 'faction': {}, 'on_kill': []
+                    'heavy_crit_chance': 0.0, 'weak_point_crit_chance': 0.0, 'lock_multishot': False,
+                    'faction': {}, 'on_kill': []
                 }
 
                 if mod.get('levelStats'):
@@ -228,6 +229,10 @@ class WFDataIndexer:
         val = float(m.group(1)) / 100.0
         rest = m.group(2)
         phrase = re.sub(r'\s*\(.*?\)', '', rest).strip()
+        # Acuity: "+350% Weak Point Critical Chance. Multishot cannot be modified."
+        if 'multishot cannot be modified' in phrase:
+            stats['lock_multishot'] = True
+            phrase = phrase.split('.')[0].strip()
 
         direct = {
             'damage': 'damage',
@@ -245,6 +250,9 @@ class WFDataIndexer:
             'heavy attack damage': 'heavy_damage_bonus',
             'finisher damage': 'finisher_damage',
             'weak point damage': 'weak_point_damage',
+            'headshot damage': 'weak_point_damage',
+            'to headshot multiplier': 'weak_point_damage',
+            'weak point critical chance': 'weak_point_crit_chance',
             'critical chance stacks with combo multiplier': 'combo_crit',
             'status chance per combo multiplier': 'combo_status',
             'melee damage per status type affecting the target': 'status_type_damage',

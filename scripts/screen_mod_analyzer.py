@@ -658,6 +658,13 @@ class ScreenModAnalyzer:
                 f"• **🛡️ 최저점 (비크리 최저 보장)**: {hit_unit} `{min_h:,.0f}`",
             ])
 
+        if not is_melee:
+            hs_max = metrics.get("headshot_max_crit_hit", max_c)
+            # Right after the body-shot peak line (always the first line added above).
+            lines.insert(7, f"• **🎯 헤드샷 최고점 (약점 치명타 최고 롤)**: `{hs_max:,.0f}` (약점 배율 {metrics.get('wp_mult', 3.0):.2f}배 × 헤드크리 2배, 약점 치확 {metrics.get('final_cc_wp', 0.0) * 100:.0f}%)")
+            if metrics.get("lock_multishot"):
+                lines.append(f"• **🔒 멀티샷 고정**: 어큐이티(Acuity) 장착으로 멀티샷이 기본값 `{final_ms:.1f}발`로 고정되어 멀티샷 모드가 적용되지 않습니다.")
+
         if metrics.get("incarnon"):
             inc = metrics["incarnon"]
             trait = self.get_incarnon_trait_description(w_meta.get('name', ''), inc.get("attack_meta"))
@@ -1123,6 +1130,9 @@ class ScreenModAnalyzer:
             r_b_dps = with_riven_metrics.get("burst_dps", 0)
             r_max = with_riven_metrics.get("max_crit_hit", 0)
             r_min = with_riven_metrics.get("min_hit", 0)
+            base_hs = base_metrics.get("headshot_max_crit_hit", base_max)
+            r_hs = with_riven_metrics.get("headshot_max_crit_hit", r_max)
+            hs_note = "" if w_meta.get("category") == "Melee" else f" (헤드샷: {base_hs:,.0f} ➔ **{r_hs:,.0f}**)"
 
             gain = ((r_s_dps - base_s_dps) / max(1, base_s_dps)) * 100.0
 
@@ -1133,7 +1143,7 @@ class ScreenModAnalyzer:
                 f"⚔️ **실전 화력 비교 (리벤 미적용 ➔ 리벤 장착)**:\n"
                 f"- **지속 DPS**: {base_s_dps:,.0f} ➔ **{r_s_dps:,.0f}** ({gain:+.1f}%)\n"
                 f"- **순간 DPS**: {base_b_dps:,.0f} ➔ **{r_b_dps:,.0f}**\n"
-                f"- **치명타 최고점(Peak)**: {base_max:,.0f} ➔ **{r_max:,.0f}**\n"
+                f"- **치명타 최고점(Peak)**: {base_max:,.0f} ➔ **{r_max:,.0f}**{hs_note}\n"
                 f"- **최저 데미지(Trough)**: {base_min:,.0f} ➔ **{r_min:,.0f}**\n\n"
                 f"💡 **세팔론 오디스의 평가**: 리벤 모드의 스탯이 무기 기본 스펙과 증폭 연쇄를 일으켜 실전 기대 화력이 {gain:+.1f}% 강화되었습니다!"
                 + "\n".join(self._format_elements(with_riven_metrics))
