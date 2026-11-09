@@ -50,6 +50,16 @@ if "%PY_EXE%"=="" (
     exit /b 1
 )
 echo [OK] Standalone GUI runtime verified (%PY_EXE%).
+rem Model missing or under 1GB: download here first. Zero-padded string compare, as cmd ints overflow at 2GB.
+for %%A in ("models\google_gemma-4-E2B-it-Q4_K_M.gguf") do set "MODEL_PAD=0000000000000%%~zA"
+if "%MODEL_PAD:~-13%" LSS "0001000000000" (
+    %PY_EXE% scripts\embedded_llm_runner.py --download
+    if errorlevel 1 (
+        echo [ERROR] Model download failed. Check your internet connection and try again.
+        pause
+        exit /b 1
+    )
+)
 
 echo.
 echo [2/2] Launching Desktop Pet Companion (Background Windowless Mode)...

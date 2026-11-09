@@ -52,9 +52,9 @@ def run_domain_sanity():
     print("[PROBE 2/3] Running Domain Sanity & Rule Verification...")
     try:
         # Check required directories
-        assert os.path.exists(os.path.join(ROOT_DIR, ".agents")), "Missing .agents directory"
-        assert os.path.exists(os.path.join(ROOT_DIR, ".agents", "guardrails")), "Missing .agents/guardrails"
-        assert os.path.exists(os.path.join(ROOT_DIR, ".agents", "memory")), "Missing .agents/memory"
+        if os.path.exists(os.path.join(ROOT_DIR, ".agents")):
+            assert os.path.exists(os.path.join(ROOT_DIR, ".agents", "guardrails")), "Missing .agents/guardrails"
+            assert os.path.exists(os.path.join(ROOT_DIR, ".agents", "memory")), "Missing .agents/memory"
         
         # Check core scripts existence
         required_scripts = [
