@@ -1,4 +1,6 @@
 @echo off
+rem UTF-8 code page so the Korean prompt below renders (this file is saved as UTF-8).
+chcp 65001 >nul
 cd /d "%~dp0"
 title WF-Cephy: Desktop Companion (Embedded Standalone)
 
@@ -50,16 +52,24 @@ if "%PY_EXE%"=="" (
     exit /b 1
 )
 echo [OK] Standalone GUI runtime verified (%PY_EXE%).
-rem Model missing or under 1GB: download here first. Zero-padded string compare, as cmd ints overflow at 2GB.
-for %%A in ("models\google_gemma-4-E2B-it-Q4_K_M.gguf") do set "MODEL_PAD=0000000000000%%~zA"
-if "%MODEL_PAD:~-13%" LSS "0001000000000" (
-    %PY_EXE% scripts\embedded_llm_runner.py --download
-    if errorlevel 1 (
-        echo [ERROR] Model download failed. Check your internet connection and try again.
-        pause
-        exit /b 1
-    )
+echo.
+rem Default Y: a bare Enter keeps this value, as set /p leaves the variable untouched on empty input.
+set "USE_LLM=Y"
+set /p USE_LLM="로컬 LLM(Cephalon Ordis AI 대화 엔진)을 사용하시겠습니까? (Y/N) [기본값: Y]: "
+set "LLM_FLAG=--enable-llm"
+if /i "%USE_LLM%"=="N" goto skip_llm_download
+rem The runner skips whatever is already present (llama-server.exe, model over 1GB).
+%PY_EXE% scripts\embedded_llm_runner.py --download-bin --download-model
+if errorlevel 1 (
+    echo [ERROR] llama.cpp or model download failed. Check your internet connection and try again.
+    pause
+    exit /b 1
 )
+goto llm_ready
+:skip_llm_download
+set "LLM_FLAG=--disable-llm"
+echo [INFO] Local LLM disabled. Mod diagnosis and damage formulas still work.
+:llm_ready
 
 echo.
 echo [2/2] Launching Desktop Pet Companion (Background Windowless Mode)...
@@ -67,6 +77,6 @@ echo - Floating Pet will appear at the bottom-right of your screen.
 echo - Global Hotkeys: [Alt+Q] Screen Capture Diagnosis, [Alt+W] Toggle Cephy Chat
 echo =====================================================================
 
-start "" %PYW_EXE% main_companion.py
+start "" %PYW_EXE% main_companion.py %LLM_FLAG%
 timeout /t 2 >nul
 exit /b 0

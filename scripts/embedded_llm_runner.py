@@ -5,6 +5,7 @@ import subprocess
 import sys
 import threading
 import time
+import zipfile
 from ctypes import wintypes
 from typing import Optional
 
@@ -16,6 +17,11 @@ from scripts.path_config import get_path, get_user_data_path
 
 MODEL_URL = 'https://huggingface.co/bartowski/google_gemma-4-E2B-it-GGUF/resolve/main/google_gemma-4-E2B-it-Q4_K_M.gguf'
 MIN_MODEL_BYTES = 1000000000
+# Official llama.cpp CPU build, pinned so the download is reproducible; newer releases are preferred when reachable.
+LLAMA_BIN_TAG = 'b6500'
+LLAMA_BIN_ASSET_SUFFIX = 'bin-win-cpu-x64.zip'
+LLAMA_BIN_URL = f'https://github.com/ggml-org/llama.cpp/releases/download/{LLAMA_BIN_TAG}/llama-{LLAMA_BIN_TAG}-{LLAMA_BIN_ASSET_SUFFIX}'
+LLAMA_RELEASE_API = 'https://api.github.com/repos/ggml-org/llama.cpp/releases/latest'
 # Measured 31~114s from a synced Google Drive folder.
 STARTUP_TIMEOUT_SECONDS = 300
 JOB_OBJECT_EXTENDED_LIMIT_INFORMATION = 9
@@ -161,7 +167,8 @@ class EmbeddedLLMRunner:
                 already_running = self.process is not None and self.process.poll() is None
                 if not already_running:
                     self.last_error = ""
-                    if not self.ensure_binaries_exist() or not self.ensure_model_exists():
+                    # Binaries are installed by start_companion.bat or the settings toggle, never silently here.
+                    if not self.ensure_binaries_exist(download=False) or not self.ensure_model_exists():
                         return False
                     if not self._launch():
                         return False
@@ -253,11 +260,68 @@ class EmbeddedLLMRunner:
                     pass
             return False
 
-    def ensure_binaries_exist(self) -> bool:
+    def ensure_binaries_exist(self, show_progress=False, download=True) -> bool:
         if os.path.exists(self.bin_path):
+            if show_progress: print("[OK] llama-server already exists.")
             return True
-        self.last_error = f"llama-server 실행 파일이 없습니다: {self.bin_path}"
+        if download:
+            return self.download_binaries(show_progress=show_progress)
+        self.last_error = f"llama-server 실행 파일이 없습니다: {self.bin_path} (설치: embedded_llm_runner.py --download-bin)"
         return False
+
+    def _resolve_bin_url(self) -> str:
+        """Newest official release asset when GitHub answers, else the pinned LLAMA_BIN_URL."""
+        try:
+            response = requests.get(LLAMA_RELEASE_API, timeout=(10, 20))
+            response.raise_for_status()
+            for asset in response.json().get('assets', []):
+                if asset.get('name', '').endswith(LLAMA_BIN_ASSET_SUFFIX):
+                    return asset['browser_download_url']
+        except (requests.RequestException, ValueError, KeyError, AttributeError):
+            pass
+        return LLAMA_BIN_URL
+
+    def download_binaries(self, progress_callback=None, show_progress=False) -> bool:
+        bin_dir = os.path.dirname(self.bin_path)
+        os.makedirs(bin_dir, exist_ok=True)
+        tmp_path = os.path.join(bin_dir, 'llama-bin.zip.download.tmp')
+        try:
+            response = requests.get(self._resolve_bin_url(), stream=True, timeout=(15, 60))
+            response.raise_for_status()
+            total_length = int(response.headers.get('content-length', 0))
+            downloaded = 0
+            with open(tmp_path, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=1024 * 1024):
+                    if chunk:
+                        f.write(chunk)
+                        downloaded += len(chunk)
+                        pct = downloaded * 100 / total_length if total_length else 0
+                        if progress_callback:
+                            progress_callback(pct)
+                        if show_progress:
+                            sys.stdout.write(f"\r[{'#' * int(pct // 5):<20}] {pct:5.1f}% {downloaded / 2**20:,.1f} MB (llama.cpp)")
+                            sys.stdout.flush()
+            with zipfile.ZipFile(tmp_path) as archive:
+                # Flatten: releases differ in folder layout, and basename() also blocks path traversal.
+                for member in archive.infolist():
+                    name = os.path.basename(member.filename)
+                    if name and not member.is_dir():
+                        with archive.open(member) as src, open(os.path.join(bin_dir, name), 'wb') as dst:
+                            dst.write(src.read())
+            if not os.path.exists(self.bin_path):
+                raise OSError("압축 파일에 llama-server.exe가 없습니다")
+            if show_progress: sys.stdout.write("\n[OK] llama.cpp binaries installed.\n")
+            return True
+        except (requests.RequestException, zipfile.BadZipFile, OSError) as e:
+            self.last_error = f"llama-server 다운로드 실패: {e}"
+            if show_progress: print(f"\n[ERROR] {self.last_error}")
+            return False
+        finally:
+            if os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
 
     def restart_server(self, context_size: Optional[int] = None) -> bool:
         if context_size is not None:
@@ -268,8 +332,16 @@ class EmbeddedLLMRunner:
 
 def main():
     runner = EmbeddedLLMRunner()
-    if '--download' in sys.argv:
-        sys.exit(0 if runner.ensure_model_exists(show_progress=True) else 1)
+    # --download stays model-only for backward compatibility; pass both flags to fetch everything.
+    want_bin = '--download-bin' in sys.argv
+    want_model = '--download' in sys.argv or '--download-model' in sys.argv
+    if want_bin or want_model:
+        ok = True
+        if want_bin:
+            ok = runner.ensure_binaries_exist(show_progress=True) and ok
+        if want_model:
+            ok = runner.ensure_model_exists(show_progress=True) and ok
+        sys.exit(0 if ok else 1)
     if '--start' in sys.argv:
         print('Started:', runner.start_server(wait_ready=True))
     elif '--stop' in sys.argv:
@@ -280,7 +352,7 @@ def main():
     elif '--status' in sys.argv:
         print('Healthy:', runner.is_healthy())
     else:
-        print('Usage: python embedded_llm_runner.py [--start|--stop|--restart|--status]')
+        print('Usage: python embedded_llm_runner.py [--download|--download-bin|--download-model|--start|--stop|--restart|--status]')
 
 
 if __name__ == '__main__':
