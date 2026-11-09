@@ -10,6 +10,8 @@ from typing import Optional
 
 import requests
 
+if __package__ in (None, ''):  # run as a script: make the project root importable
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from scripts.path_config import get_path, get_user_data_path
 
 MODEL_URL = 'https://huggingface.co/bartowski/google_gemma-4-E2B-it-GGUF/resolve/main/google_gemma-4-E2B-it-Q4_K_M.gguf'
@@ -214,14 +216,16 @@ class EmbeddedLLMRunner:
             self.last_error = f"llama-server가 {timeout}초 안에 준비되지 않았습니다. 로그: {self.log_path}"
         return False
 
-    def ensure_model_exists(self, progress_callback=None) -> bool:
+    def ensure_model_exists(self, progress_callback=None, show_progress=False) -> bool:
         if os.path.exists(self.model_path) and os.path.getsize(self.model_path) > MIN_MODEL_BYTES:
+            if show_progress: print("[OK] Model already exists.")
             return True
 
         os.makedirs(os.path.dirname(self.model_path) or 'models', exist_ok=True)
         tmp_path = self.model_path + '.download.tmp'
         try:
-            response = requests.get(MODEL_URL, stream=True, timeout=30)
+            # (connect, read) timeouts: a stalled socket fails instead of hanging forever.
+            response = requests.get(MODEL_URL, stream=True, timeout=(15, 60))
             response.raise_for_status()
             total_length = int(response.headers.get('content-length', 0))
             downloaded = 0
@@ -232,10 +236,16 @@ class EmbeddedLLMRunner:
                         downloaded += len(chunk)
                         if progress_callback:
                             progress_callback((downloaded / total_length) * 100 if total_length else 0)
+                        if show_progress:
+                            pct = downloaded * 100 / total_length if total_length else 0
+                            sys.stdout.write(f"\r[{'#' * int(pct // 5):<20}] {pct:5.1f}% {downloaded / 2**20:,.1f} / {total_length / 2**20:,.1f} MB")
+                            sys.stdout.flush()
             os.replace(tmp_path, self.model_path)
+            if show_progress: sys.stdout.write("\n[OK] Model download complete.\n")
             return True
         except (requests.RequestException, OSError) as e:
             self.last_error = f"LLM 모델 다운로드 실패: {e}"
+            if show_progress: print(f"\n[ERROR] {self.last_error}")
             if os.path.exists(tmp_path):
                 try:
                     os.remove(tmp_path)
@@ -258,6 +268,8 @@ class EmbeddedLLMRunner:
 
 def main():
     runner = EmbeddedLLMRunner()
+    if '--download' in sys.argv:
+        sys.exit(0 if runner.ensure_model_exists(show_progress=True) else 1)
     if '--start' in sys.argv:
         print('Started:', runner.start_server(wait_ready=True))
     elif '--stop' in sys.argv:

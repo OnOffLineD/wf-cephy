@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 import requests
 
-from scripts.embedded_llm_runner import EmbeddedLLMRunner, assign_kill_on_close_job, close_job
+from scripts.embedded_llm_runner import EmbeddedLLMRunner, assign_kill_on_close_job, close_job, main as runner_main
 
 
 def spawn_sleeper():
@@ -154,3 +154,26 @@ def test_failed_download_leaves_no_partial_file(tmp_path):
         assert runner.ensure_model_exists() is False
     assert list(tmp_path.iterdir()) == []
     assert runner.last_error
+
+
+def _run_download(tmp_path, **get_kwargs):
+    with patch("scripts.embedded_llm_runner.get_path", lambda *p: str(tmp_path.joinpath(*p))),             patch.object(sys, "argv", ["embedded_llm_runner.py", "--download"]),             patch("scripts.embedded_llm_runner.requests.get", **get_kwargs) as get,             pytest.raises(SystemExit) as exit_info:
+        runner_main()
+    return exit_info.value.code, get
+
+
+def test_download_flag_prints_progress_with_read_timeout_then_skips(tmp_path, capsys):
+    response = MagicMock(headers={"content-length": "4"})
+    response.iter_content.return_value = [b"ab", b"cd"]
+    code, get = _run_download(tmp_path, return_value=response)
+    out = capsys.readouterr().out
+    assert code == 0 and get.call_args.kwargs["timeout"] == (15, 60)
+    assert "50.0%" in out and "100.0%" in out and "MB" in out
+    assert (tmp_path / "models" / "google_gemma-4-E2B-it-Q4_K_M.gguf").read_bytes() == b"abcd"
+    with patch("scripts.embedded_llm_runner.MIN_MODEL_BYTES", 3):
+        code, get = _run_download(tmp_path)
+    assert code == 0 and not get.called and "[OK] Model already exists." in capsys.readouterr().out
+
+
+def test_download_flag_exits_one_on_failure(tmp_path):
+    assert _run_download(tmp_path, side_effect=requests.ReadTimeout())[0] == 1
