@@ -51,9 +51,21 @@ scratch/
 # IDE / Local files
 .vscode/
 .idea/
-.antigravity/local/
 .DS_Store
 Thumbs.db
 desktop.ini
 
-.orchestra/runs/
+# AI Agent, Harness & Orchestration Tooling
+.agents/
+.antigravity/
+.gemini/
+.orchestra/
+harness/
+orchestra-kit/
+orchestra.py
+AGENTS.md
+GEMINI.md
+antigravity_Rules.md
+EXPERIENCE.md
+PROGRESS.md
+HANDOVER.md

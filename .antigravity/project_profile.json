@@ -1,9 +1,0 @@
-{
-  "language": "python",
-  "default_ext": ".py",
-  "build_cmd": "python -m compileall -q scripts",
-  "test_cmd": "python -m pytest tests/ --ignore=python_embed -q",
-  "local_model": "qwen2.5-coder-16k:latest",
-  "num_ctx": 16384,
-  "ollama_url": "http://localhost:11434/api/generate"
-}
