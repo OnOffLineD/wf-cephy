@@ -35,8 +35,6 @@ class WFDataIndexer:
                         else:
                             self.index_weapons(data)
 
-            self._index_korean_aliases()
-
             mod_ocr_aliases_path = os.path.join(self.data_dir, 'mod_ocr_aliases.json')
             self.mod_ocr_aliases = {}
             if os.path.exists(mod_ocr_aliases_path):
@@ -46,29 +44,6 @@ class WFDataIndexer:
                 except Exception:
                     pass
 
-    def _index_korean_aliases(self):
-        csv_path = get_path('data', 'raw_sheets', 'riven.csv')
-        if not os.path.exists(csv_path):
-            return
-        import csv
-        try:
-            with open(csv_path, 'r', encoding='utf-8', errors='ignore') as f:
-                reader = csv.reader(f)
-                for row in reader:
-                    for i in (1, 7, 13, 19, 25):
-                        if i + 1 < len(row):
-                            en = row[i].strip()
-                            kr = row[i + 1].strip()
-                            if en and kr and not any(k in en for k in ['영문', '기질', '분류', '업데이트', '다운로드']):
-                                en_lower = en.lower()
-                                if en_lower in self.weapons_index:
-                                    meta = self.weapons_index[en_lower]
-                                    self.weapons_index[kr.lower()] = meta
-                                    self.weapons_index[kr.lower().replace(' ', '')] = meta
-                                    self.weapons_index[kr.lower().replace('-', '').replace(' ', '')] = meta
-                                    self.weapons_index[kr.lower().replace('-', ' ')] = meta
-        except Exception:
-            pass
     def index_weapons(self, data: List[Dict[str, Any]]) -> None:
         for weapon in data:
             name = weapon.get('name', '').lower()
