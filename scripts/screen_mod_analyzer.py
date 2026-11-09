@@ -657,6 +657,11 @@ class ScreenModAnalyzer:
                 f"• **🎯 단발 평균 기대치**: {hit_unit} `{exp_h:,.0f}`",
                 f"• **🛡️ 최저점 (비크리 최저 보장)**: {hit_unit} `{min_h:,.0f}`",
             ])
+        if "final_status" in metrics:
+            lines.append(f"• 상태이상 확률: {metrics['final_status'] * 100:.1f}%")
+        if metrics.get("incompatible_mods"):
+            names = ", ".join(str(n) for n in metrics["incompatible_mods"])
+            lines.append(f"⚠️ **[호환 불가 모드 감지]**: {names}은(는) 해당 무기 전용 모드가 아니므로 계산에서 제외되었습니다.")
 
         if not is_melee:
             hs_max = metrics.get("headshot_max_crit_hit", max_c)

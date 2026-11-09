@@ -160,6 +160,7 @@ class WFDataIndexer:
                     'status_damage': 0.0, 'slam_damage': 0.0, 'heavy_damage_bonus': 0.0, 'finisher_damage': 0.0,
                     'weak_point_damage': 0.0, 'combo_crit': 0.0, 'combo_status': 0.0, 'status_type_damage': 0.0,
                     'heavy_crit_chance': 0.0, 'weak_point_crit_chance': 0.0, 'lock_multishot': False,
+                    'flat_status': 0.0, 'flat_crit_chance': 0.0, 'flat_crit_damage': 0.0,
                     'faction': {}, 'on_kill': []
                 }
 
@@ -220,6 +221,20 @@ class WFDataIndexer:
         if m:
             stats.setdefault('faction', {})
             stats['faction'][m.group(2)] = float(m.group(1)) - 1.0
+            return
+
+        # Flat stats added after multipliers: "+20 Final Status Chance", "+25% Base Critical Chance".
+        m = re.match(r'\+(\d+(?:\.\d+)?)%?\s+(?:final|base|flat)\s+status chance$', s)
+        if m:
+            stats['flat_status'] = stats.get('flat_status', 0.0) + float(m.group(1)) / 100.0
+            return
+        m = re.match(r'\+(\d+(?:\.\d+)?)%\s+(?:final|base)\s+critical chance$', s)
+        if m:
+            stats['flat_crit_chance'] = stats.get('flat_crit_chance', 0.0) + float(m.group(1)) / 100.0
+            return
+        m = re.match(r'\+(\d+(?:\.\d+)?)x\s+final critical damage multiplier$', s)
+        if m:
+            stats['flat_crit_damage'] = stats.get('flat_crit_damage', 0.0) + float(m.group(1))
             return
 
         m = re.match(r'([+-]\d+(?:\.\d+)?)%\s+(.+)$', s)
