@@ -123,7 +123,10 @@ def test_resume_pending_riven_comprehensive_stats(analyzer):
     assert '리벤 모드 정밀 분석 리포트' in res['message']
 
 def test_riven_quick_input_dialog_and_shorthand(analyzer):
-    from PyQt6.QtWidgets import QApplication
+    try:
+        from PyQt6.QtWidgets import QApplication
+    except ImportError:
+        from PySide6.QtWidgets import QApplication
     from scripts.riven_quick_dialog import RivenQuickInputDialog
 
     app = QApplication.instance() or QApplication([])

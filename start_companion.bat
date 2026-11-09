@@ -1,9 +1,9 @@
 @echo off
 cd /d "%~dp0"
-title WF-Companion: Desktop Cephalon Ordis (Embedded Standalone)
+title WF-Cephy: Desktop Companion (Embedded Standalone)
 
 echo =====================================================================
-echo             WF-Companion: Desktop Cephalon Ordis Pet
+echo             WF-Cephy: Desktop Companion Pet
 echo        Embedded Standalone Engine - Gemma 4 E2B
 echo =====================================================================
 echo.
@@ -54,7 +54,7 @@ echo [OK] Standalone GUI runtime verified (%PY_EXE%).
 echo.
 echo [2/2] Launching Desktop Pet Companion (Background Windowless Mode)...
 echo - Floating Pet will appear at the bottom-right of your screen.
-echo - Global Hotkeys: [Alt+Q] Screen Capture Diagnosis, [Alt+W] Toggle Ordis Chat
+echo - Global Hotkeys: [Alt+Q] Screen Capture Diagnosis, [Alt+W] Toggle Cephy Chat
 echo =====================================================================
 
 start "" %PYW_EXE% main_companion.py

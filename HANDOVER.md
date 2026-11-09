@@ -132,7 +132,7 @@ python main_companion.py
 ## 4. 📂 주요 디렉터리 및 핵심 파일 구조
 
 ```text
-2.7 WarframeOptimizer/
+WarframeOptimizer/
 ├── main_companion.py             # 데스크톱 컴패니언 진입점 (펫 + 채팅창 + 백그라운드 LLM)
 ├── PROJECT_OVERVIEW.md           # 전체 모듈 및 도메인 기능 명세서
 ├── HANDOVER.md                   # 본 인수인계 및 아키텍처 가이드

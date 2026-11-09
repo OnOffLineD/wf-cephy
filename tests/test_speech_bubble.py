@@ -1,7 +1,12 @@
 import pytest   # conftest.py forces QT_QPA_PLATFORM=offscreen
-from PyQt6.QtWidgets import QApplication
-from PyQt6.QtCore import QRect, QPointF, Qt, QEvent
-from PyQt6.QtGui import QMouseEvent, QEnterEvent
+try:
+    from PyQt6.QtWidgets import QApplication
+    from PyQt6.QtCore import QRect, QPointF, Qt, QEvent
+    from PyQt6.QtGui import QMouseEvent, QEnterEvent
+except ImportError:
+    from PySide6.QtWidgets import QApplication
+    from PySide6.QtCore import QRect, QPointF, Qt, QEvent
+    from PySide6.QtGui import QMouseEvent, QEnterEvent
 from scripts.desktop_pet import compute_bubble_anchor
 from scripts.notification_coordinator import NotificationCoordinator, NotificationPriority as P, SpeechBubblePayload
 from scripts.pet_speech_bubble import PetSpeechBubbleWidget, TAIL_H

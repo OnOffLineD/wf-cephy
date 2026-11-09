@@ -49,7 +49,7 @@ Any project can be elevated into a self-healing, self-improving autonomous engin
    - Look for `package.json`, `tsconfig.json` $\rightarrow$ **Node.js / TypeScript**
    - Otherwise fallback to generic/shell scripts.
 3. **Deploy Templates**:
-   - Copy templates from `C:/Users/2doo2/.gemini/config/skills/harness/templates/`:
+   - Copy templates from `~/.gemini/config/skills/harness/templates/`:
      - `.agents/guardrails/engineering.md`
      - `.agents/guardrails/domain_rules.md`
      - `.agents/skills/propose_probe_compose.md`

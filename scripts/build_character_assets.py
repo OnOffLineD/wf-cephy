@@ -22,7 +22,11 @@ def overlay_rgba(base, top):
     return res
 
 def build_all():
-    brain_dir = r"C:\Users\2doo2\.gemini\antigravity\brain\31d11e8c-04e6-4093-9842-8dd91ea390c1"
+    brain_dir = os.environ.get("WF_ASSET_SRC_DIR") or (sys.argv[1] if len(sys.argv) > 1 else "")
+    if not brain_dir or not os.path.isdir(brain_dir):
+        print("[NOTICE] Asset source directory not provided or not found. Usage: python build_character_assets.py <source_dir>")
+        print("[NOTICE] Existing assets in assets/character/ are already built and ready.")
+        return
     body_idle_1024 = cv2.imread(os.path.join(brain_dir, "test_solid_body.png"), cv2.IMREAD_UNCHANGED)
     body_glitch_1024 = cv2.imread(os.path.join(brain_dir, "test_solid_glitch_body.png"), cv2.IMREAD_UNCHANGED)
     hands_idle_1024 = cv2.imread(os.path.join(brain_dir, "test_hands_canvas.png"), cv2.IMREAD_UNCHANGED)

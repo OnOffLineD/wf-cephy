@@ -10,6 +10,9 @@ htmlcov/
 # Python Virtual Environments & Embedded
 python_embed/
 venv/
+.env
+.env.local
+.env.*.local
 .env/
 env/
 
@@ -17,30 +20,40 @@ env/
 models/*.gguf
 bin/
 weights/*.pt
+models/*.pt
 yolov8n.pt
 runs/
 warframe_bot_runs/
 labeling/
 
-# Chroma DB and Cache
+# Knowledge Graph & Analysis Caches
+graphify-out/
+**/graphify-out/
 data/chroma_db/
-graphify-out/cache/
 
 # Runtime logs and recovered user data
+*.log
 data/logs/
 data/game_data_state.json
 data/*.corrupt-*
 data/user_builds.json*
+data/user_checklist.json.meta.json
+*.meta.json
+*.tmp
 
 # Temporary captures and debug crops
 *.png
 !assets/**/*.png
 crops/
 debug_crops/
+scratch/
 
 # IDE / Local files
 .vscode/
 .idea/
 .antigravity/local/
+.DS_Store
+Thumbs.db
+desktop.ini
 
 .orchestra/runs/

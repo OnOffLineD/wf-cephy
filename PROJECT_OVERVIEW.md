@@ -36,7 +36,7 @@
 ## 3. 디렉토리 구조
 
 ```text
-2.7 WarframeOptimizer/
+WarframeOptimizer/
 ├── start_companion.bat           # 데스크톱 컴패니언 실행
 ├── main_companion.py             # 앱 진입점 (펫 + 채팅 패널 + LLM)
 ├── bin/                          # llama-server.exe와 DLL (git 제외)

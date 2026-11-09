@@ -1,13 +1,26 @@
 import time
 from scripts.screen_mod_analyzer import ScreenModAnalyzer
 
-images = [
-    ("나미 스카일라 프라임", r"C:/Users/2doo2/.gemini/antigravity/brain/4a973225-cdb1-4064-b5f5-3904f03c0087/.user_uploaded/media_1792137178605_32d147d9.jpg"),
-    ("리퍼 프라임", r"C:/Users/2doo2/.gemini/antigravity/brain/4a973225-cdb1-4064-b5f5-3904f03c0087/.user_uploaded/media_1792137178605_e8bee2af.jpg"),
-    ("스트로파", r"C:/Users/2doo2/.gemini/antigravity/brain/4a973225-cdb1-4064-b5f5-3904f03c0087/.user_uploaded/media_1792137178606_65c077be.jpg"),
-    ("다크 스플릿-소드", r"C:/Users/2doo2/.gemini/antigravity/brain/4a973225-cdb1-4064-b5f5-3904f03c0087/.user_uploaded/media_1792137178610_c7c8451b.jpg"),
-    ("글레이브 프라임", r"C:/Users/2doo2/.gemini/antigravity/brain/4a973225-cdb1-4064-b5f5-3904f03c0087/.user_uploaded/media_1792137178652_d45ff263.jpg"),
-]
+import os
+import sys
+import time
+from scripts.screen_mod_analyzer import ScreenModAnalyzer
+
+# Benchmark against sample test images in ocrTestImg/ or custom args
+sample_dir = os.path.join(os.path.dirname(__file__), "ocrTestImg")
+images = []
+if os.path.isdir(sample_dir):
+    for f in os.listdir(sample_dir):
+        if f.lower().endswith((".jpg", ".png", ".jpeg")):
+            images.append((f, os.path.join(sample_dir, f)))
+
+if not images and len(sys.argv) > 1:
+    images = [(os.path.basename(p), p) for p in sys.argv[1:]]
+
+if not images:
+    print("[NOTICE] No test images found in ocrTestImg/ or passed via arguments.")
+    print("Usage: python test_5_user_images.py <image_path_1> <image_path_2> ...")
+    sys.exit(0)
 
 analyzer = ScreenModAnalyzer()
 

@@ -91,7 +91,8 @@ def render_chat_markup(text: str) -> str:
 def qimage_to_pil(qimg) -> Image.Image:
     rgb = qimg.convertToFormat(qimg.Format.Format_RGB888)
     ptr = rgb.bits()
-    ptr.setsize(rgb.sizeInBytes())
+    if hasattr(ptr, 'setsize'):
+        ptr.setsize(rgb.sizeInBytes())
     # Qt pads rows to 4 bytes, so widths like 1366 need the real row length.
     return Image.frombuffer('RGB', (rgb.width(), rgb.height()), bytes(ptr), 'raw', 'RGB', rgb.bytesPerLine(), 1)
 

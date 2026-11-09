@@ -1,8 +1,14 @@
+import os
+import sys
 from PIL import Image
 from scripts.screen_mod_analyzer import ScreenModAnalyzer
 
 analyzer = ScreenModAnalyzer()
-p = r"C:/Users/2doo2/.gemini/antigravity/brain/4a973225-cdb1-4064-b5f5-3904f03c0087/.user_uploaded/media_1792137178605_e8bee2af.jpg"
+p = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.path.dirname(__file__), "ocrTestImg", "1792128122.jpg")
+if not os.path.isfile(p):
+    print(f"[NOTICE] Image not found: {p}")
+    print("Usage: python inspect_reaper_ocr.py <image_path>")
+    sys.exit(0)
 img = Image.open(p)
 w, h = img.size
 y_max = int(h * 0.90) if (w / h > 2.0) else int(h * 0.52)

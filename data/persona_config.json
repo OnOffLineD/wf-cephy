@@ -1,6 +1,6 @@
 {
   "mode": "random",
-  "custom_prompt": "말끝마다 \"쿰척쿰척\"을 붙이고 속마음을 () 괄호 안에 넣는 씹덕 말투 구사",
+  "custom_prompt": "",
   "presets": {
     "caretaker": "충성스러운 집사: 안전 최우선 다정한 말투",
     "glitch": "욱하는 글리치: 살벌한 본작 특유의 글리치 유머",

@@ -40,11 +40,5 @@
     "type": "weekly",
     "text": "아이언 웨이크 리벤 조각 교환",
     "done": false
-  },
-  {
-    "id": "custom_8",
-    "type": "custom",
-    "text": "월육 파밍 하기",
-    "done": true
   }
 ]
