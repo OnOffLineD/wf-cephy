@@ -1,12 +1,68 @@
 import math
+import re
 from typing import Dict, Any, Optional, List
 
 from scripts.innate_traits import apply_innate_traits, describe as describe_innate
 
+_MELEE_CLASSES = {
+    'melee', 'claws', 'daggers', 'dual daggers', 'dual swords', 'dual nikanas', 'fists', 'glaives', 'gunblade',
+    'hammers', 'heavy blade', 'heavy scythe', 'machetes', 'nikanas', 'nunchaku', 'polearms', 'rapiers', 'scythes',
+    'sparring', 'staves', 'sword and shield', 'swords', 'tonfas', 'two-handed nikana', 'warfans', 'whips',
+    'blade and whip', 'assault saw', 'bayonet', 'thrown melee'
+}
+# Generic compatName -> (allowed weapon categories, allowed weapon types or None for any type).
+_GENERIC_COMPAT = {
+    **{c: ({'melee'}, None) for c in _MELEE_CLASSES},
+    'primary': ({'primary'}, None),
+    'unique': ({'primary'}, None),
+    'rifle': ({'primary'}, {'rifle', 'sniper', 'bow', 'launcher', 'pistol', ''}),
+    'rifle (no aoe)': ({'primary'}, {'rifle', 'sniper', 'bow', 'pistol', ''}),
+    'assault rifle': ({'primary'}, {'rifle', ''}),
+    'sniper': ({'primary'}, {'sniper', ''}),
+    'bow': ({'primary'}, {'bow', ''}),
+    'shotgun': ({'primary'}, {'shotgun', ''}),
+    'secondary': ({'secondary'}, None),
+    'pistol': ({'secondary'}, None),
+    'pistol (no aoe)': ({'secondary'}, None),
+    'thrown': ({'secondary'}, {'throwing', ''}),
+    'tome': ({'secondary'}, None),
+    'archgun': ({'arch-gun'}, None),
+    'archmelee': ({'arch-melee'}, None),
+}
+_DUAL_RE = re.compile(r'\b(?:dual|twin)\b|\bak[^aeiou\W]', re.IGNORECASE)
+
+
 class WarframeDamageEngine:
-    def _prepare_mods(self, w_meta: Dict[str, Any], mods: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Mods as the weapon applies them: set bonuses first, then the weapon's innate trait."""
-        return apply_innate_traits(w_meta, self._apply_mod_sets(mods))
+    def is_mod_compatible(self, w_meta: Dict[str, Any], mod: Dict[str, Any]) -> bool:
+        """Whether the mod can go on this weapon: category for generic mods, weapon family for exclusive ones."""
+        compat = str(mod.get('compatName') or '').strip().lower()
+        if not compat or compat == 'any' or mod.get('name') == 'Riven Mod':
+            return True
+        category = str(w_meta.get('category') or '').strip().lower()
+        w_type = str(w_meta.get('type') or '').strip().lower()
+        if compat in _GENERIC_COMPAT:
+            if category not in {'primary', 'secondary', 'melee', 'arch-gun', 'arch-melee'}:
+                return True
+            categories, types = _GENERIC_COMPAT[compat]
+            return category in categories and (types is None or w_type in types)
+        name = str(w_meta.get('name') or '').strip()
+        if not name:
+            return True
+        # 'Skana' mods don't fit 'Dual Skana', but 'Dual Cleavers' mods fit 'Prisma Dual Cleavers'.
+        if bool(_DUAL_RE.search(name)) != bool(_DUAL_RE.search(compat)):
+            return False
+        return re.search(r'\b' + re.escape(compat) + r'\b', name, re.IGNORECASE) is not None
+
+    def _prepare_mods(self, w_meta: Dict[str, Any], mods: List[Dict[str, Any]], keep_incompatible: bool = False) -> List[Dict[str, Any]]:
+        """Mods as the weapon applies them: set bonuses first, then the weapon's innate trait.
+
+        Mods exclusive to another weapon are dropped, or appended unapplied with _compatible False if kept.
+        """
+        flagged = [dict(m, _compatible=self.is_mod_compatible(w_meta, m)) for m in mods]
+        prepared = apply_innate_traits(w_meta, self._apply_mod_sets([m for m in flagged if m['_compatible']]))
+        if keep_incompatible:
+            prepared = prepared + [m for m in flagged if not m['_compatible']]
+        return prepared
 
     def sanitize_left_stats(self, left_stats: Dict[str, float], base_damage: float, is_melee: bool = False) -> Dict[str, float]:
         sanitized_stats = left_stats.copy()
@@ -54,11 +110,17 @@ class WarframeDamageEngine:
     def compute_metrics(self, w_meta: Dict[str, Any], left_stats: Optional[Dict[str, float]] = None, mod_objs: Optional[List[Dict[str, Any]]] = None, riven_stats: Optional[Dict[str, float]] = None, riven_in_panel: bool = False) -> Dict[str, Any]:
         from scripts.damage_formulas import effective_fire_rate, shooting_proportion, bleed_tick, weak_point_multiplier
 
-        mod_objs = self._prepare_mods(w_meta, mod_objs or [])
+        all_mods = self._prepare_mods(w_meta, mod_objs or [], keep_incompatible=True)
+        incompatible_mods = [m.get('name') for m in all_mods if not m.get('_compatible', True)]
+        mod_objs = [m for m in all_mods if m.get('_compatible', True)]
         mod_dmg = sum(mod.get('damage', 0.0) for mod in mod_objs if mod.get('name') != 'Riven Mod')
         mod_ms =sum(mod.get('multishot', 0.0) for mod in mod_objs if mod.get('name') != 'Riven Mod')
         mod_cc = sum(mod.get('crit_chance', 0.0) for mod in mod_objs if mod.get('name') != 'Riven Mod')
         mod_cd = sum(mod.get('crit_damage', 0.0) for mod in mod_objs if mod.get('name') != 'Riven Mod')
+        mod_status = sum(mod.get('status', 0.0) for mod in mod_objs if mod.get('name') != 'Riven Mod')
+        mod_flat_status = sum(mod.get('flat_status', 0.0) for mod in mod_objs if mod.get('name') != 'Riven Mod')
+        mod_flat_cc = sum(mod.get('flat_crit_chance', 0.0) for mod in mod_objs if mod.get('name') != 'Riven Mod')
+        mod_flat_cd = sum(mod.get('flat_crit_damage', 0.0) for mod in mod_objs if mod.get('name') != 'Riven Mod')
         mod_fr = sum(mod.get('fire_rate', 0.0) for mod in mod_objs if mod.get('name') != 'Riven Mod')
         mod_elem = sum(mod.get('elemental_damage', 0.0) for mod in mod_objs if mod.get('name') != 'Riven Mod')
         mod_phys = {
@@ -81,6 +143,7 @@ class WarframeDamageEngine:
         mod_wp_cc += rv.get('weak_point_crit_chance', 0.0)
         r_cc = rv.get('crit_chance', 0.0)
         r_cd = rv.get('crit_damage', 0.0)
+        r_status = rv.get('status', 0.0) or rv.get('status_chance', 0.0)
         r_fr = rv.get('fire_rate', 0.0)
         r_elem = rv.get('elemental_damage', 0.0)
         r_faction = rv.get('faction_damage', 0.0)
@@ -133,14 +196,19 @@ class WarframeDamageEngine:
         if left.get('crit_chance'):
             final_cc = float(left['crit_chance']) + (base_cc * r_cc if add_r else 0.0)
         else:
-            final_cc = base_cc * (1.0 + mod_cc + r_cc)
+            final_cc = base_cc * (1.0 + mod_cc + r_cc) + mod_flat_cc
         final_cc = max(0.0, final_cc)
 
         if left.get('crit_mult'):
             final_cd = float(left['crit_mult']) + (base_cd * r_cd if add_r else 0.0)
         else:
-            final_cd = base_cd * (1.0 + mod_cd + r_cd)
+            final_cd = base_cd * (1.0 + mod_cd + r_cd) + mod_flat_cd
         final_cd = max(1.0, final_cd)
+
+        base_status = float(w_meta.get('procChance') or w_meta.get('status_chance') or left.get('status_chance') or 0.1)
+        if base_status > 1.0:
+            base_status /= 100.0
+        final_status = max(0.0, base_status * (1.0 + mod_status + r_status) + mod_flat_status)
 
         if left.get('fire_rate'):
             final_fr = float(left['fire_rate']) + (base_fr * r_fr if add_r else 0.0)
@@ -221,6 +289,8 @@ class WarframeDamageEngine:
             "headshot_expected_hit": headshot_expected_hit,
             "headshot_burst_dps": headshot_burst_dps,
             "lock_multishot": lock_multishot,
+            "final_status": final_status,
+            "incompatible_mods": incompatible_mods,
             "innate": describe_innate(w_meta, mod_objs, left)
         }
 
