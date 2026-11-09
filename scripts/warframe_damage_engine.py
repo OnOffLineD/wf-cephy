@@ -52,7 +52,7 @@ class WarframeDamageEngine:
         return sum(dist.get(k, 0.0) / total * v for k, v in values.items())
 
     def compute_metrics(self, w_meta: Dict[str, Any], left_stats: Optional[Dict[str, float]] = None, mod_objs: Optional[List[Dict[str, Any]]] = None, riven_stats: Optional[Dict[str, float]] = None, riven_in_panel: bool = False) -> Dict[str, Any]:
-        from scripts.damage_formulas import effective_fire_rate, shooting_proportion, bleed_tick
+        from scripts.damage_formulas import effective_fire_rate, shooting_proportion, bleed_tick, weak_point_multiplier
 
         mod_objs = self._prepare_mods(w_meta, mod_objs or [])
         mod_dmg = sum(mod.get('damage', 0.0) for mod in mod_objs if mod.get('name') != 'Riven Mod')
@@ -70,6 +70,15 @@ class WarframeDamageEngine:
         rv = riven_stats or {}
         r_dmg = rv.get('damage', 0.0) or rv.get('base_damage', 0.0)
         r_ms = rv.get('multishot', 0.0)
+        # Acuity mods: "Multishot cannot be modified."
+        lock_multishot = any(mod.get('lock_multishot') or 'acuity' in str(mod.get('name', '')).lower() for mod in mod_objs)
+        if lock_multishot:
+            mod_ms = 0.0
+            r_ms = 0.0
+        mod_wp_dmg = sum(mod.get('weak_point_damage', 0.0) for mod in mod_objs if mod.get('name') != 'Riven Mod')
+        mod_wp_cc = sum(mod.get('weak_point_crit_chance', 0.0) for mod in mod_objs if mod.get('name') != 'Riven Mod')
+        r_wp_dmg = rv.get('weak_point_damage', 0.0)
+        mod_wp_cc += rv.get('weak_point_crit_chance', 0.0)
         r_cc = rv.get('crit_chance', 0.0)
         r_cd = rv.get('crit_damage', 0.0)
         r_fr = rv.get('fire_rate', 0.0)
@@ -102,6 +111,8 @@ class WarframeDamageEngine:
 
         if is_melee:
             final_ms = 1.0
+        elif lock_multishot:
+            final_ms = base_ms
         elif left.get('multishot'):
             final_ms = float(left['multishot']) + (base_ms * r_ms if add_r else 0.0)
         else:
@@ -159,6 +170,26 @@ class WarframeDamageEngine:
         expected_hit = final_dmg * exp_crit * faction
         efr = effective_fire_rate(final_fr, float(left.get('charge_time') or 0.0))
         burst_dps = expected_hit * efr
+
+        # Weak point / headshot: crit on a weak point gets the extra 2x headcrit multiplier.
+        if is_melee:
+            wp_mult = 1.0
+            final_cc_wp = final_cc
+            headshot_max_crit_hit = max_crit_hit
+            headshot_min_hit = min_hit
+            headshot_expected_hit = expected_hit
+            headshot_burst_dps = burst_dps
+        else:
+            wp_mult = weak_point_multiplier(3.0, mod_wp_dmg + r_wp_dmg, rv.get('headshot_bonus', 0.0), is_headshot=True)
+            final_cc_wp = max(0.0, final_cc + base_cc * mod_wp_cc)
+            max_crit_wp = 1.0 + int(math.ceil(final_cc_wp)) * (final_cd - 1.0)
+            min_crit_wp = 1.0 + int(final_cc_wp) * (final_cd - 1.0)
+            exp_crit_wp = 1.0 + final_cc_wp * (final_cd - 1.0)
+            headshot_max_crit_hit = per_pellet * ms_max * wp_mult * max_crit_wp * 2.0 * faction
+            headshot_min_hit = per_pellet * ms_min * wp_mult * min_crit_wp * 2.0 * faction
+            headshot_expected_hit = final_dmg * wp_mult * exp_crit_wp * 2.0 * faction
+            headshot_burst_dps = headshot_expected_hit * efr
+
         if is_melee:
             sustained_dps = burst_dps
         else:
@@ -183,6 +214,13 @@ class WarframeDamageEngine:
             "ms_extra_pct": ms_extra,
             "used_panel_total": used_panel_total,
             "effective_fire_rate": efr,
+            "wp_mult": wp_mult,
+            "final_cc_wp": final_cc_wp,
+            "headshot_max_crit_hit": headshot_max_crit_hit,
+            "headshot_min_hit": headshot_min_hit,
+            "headshot_expected_hit": headshot_expected_hit,
+            "headshot_burst_dps": headshot_burst_dps,
+            "lock_multishot": lock_multishot,
             "innate": describe_innate(w_meta, mod_objs, left)
         }
 
