@@ -518,6 +518,8 @@ class ScreenModAnalyzer:
                 result["message"] += bonus_note
                 result["review_message"] += bonus_note
             self._attach_card(result, w_meta, formatted_mods, metrics, card_notes + bonus_note)
+            review_notes = (inferred_note if is_weapon_inferred else "") + bonus_note
+            self._attach_review_card(result, w_meta, unique_mod_entries, formatted_mods, slot_res.get('equipped_slot_count', 0), riven_name, review_notes)
             if bonus_note == self._bonus_question(w_meta):
                 result["needs_bonus_element"] = True
                 self.pending_bonus = result
@@ -593,6 +595,7 @@ class ScreenModAnalyzer:
         note = f"\n\n🧪 **[보너스 속성]** {BONUS_ELEMENTS[element]} {fraction * 100:g}%를 반영했습니다."
         riven_notice = self._riven_notice() if self.has_pending_riven() else ""
         self._attach_card(res, w_meta, formatted, metrics, riven_notice + note)
+        self._attach_review_card(res, w_meta, mods, formatted, res.get('equipped_slot_count', len(formatted)), '리벤 모드' if has_riven else None, note)
         res.update(
             metrics=metrics,
             needs_bonus_element=False,
@@ -744,6 +747,7 @@ class ScreenModAnalyzer:
         'blast': '#f59e0b', 'radiation': '#facc15', 'gas': '#84cc16', 'magnetic': '#818cf8',
         'viral': '#f472b6', 'corrosive': '#a3e635', 'impact': '#94a3b8', 'puncture': '#cbd5e1', 'slash': '#f87171'
     }
+    CATEGORY_COLORS = {'Primary': '#fbbf24', 'Secondary': '#60a5fa', 'Melee': '#f87171', 'Warframe': '#a78bfa'}
 
     def build_diagnostic_card(self, w_meta: Dict[str, Any], detected_mods: List[str], metrics: Dict[str, Any]) -> Dict[str, str]:
         """Qt rich-text dashboard of the same numbers as format_ordis_briefing.
@@ -759,7 +763,7 @@ class ScreenModAnalyzer:
         title = f"{esc(kr_name)} <span style='color:#94a3b8;'>({esc(name)})</span>" if kr_name else esc(name)
         badge = (f"<table width='100%' cellpadding='6' style='background-color:#0f2a3d;'><tr><td>"
                  f"<span style='color:#00d2ff; font-weight:bold; font-size:14px;'>🎯 {title}</span>&nbsp; "
-                 f"<span style='background-color:#D4AF37; color:#0d1117; font-weight:bold;'>&nbsp;{esc(w_meta.get('category') or '무기')}&nbsp;</span>&nbsp; "
+                 f"<span style='color:{self.CATEGORY_COLORS.get(w_meta.get('category'), '#D4AF37')}; font-weight:bold;'>[{esc(w_meta.get('category') or '무기')}]</span>&nbsp; "
                  f"<span style='color:#94a3b8;'>모드 {len(detected_mods or [])}개</span></td></tr></table>")
 
         max_c = metrics.get('max_crit_hit', 0)
@@ -774,12 +778,19 @@ class ScreenModAnalyzer:
                 + "".join(f"<tr>{tile(*tiles[i])}{tile(*tiles[i + 1])}</tr>" for i in (0, 2)) + "</table>")
 
         el = metrics.get('elements') or {}
-        pills = [f"<span style='background-color:{self.ELEMENT_COLORS.get(t, '#64748b')}; color:#0d1117; font-weight:bold;'>"
-                 f"&nbsp;{esc(self.ELEMENT_KR.get(t, t))} {(el.get('shares') or {}).get(t, 0) * 100:.0f}%&nbsp;</span>"
+        # Font colour only: solid colour blocks were glaring on the dark bubble.
+        pills = [f"<span style='color:{self.ELEMENT_COLORS.get(t, '#94a3b8')}; font-weight:bold;'>"
+                 f"{esc(self.ELEMENT_KR.get(t, t))} {(el.get('shares') or {}).get(t, 0) * 100:.0f}%</span>"
                  for t, _ in sorted((el.get('types') or {}).items(), key=lambda item: item[1], reverse=True)]
+        summary = badge + grid
+        if pills:
+            # Shares of the damage, which also decide which status procs - not the chance of a proc.
+            summary += (f"<p style='margin-top:4px;'><span style='color:#94a3b8; font-size:11px;'>🧪 속성 피해 점유율 (상태이상 발생 비중)</span><br>"
+                        f"{' &nbsp;·&nbsp; '.join(pills)}</p>")
         if 'final_status' in metrics:
-            pills.append(f"<span style='background-color:#334155; color:#e2e8f0;'>&nbsp;상태이상 {metrics['final_status'] * 100:.1f}%&nbsp;</span>")
-        summary = badge + grid + (f"<p style='margin-top:4px;'>{' '.join(pills)}</p>" if pills else "")
+            status = metrics['final_status'] * 100
+            summary += (f"<p style='margin-top:2px;'><span style='color:#e2e8f0; font-weight:bold;'>⚡ 총 상태이상 확률: {status:.1f}%</span> "
+                        f"<span style='color:#94a3b8; font-size:11px;'>(타격마다 상태이상 {status:.1f}% 확률로 발동, 종류는 위 비중대로 결정)</span></p>")
         if metrics.get('incompatible_mods'):
             summary += f"<p style='color:#fbbf24;'>⚠️ 호환 불가 모드 계산 제외: {esc(', '.join(str(n) for n in metrics['incompatible_mods']))}</p>"
 
@@ -1183,6 +1194,8 @@ class ScreenModAnalyzer:
             res["message"] = clarified_prefix + res["message"]
         if res.get("review_message"):
             res["review_message"] = clarified_prefix + res["review_message"]
+        if isinstance(res.get("review_card"), dict):
+            res["review_card"]["notes"] = (clarified_prefix + res["review_card"].get("notes", "")).strip()
         return res
 
     def extract_riven_stats_from_screen(self, img) -> Optional[Dict[str, float]]:
@@ -1375,14 +1388,7 @@ class ScreenModAnalyzer:
         w_name = w_meta.get('name', '')
         w_kr = w_meta.get('kr_name', '')
         weapon_display = f'{w_name} ({w_kr})' if w_kr else w_name
-        rec_cnt = len(detected_mods)
-
-        if equipped_slot_count > 0 and rec_cnt == equipped_slot_count:
-            status_line = f'✅ **장착 슬롯 대조 완료**: 장착 감지된 슬롯 {equipped_slot_count}개 중 {rec_cnt}개 모두 정상 인식되었습니다! (일치율 100%)'
-        elif equipped_slot_count > 0:
-            status_line = f'⚠️ **[슬롯 개수 불일치 감지]**: 슬롯에 {equipped_slot_count}개의 모드가 장착된 것으로 보이나 {rec_cnt}개만 인식되었습니다! 아래 목록을 확인해 주세요.'
-        else:
-            status_line = f'📦 **인식된 모드 수**: {rec_cnt}개'
+        status_line = self._review_status_line(equipped_slot_count, len(detected_mods))
 
         mod_lines = []
         if detected_mods:
@@ -1405,6 +1411,80 @@ class ScreenModAnalyzer:
         lines.append('\n💡 **인식 결과가 맞다면 아래 [✅ 인식 일치 - 데미지 계산 실행] 버튼을 눌러주십시오!**')
 
         return '\n'.join(lines)
+
+    @staticmethod
+    def _review_status_line(equipped_slot_count: int, rec_cnt: int) -> str:
+        if equipped_slot_count > 0 and rec_cnt == equipped_slot_count:
+            return f'✅ **장착 슬롯 대조 완료**: 장착 감지된 슬롯 {equipped_slot_count}개 중 {rec_cnt}개 모두 정상 인식되었습니다! (일치율 100%)'
+        if equipped_slot_count > 0:
+            return f'⚠️ **[슬롯 개수 불일치 감지]**: 슬롯에 {equipped_slot_count}개의 모드가 장착된 것으로 보이나 {rec_cnt}개만 인식되었습니다! 아래 목록을 확인해 주세요.'
+        return f'📦 **인식된 모드 수**: {rec_cnt}개'
+
+    def build_mod_review_card(self, w_meta: Dict[str, Any], mod_objs: List[Dict[str, Any]], detected_mods: List[str],
+                              equipped_slot_count: int = 0, riven_name: Optional[str] = None, status_line: Optional[str] = None) -> Dict[str, str]:
+        """Qt rich-text version of format_mod_review_briefing laid out like the in-game mod screen (2 rows x 4 slots)."""
+        esc = lambda v: html.escape(str(v), quote=False)
+        md = lambda s: re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', esc(s))
+        if status_line is None:
+            status_line = self._review_status_line(equipped_slot_count, len(detected_mods or mod_objs or []))
+
+        slots, unplaced = {}, []
+        for mod in mod_objs or []:
+            slot = canonical_slot(mod.get('slot_name'), mod)
+            if slot and slot not in slots:
+                slots[slot] = mod
+            else:
+                unplaced.append(mod)
+        label = lambda m: m.get('kr_name') or m.get('name', '')
+        extra = [label(m) for m in unplaced] if mod_objs else list(detected_mods or [])
+
+        def cell(slot_label, mod, width='25%'):
+            if mod is None:
+                body = "<span style='color:#475569;'>— 빈 슬롯 —</span>"
+                bg = '#111827'
+            elif mod.get('name') == RIVEN_MOD:
+                body = "<span style='color:#c084fc; font-weight:bold;'>🔮 리벤 모드</span>"
+                bg = '#1e1b3a'
+            else:
+                body = f"<span style='color:#e2e8f0; font-weight:bold;'>{esc(label(mod))}</span>"
+                bg = '#1e293b'
+            return (f"<td width='{width}' align='center' bgcolor='{bg}' style='background-color:{bg};'>"
+                    f"<span style='color:#64748b; font-size:10px;'>{slot_label}</span><br>{body}</td>")
+
+        top = []
+        if w_meta.get('category') == 'Melee' or 'stance' in slots:
+            top.append(cell('스탠스', slots.get('stance'), '50%'))
+        if 'exilus' in slots:
+            top.append(cell('엑실러스', slots['exilus'], '50%'))
+        table = "<table width='100%' cellspacing='4' cellpadding='6'>"
+        if top:
+            table += f"<tr><td colspan='4'><table width='100%' cellspacing='0' cellpadding='6'><tr>{''.join(top)}</tr></table></td></tr>"
+        for row in (GRID_SLOTS[:4], GRID_SLOTS[4:]):
+            table += "<tr>" + "".join(cell(f"#{slot_order(s)}", slots.get(s)) for s in row) + "</tr>"
+        table += "</table>"
+
+        name, kr_name = w_meta.get('name', ''), w_meta.get('kr_name')
+        title = f"{esc(name)} ({esc(kr_name)})" if kr_name else esc(name)
+        parts = [
+            "<p><b style='color:#D4AF37;'>🔍 [1단계: 무기 및 장착 모드 인식 검토]</b><br>",
+            f"<span style='color:#00d2ff; font-weight:bold;'>🎯 인식된 무기: {title}</span><br>{md(status_line)}</p>",
+            table,
+        ]
+        if extra:
+            parts.append(f"<p style='color:#fbbf24;'>📎 슬롯 위치 미확인: {esc(', '.join(str(e) for e in extra))}</p>")
+        if riven_name:
+            parts.append("<p style='color:#c084fc;'>🔮 <b>리벤 모드 감지됨</b>: 리벤 고유 옵션(예: 치확 150 치피 120 또는 리벤 팝업 캡처)을 입력하시면 리벤 수치까지 함께 합산됩니다.</p>")
+        parts.append("<p><b>💡 인식 결과가 맞다면 아래 [✅ 인식 일치 - 데미지 계산 실행] 버튼을 눌러주십시오!</b></p>")
+        return {'html': "".join(parts)}
+
+    def _attach_review_card(self, res: Dict[str, Any], w_meta: Dict[str, Any], mods: List[Dict[str, Any]], formatted: List[str],
+                            equipped_slot_count: int, riven_name: Optional[str], notes: str = "") -> Dict[str, Any]:
+        """notes keep text-only notices (inferred weapon, bonus element) visible under the slot table."""
+        card = self.build_mod_review_card(w_meta, mods, formatted, equipped_slot_count=equipped_slot_count, riven_name=riven_name)
+        if notes.strip():
+            card['notes'] = notes.strip()
+        res['review_card'] = card
+        return res
 
     def format_calculation_breakdown(self, w_meta: Dict[str, Any], mod_objs: List[Dict[str, Any]], metrics: Dict[str, Any], riven_stats: Optional[Dict[str, float]] = None) -> str:
         w_name = w_meta.get('name', '')
@@ -2036,6 +2116,7 @@ class ScreenModAnalyzer:
         metrics['full_stack'] = self.damage_engine.compute_full_stack(w_meta, left_stats=res.get('stats'), mod_objs=mods, arcane=arcane if arcane and arcane.get('modeled') else None)
         formatted = [f"{m.get('kr_name', m['name'])} ({m['name']})" for m in mods]
         self._attach_card(res, w_meta, formatted, metrics, self._riven_notice() if has_riven else "")
+        self._attach_review_card(res, w_meta, mods, formatted, len(formatted), '리벤 모드' if has_riven else None)
         res.update(
             mod_objs=mods,
             metrics=metrics,
