@@ -282,6 +282,8 @@ class ChatBubble(QWidget):
                     self._think_timer = QTimer(self)
                     self._think_timer.timeout.connect(lambda: (setattr(self, '_dot_step', (self._dot_step % 3) + 1), msg_lbl.setText(self._base_think_text + ' ' + '.' * self._dot_step)))
                     self._think_timer.start(350)
+                if isinstance(self.action_todo.get('diagnostic_card'), dict):
+                    self._setup_diagnostic_card(msg_lbl, bubble_col, self.action_todo['diagnostic_card'])
                 for label, callback, once in self.action_todo.get('buttons', []):
                     self._add_action_button(bubble_col, label, callback, once)
                 if self.action_todo.get('button_grid'):
@@ -313,6 +315,33 @@ class ChatBubble(QWidget):
                     riven_fn = self.action_todo['on_open_riven_dialog']
                     btn_riven.clicked.connect(riven_fn)
                     bubble_col.addWidget(btn_riven)
+
+    DETAIL_SHOW_TEXT = '▼ 상세 기믹 및 틱딜 펼치기'
+    DETAIL_HIDE_TEXT = '▲ 상세 정보 접기'
+
+    def _setup_diagnostic_card(self, msg_lbl, bubble_col, card):
+        """Dashboard summary in the bubble; the detailed mechanics fold open under it."""
+        notes = card.get('notes')
+        msg_lbl.setText(card.get('summary_html', '') + (f"<p>{render_chat_markup(notes)}</p>" if notes else ''))
+        detail = card.get('detail_html')
+        if not detail:
+            return
+        self.detail_lbl = QLabel(detail)
+        self.detail_lbl.setTextFormat(Qt.TextFormat.RichText)
+        self.detail_lbl.setWordWrap(True)
+        self.detail_lbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.detail_lbl.setStyleSheet('background-color: #111827; color: #e2e8f0; padding: 8px 12px; border: 1px solid #2a3a5a; border-radius: 10px; font-size: 12px;')
+        self.detail_lbl.hide()
+        self.btn_detail_toggle = QPushButton(self.DETAIL_SHOW_TEXT)
+        self.btn_detail_toggle.setStyleSheet('QPushButton { background: #1e293b; color: #7dd3fc; border: 1px solid #334155; padding: 6px 12px; border-radius: 6px; font-weight: bold; font-size: 11px; margin-top: 4px; } QPushButton:hover { background: #334155; }')
+        self.btn_detail_toggle.clicked.connect(self._toggle_detail)
+        bubble_col.addWidget(self.btn_detail_toggle)
+        bubble_col.addWidget(self.detail_lbl)
+
+    def _toggle_detail(self):
+        show = self.detail_lbl.isHidden()
+        self.detail_lbl.setVisible(show)
+        self.btn_detail_toggle.setText(self.DETAIL_HIDE_TEXT if show else self.DETAIL_SHOW_TEXT)
 
     def _add_action_button(self, bubble_col, label, callback, once):
         button = QPushButton(label)
@@ -1103,8 +1132,13 @@ class OrdisCompanionApp(QWidget):
         self.refresh_build_page()
         self.add_chat_bubble('세팔론 오디스', f"🗑️ {weapon} 빌드를 삭제했습니다." if deleted else "이미 삭제된 빌드입니다.", is_user=False)
 
-    def _result_action(self, res):
+    def _result_action(self, res, notes=None):
         action = {}
+        if isinstance(res.get('diagnostic_card'), dict):
+            card = dict(res['diagnostic_card'])
+            if notes:
+                card['notes'] = '\n\n'.join(n for n in (card.get('notes'), notes) if n)
+            action['diagnostic_card'] = card
         if res.get('calculation_breakdown'):
             action.update({'calculation_breakdown': res['calculation_breakdown'], 'on_show_breakdown': self.on_show_calculation_breakdown, 'breakdown_data': res})
         if res.get('has_pending_riven') or self.diagnoser.has_pending_riven():
@@ -1232,8 +1266,9 @@ class OrdisCompanionApp(QWidget):
             self._pending_mod_review = None
             # The result is out now; a later "화염 60" is chat, not an answer to this scan.
             self.diagnoser.clear_pending_bonus()
-            message = f"{res.get('message', '')}\n\n{self._save_build_message(res)}"
-            self.add_chat_bubble('세팔론 오디스', message, is_user=False, action_todo=self._result_action(res))
+            saved_note = self._save_build_message(res)
+            message = f"{res.get('message', '')}\n\n{saved_note}"
+            self.add_chat_bubble('세팔론 오디스', message, is_user=False, action_todo=self._result_action(res, notes=saved_note))
 
     def on_show_calculation_breakdown(self, breakdown_text: str, breakdown_data=None):
         if not breakdown_text and not breakdown_data:

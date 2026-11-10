@@ -6,11 +6,11 @@ from PIL import Image
 try:
     from PyQt6.QtCore import QThread
     from PyQt6.QtGui import QColor, QImage
-    from PyQt6.QtWidgets import QApplication, QLabel
+    from PyQt6.QtWidgets import QApplication, QLabel, QPushButton
 except ImportError:
     from PySide6.QtCore import QThread
     from PySide6.QtGui import QColor, QImage
-    from PySide6.QtWidgets import QApplication, QLabel
+    from PySide6.QtWidgets import QApplication, QLabel, QPushButton
 
 from scripts.desktop_companion import ChatBubble, OrdisCompanionApp, qimage_to_pil, render_chat_markup
 
@@ -121,6 +121,51 @@ def test_diagnosis_without_breakdown_but_pending_riven_does_not_crash(qapp, pane
 def test_result_action_is_none_when_nothing_to_offer(panel):
     panel.diagnoser.has_pending_riven = lambda: False
     assert panel._result_action({"message": "x"}) is None
+
+
+CARD = {"summary_html": "<b>지속 평균 DPS</b> 12,345", "detail_html": "<b>헌터 뮤니션즈 틱딜</b>"}
+
+
+def test_diagnostic_card_bubble_shows_summary_and_toggle(qapp):
+    bubble = ChatBubble("오디스", "원문 리포트", is_user=False, action_todo={"diagnostic_card": CARD})
+    assert any("지속 평균 DPS</b> 12,345" in label.text() for label in bubble.findChildren(QLabel))
+    assert bubble.detail_lbl.text() == CARD["detail_html"]
+    assert bubble.detail_lbl.isHidden()
+    assert any(b.text() == "▼ 상세 기믹 및 틱딜 펼치기" for b in bubble.findChildren(QPushButton))
+
+
+def test_diagnostic_card_toggle_flips_detail_and_label(qapp):
+    bubble = ChatBubble("오디스", "원문 리포트", is_user=False, action_todo={"diagnostic_card": CARD})
+    bubble.btn_detail_toggle.click()
+    assert not bubble.detail_lbl.isHidden()
+    assert bubble.btn_detail_toggle.text() == "▲ 상세 정보 접기"
+    bubble.btn_detail_toggle.click()
+    assert bubble.detail_lbl.isHidden()
+    assert bubble.btn_detail_toggle.text() == "▼ 상세 기믹 및 틱딜 펼치기"
+
+
+def test_result_action_passes_card_with_notes(panel):
+    panel.diagnoser.has_pending_riven = lambda: False
+    action = panel._result_action({"message": "x", "diagnostic_card": dict(CARD)}, notes="💾 저장")
+    assert action["diagnostic_card"]["summary_html"] == CARD["summary_html"]
+    assert action["diagnostic_card"]["notes"] == "💾 저장"
+    bubble = ChatBubble("오디스", "x", is_user=False, action_todo=action)
+    assert any("💾 저장" in label.text() for label in bubble.findChildren(QLabel))
+
+
+def test_build_diagnostic_card_returns_summary_and_detail(panel):
+    w_meta = {"name": "Vulkar", "kr_name": "불카", "category": "Primary"}
+    metrics = {"sustained_dps": 1234, "burst_dps": 5678, "max_crit_hit": 900, "headshot_max_crit_hit": 2700, "expected_hit": 450,
+               "min_hit": 300, "final_status": 0.25, "final_ms": 2.4, "ms_min_pellets": 2, "ms_max_pellets": 3, "ms_extra_pct": 40.0,
+               "hunter_munitions": {"bleed_tick": 321}, "radial": {"base_damage": 777},
+               "elements": {"types": {"viral": 80.0, "slash": 20.0}, "shares": {"viral": 0.8, "slash": 0.2}, "pairs": [("cold", "toxin", "viral")]}}
+    card = panel.diagnoser.build_diagnostic_card(w_meta, ["바이탈 센스 (Vital Sense)", "<x>"], metrics)
+    assert set(card) >= {"summary_html", "detail_html"}
+    assert "불카" in card["summary_html"] and "5,678" in card["summary_html"] and "2,700" in card["summary_html"]
+    assert "바이러스 80%" in card["summary_html"] and "상태이상 25.0%" in card["summary_html"]
+    assert "헌터 뮤니션즈" in card["detail_html"] and "321" in card["detail_html"]
+    assert "AoE" in card["detail_html"] and "멀티샷 구조" in card["detail_html"]
+    assert "<x>" not in card["detail_html"]
 
 
 def test_confirm_mod_review_without_breakdown_does_not_crash(panel):
