@@ -284,6 +284,10 @@ class ChatBubble(QWidget):
                     self._think_timer.start(350)
                 if isinstance(self.action_todo.get('diagnostic_card'), dict):
                     self._setup_diagnostic_card(msg_lbl, bubble_col, self.action_todo['diagnostic_card'])
+                elif isinstance(self.action_todo.get('review_card'), dict) and self.action_todo['review_card'].get('html'):
+                    review = self.action_todo['review_card']
+                    notes = review.get('notes')
+                    msg_lbl.setText(review['html'] + (f"<p>{render_chat_markup(notes)}</p>" if notes else ''))
                 for label, callback, once in self.action_todo.get('buttons', []):
                     self._add_action_button(bubble_col, label, callback, once)
                 if self.action_todo.get('button_grid'):
@@ -960,6 +964,8 @@ class OrdisCompanionApp(QWidget):
             'on_confirm': lambda r=res: self.on_confirm_mod_review(r),
             'buttons': [('✏️ 슬롯 수정', lambda r=res: self.open_build_editor(r), False)],
         }
+        if isinstance(res.get('review_card'), dict):
+            action['review_card'] = res['review_card']
         if res.get('needs_bonus_element'):
             # Most players fuse the bonus to the 60% cap; any other value is typed in chat.
             action['button_grid'] = {

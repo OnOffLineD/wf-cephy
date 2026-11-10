@@ -168,6 +168,57 @@ def test_build_diagnostic_card_returns_summary_and_detail(panel):
     assert "<x>" not in card["detail_html"]
 
 
+def test_diagnostic_card_uses_font_colour_and_separates_status_chance(panel):
+    w_meta = {"name": "Vulkar", "kr_name": "불카", "category": "Primary"}
+    metrics = {"final_status": 0.256, "elements": {"types": {"corrosive": 60.0, "slash": 28.0}, "shares": {"corrosive": 0.6, "slash": 0.28}}}
+    summary = panel.diagnoser.build_diagnostic_card(w_meta, [], metrics)["summary_html"]
+    corrosive = panel.diagnoser.ELEMENT_COLORS["corrosive"]
+    assert f"color:{corrosive}; font-weight:bold;'>부식 60%" in summary
+    assert f"background-color:{corrosive}" not in summary and "background-color:#D4AF37" not in summary
+    assert "속성 피해 점유율 (상태이상 발생 비중)" in summary
+    assert "총 상태이상 확률: 25.6%" in summary
+    # The share line and the total proc chance are different paragraphs.
+    assert summary.index("부식 60%") < summary.index("총 상태이상 확률")
+    assert "</p><p" in summary[summary.index("부식 60%"):summary.index("총 상태이상 확률")]
+
+
+def test_mod_review_card_lays_out_2x4_grid_with_empty_slots(panel):
+    w_meta = {"name": "Vulkar", "kr_name": "불카", "category": "Primary"}
+    mods = [{"name": "Serration", "kr_name": "세레이션", "slot_name": "R1_C1"},
+            {"name": "Riven Mod", "kr_name": "리벤 모드", "slot_name": "R2_C4"},
+            {"name": "Vital Sense", "kr_name": "<바이탈>"}]
+    card = panel.diagnoser.build_mod_review_card(w_meta, mods, ["a", "b", "c"], equipped_slot_count=3, riven_name="리벤 모드")
+    out = card["html"]
+    assert out.count("<tr>") >= 2 and sum(f"#{i}<" in out for i in range(1, 9)) == 8
+    assert out.count("빈 슬롯") == 6
+    assert "세레이션" in out and "리벤 모드" in out and "&lt;바이탈&gt;" in out and "<바이탈>" not in out
+    assert "스탠스" not in out
+    melee = panel.diagnoser.build_mod_review_card({"name": "Nikana", "category": "Melee"}, [], [])["html"]
+    assert "스탠스" in melee and melee.count("빈 슬롯") == 9
+
+
+def test_mod_review_bubble_renders_review_card(qapp):
+    action = {"type": "MOD_REVIEW", "review_card": {"html": "<table><tr><td>#1 세레이션</td></tr></table>", "notes": "**보너스**"}}
+    bubble = ChatBubble("오디스", "원문 검토", is_user=False, action_todo=action)
+    texts = [label.text() for label in bubble.findChildren(QLabel)]
+    assert any("#1 세레이션" in t and "<b>보너스</b>" in t for t in texts)
+    assert not any("원문 검토" in t for t in texts)
+
+
+def test_review_action_passes_review_card(panel):
+    card = {"html": "<table></table>"}
+    assert panel._review_action({"review_message": "검토", "review_card": card})["review_card"] is card
+    assert "review_card" not in panel._review_action({"review_message": "검토"})
+
+
+def test_apply_slot_edits_attaches_review_card(panel):
+    w_meta = {"name": "Braton", "kr_name": "브레이튼", "category": "Primary", "total_damage": 30.0}
+    res = {"w_meta": w_meta, "stats": {}, "metrics": {}, "mod_objs": []}
+    panel.diagnoser.apply_slot_edits(res, {"R1_C2": "Serration"})
+    assert "review_card" in res and "review_message" in res
+    assert res["review_card"]["html"].count("빈 슬롯") == 7
+
+
 def test_confirm_mod_review_without_breakdown_does_not_crash(panel):
     panel.diagnoser.has_pending_riven = lambda: True
     panel.on_confirm_mod_review({"message": "결과"})
