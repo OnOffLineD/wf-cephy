@@ -5,6 +5,7 @@ except Exception:
 
 import os
 import re
+import html
 import json
 import asyncio
 from pathlib import Path
@@ -470,6 +471,7 @@ class ScreenModAnalyzer:
             review_msg = self.format_mod_review_briefing(w_meta, formatted_mods, equipped_slot_count=slot_res.get('equipped_slot_count', 0), riven_name=riven_name)
             breakdown_msg = self.format_calculation_breakdown(w_meta, unique_mod_entries, metrics)
 
+            card_notes = ""
             if is_weapon_inferred:
                 inferred_note = (
                     "💡 **[알림: 무기명 자동 추정]** 상단 무기 이름이 잘려 있어 장착된 모드 구성을 기반으로 기본 규격 화력을 계산했습니다.\n"
@@ -477,11 +479,13 @@ class ScreenModAnalyzer:
                 )
                 briefing = inferred_note + briefing
                 review_msg = inferred_note + review_msg
+                card_notes += inferred_note
 
             self.entered_rivens.pop(w_meta['name'], None)
             if riven_name:
                 self._await_riven_values(w_meta, left_stats, unique_mod_entries, riven_name)
                 briefing += self._riven_notice()
+                card_notes += self._riven_notice()
 
             self.last_diagnosis_result = {
                 'weapon': w_meta['name'],
@@ -513,6 +517,7 @@ class ScreenModAnalyzer:
             if bonus_note:
                 result["message"] += bonus_note
                 result["review_message"] += bonus_note
+            self._attach_card(result, w_meta, formatted_mods, metrics, card_notes + bonus_note)
             if bonus_note == self._bonus_question(w_meta):
                 result["needs_bonus_element"] = True
                 self.pending_bonus = result
@@ -586,10 +591,12 @@ class ScreenModAnalyzer:
         formatted = res.get('detected_mods') or []
         has_riven = any(m.get('name') == RIVEN_MOD for m in mods)
         note = f"\n\n🧪 **[보너스 속성]** {BONUS_ELEMENTS[element]} {fraction * 100:g}%를 반영했습니다."
+        riven_notice = self._riven_notice() if self.has_pending_riven() else ""
+        self._attach_card(res, w_meta, formatted, metrics, riven_notice + note)
         res.update(
             metrics=metrics,
             needs_bonus_element=False,
-            message=self.format_ordis_briefing(w_meta, formatted, metrics) + (self._riven_notice() if self.has_pending_riven() else "") + note,
+            message=self.format_ordis_briefing(w_meta, formatted, metrics) + riven_notice + note,
             review_message=self.format_mod_review_briefing(w_meta, formatted, equipped_slot_count=res.get('equipped_slot_count', len(formatted)), riven_name='리벤 모드' if has_riven else None) + note,
             calculation_breakdown=self.format_calculation_breakdown(w_meta, mods, metrics),
         )
@@ -726,6 +733,112 @@ class ScreenModAnalyzer:
             lines.append("\n⚠️ **참고**: 좌측 패널의 총계를 읽지 못해 코덱스 수치와 인식된 모드로 추정한 값입니다. 패널을 스크롤해 총계가 보이게 다시 캡처하면 더 정확합니다.")
         lines.append(f"\n💬 **오디스의 한마디**: 오퍼레이터님, 계산을 마쳤습니다! 전장을 찢어발기십시오!")
         return "\n".join(lines)
+
+    ELEMENT_KR = {
+        'heat': '화염', 'cold': '냉기', 'electric': '전기', 'toxin': '독성',
+        'blast': '폭발', 'radiation': '방사능', 'gas': '가스', 'magnetic': '자성',
+        'viral': '바이러스', 'corrosive': '부식', 'impact': '충격', 'puncture': '관통', 'slash': '베기'
+    }
+    ELEMENT_COLORS = {
+        'heat': '#f97316', 'cold': '#38bdf8', 'electric': '#a78bfa', 'toxin': '#22c55e',
+        'blast': '#f59e0b', 'radiation': '#facc15', 'gas': '#84cc16', 'magnetic': '#818cf8',
+        'viral': '#f472b6', 'corrosive': '#a3e635', 'impact': '#94a3b8', 'puncture': '#cbd5e1', 'slash': '#f87171'
+    }
+
+    def build_diagnostic_card(self, w_meta: Dict[str, Any], detected_mods: List[str], metrics: Dict[str, Any]) -> Dict[str, str]:
+        """Qt rich-text dashboard of the same numbers as format_ordis_briefing.
+
+        summary_html: weapon badge, 2x2 key numbers and element pills. detail_html: the mechanics shown when unfolded.
+        """
+        metrics = metrics or {}
+        esc = lambda v: html.escape(str(v), quote=False)
+        md = lambda s: re.sub(r'`([^`]+)`', r"<span style='color:#7dd3fc;'>\1</span>", re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', esc(s)))
+        num = lambda v: f"<span style='color:#7dd3fc;'>{float(v or 0):,.0f}</span>"
+        is_melee = w_meta.get('category') == 'Melee'
+        name, kr_name = w_meta.get('name', ''), w_meta.get('kr_name')
+        title = f"{esc(kr_name)} <span style='color:#94a3b8;'>({esc(name)})</span>" if kr_name else esc(name)
+        badge = (f"<table width='100%' cellpadding='6' style='background-color:#0f2a3d;'><tr><td>"
+                 f"<span style='color:#00d2ff; font-weight:bold; font-size:14px;'>🎯 {title}</span>&nbsp; "
+                 f"<span style='background-color:#D4AF37; color:#0d1117; font-weight:bold;'>&nbsp;{esc(w_meta.get('category') or '무기')}&nbsp;</span>&nbsp; "
+                 f"<span style='color:#94a3b8;'>모드 {len(detected_mods or [])}개</span></td></tr></table>")
+
+        max_c = metrics.get('max_crit_hit', 0)
+        peak = ('최고점 (치명타)', max_c) if is_melee else ('헤드샷 최고점', metrics.get('headshot_max_crit_hit', max_c))
+        tiles = [('지속 평균 DPS', metrics.get('sustained_dps', 0)), ('순간 폭딜 (Burst)', metrics.get('burst_dps', 0)),
+                 peak, ('1타 평균 기대치' if is_melee else '1사격 평균 기대치', metrics.get('expected_hit', 0))]
+
+        def tile(label, value):
+            return (f"<td width='50%' style='background-color:#1e293b;'><span style='color:#94a3b8; font-size:11px;'>{label}</span><br>"
+                    f"<span style='color:#7dd3fc; font-size:17px; font-weight:bold;'>{float(value or 0):,.0f}</span></td>")
+        grid = ("<table width='100%' cellspacing='4' cellpadding='6'>"
+                + "".join(f"<tr>{tile(*tiles[i])}{tile(*tiles[i + 1])}</tr>" for i in (0, 2)) + "</table>")
+
+        el = metrics.get('elements') or {}
+        pills = [f"<span style='background-color:{self.ELEMENT_COLORS.get(t, '#64748b')}; color:#0d1117; font-weight:bold;'>"
+                 f"&nbsp;{esc(self.ELEMENT_KR.get(t, t))} {(el.get('shares') or {}).get(t, 0) * 100:.0f}%&nbsp;</span>"
+                 for t, _ in sorted((el.get('types') or {}).items(), key=lambda item: item[1], reverse=True)]
+        if 'final_status' in metrics:
+            pills.append(f"<span style='background-color:#334155; color:#e2e8f0;'>&nbsp;상태이상 {metrics['final_status'] * 100:.1f}%&nbsp;</span>")
+        summary = badge + grid + (f"<p style='margin-top:4px;'>{' '.join(pills)}</p>" if pills else "")
+        if metrics.get('incompatible_mods'):
+            summary += f"<p style='color:#fbbf24;'>⚠️ 호환 불가 모드 계산 제외: {esc(', '.join(str(n) for n in metrics['incompatible_mods']))}</p>"
+
+        sections = []
+
+        def section(heading, items):
+            sections.append(f"<p style='margin-top:6px;'><b style='color:#D4AF37;'>{heading}</b><br>" + "<br>".join(f"• {i}" for i in items) + "</p>")
+
+        section('🧩 감지된 모드/옵션', [esc(m) for m in detected_mods or []] or ['없음 (기본 순정)'])
+        hits = [f"최고점 (치명타 최고 롤): {num(max_c)}", f"평균 기대치: {num(metrics.get('expected_hit', 0))}",
+                f"최저점 (비크리 최저 보장): {num(metrics.get('min_hit', 0))}"]
+        if not is_melee:
+            hits.append(f"헤드샷 최고점: {num(peak[1])} (약점 배율 {metrics.get('wp_mult', 3.0):.2f}배 × 헤드크리 2배, 약점 치확 {metrics.get('final_cc_wp', 0.0) * 100:.0f}%)")
+        section('📊 타격 지표', hits)
+        final_ms = metrics.get('final_ms', 1.0)
+        if not is_melee and (final_ms > 1.0 or metrics.get('lock_multishot')):
+            ms = [f"총 {final_ms:.1f}발 (최소 {metrics.get('ms_min_pellets', 1)}발 확정 / {metrics.get('ms_extra_pct', 0.0):.0f}% 확률로 "
+                  f"{metrics.get('ms_max_pellets', 1)}발, 발사체당 {float(metrics.get('per_pellet_dmg', metrics.get('min_hit', 0)) or 0):,.1f} 피해)"]
+            if metrics.get('lock_multishot'):
+                ms.append('🔒 어큐이티(Acuity) 장착으로 멀티샷이 기본값으로 고정됩니다.')
+            section('💥 멀티샷 구조', ms)
+        if metrics.get('hunter_munitions'):
+            section('🩸 헌터 뮤니션즈 틱딜', [f"크리티컬 베기 틱: 틱당 약 {num(metrics['hunter_munitions'].get('bleed_tick', 0))} (방어력 100% 무시)"])
+        if metrics.get('radial'):
+            section('🔨 지면 강타 충격파 (AoE)' if is_melee else '💥 범위 폭발 피해 (AoE)', [f"단발 약 {num(metrics['radial'].get('base_damage', 0))}"])
+        if metrics.get('heavy'):
+            section('⚔️ 근접 강공격 (Heavy Attack)', [f"강공격 최고 단발: 약 {num(metrics['heavy'].get('heavy_hit', 0))}"])
+        if metrics.get('incarnon'):
+            inc = metrics['incarnon']
+            trait = self.get_incarnon_trait_description(name, inc.get('attack_meta'))
+            section('🌀 인카논 변신 폼', [f"변신 순간 폭딜: 약 {num(inc.get('burst_dps', 0))} DPS", f"단발 기대치: 약 {num(inc.get('expected_hit', 0))}", f"특성: {md(trait)}"])
+        if metrics.get('energy_disk'):
+            section('🌀 회전 에너지 디스크', [f"슬라이드 강공격 투사체 피해: 약 {num(metrics['energy_disk'].get('damage', 0))}"])
+        if metrics.get('innate'):
+            section('🧬 고유 특성', [md(line) for line in metrics['innate']])
+        if metrics.get('arcane'):
+            arc = metrics['arcane']
+            section('✨ 장착 아케인', [f"{esc(arc.get('kr_name', arc.get('name')))} ({'풀스택에 반영' if arc.get('modeled') else '효과 수치 미등록, 계산 미반영'})"])
+        fs = metrics.get('full_stack') or {}
+        if fs.get('assumptions'):
+            items = [f"순간 폭딜: 약 {num(fs.get('burst_dps', 0))} DPS"]
+            if fs.get('headshot_burst_dps'):
+                items.append(f"치명타 헤드샷 폭딜: 약 {num(fs['headshot_burst_dps'])} DPS")
+            if fs.get('heavy_hit'):
+                items.append(f"강공격 기대 단발: 약 {num(fs['heavy_hit'])}")
+            section(f"🔥 조건부 버프 풀스택 ({esc(', '.join(fs['assumptions']))})", items)
+        if el.get('pairs'):
+            section('🧪 속성 합성 (좌상단 → 우하단)', [f"{esc(self.ELEMENT_KR.get(a, a))} + {esc(self.ELEMENT_KR.get(b, b))} → <b>{esc(self.ELEMENT_KR.get(n, n))}</b>" for a, b, n in el['pairs']])
+        if not metrics.get('used_panel_total', True):
+            sections.append("<p style='color:#fbbf24;'>⚠️ 좌측 패널 총계를 읽지 못해 코덱스 수치와 인식된 모드로 추정한 값입니다.</p>")
+        return {'summary_html': summary, 'detail_html': "".join(sections)}
+
+    def _attach_card(self, res: Dict[str, Any], w_meta: Dict[str, Any], detected_mods: List[str], metrics: Dict[str, Any], notes: str = "") -> Dict[str, Any]:
+        """Stores the dashboard card; notes keep the text-only notices (riven, bonus element) visible under the card."""
+        card = self.build_diagnostic_card(w_meta, detected_mods, metrics)
+        if notes.strip():
+            card['notes'] = notes.strip()
+        res['diagnostic_card'] = card
+        return res
 
     def parse_stats(self, ocr_text: str) -> Dict[str, Any]:
             result = {
@@ -1254,7 +1367,8 @@ class ScreenModAnalyzer:
             'w_meta': w_meta_ctx,
             'mod_objs': mod_objs_ctx,
             'message': report,
-            'calculation_breakdown': breakdown_msg
+            'calculation_breakdown': breakdown_msg,
+            'diagnostic_card': self.build_diagnostic_card(w_meta_ctx, [f"{m.get('kr_name', m.get('name', ''))} ({m.get('name', '')})" for m in mod_objs_ctx], with_riven_metrics)
         }
 
     def format_mod_review_briefing(self, w_meta: Dict[str, Any], detected_mods: List[str], equipped_slot_count: int = 8, riven_name: Optional[str] = None) -> str:
@@ -1715,11 +1829,7 @@ class ScreenModAnalyzer:
             if not el or not el.get('types'):
                 return []
 
-            kr = {
-                'heat': '화염', 'cold': '냉기', 'electric': '전기', 'toxin': '독성',
-                'blast': '폭발', 'radiation': '방사능', 'gas': '가스', 'magnetic': '자성',
-                'viral': '바이러스', 'corrosive': '부식', 'impact': '충격', 'puncture': '관통', 'slash': '베기'
-            }
+            kr = self.ELEMENT_KR
             faction_kr = {
                 'grineer': '그리니어', 'corpus': '코퍼스', 'infested': '인페스티드', 'orokin': '오로킨',
                 'sentient': '센티언트', 'narmer': '나르메르', 'murmur': '머머'
@@ -1925,6 +2035,7 @@ class ScreenModAnalyzer:
         metrics['arcane'] = arcane
         metrics['full_stack'] = self.damage_engine.compute_full_stack(w_meta, left_stats=res.get('stats'), mod_objs=mods, arcane=arcane if arcane and arcane.get('modeled') else None)
         formatted = [f"{m.get('kr_name', m['name'])} ({m['name']})" for m in mods]
+        self._attach_card(res, w_meta, formatted, metrics, self._riven_notice() if has_riven else "")
         res.update(
             mod_objs=mods,
             metrics=metrics,
