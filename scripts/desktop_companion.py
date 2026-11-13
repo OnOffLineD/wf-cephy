@@ -20,7 +20,7 @@ from scripts.update_game_data import GameDataUpdater
 
 try:
     from PyQt6.QtCore import (
-        Qt, QPoint, QRect, QTimer, pyqtSignal, QEvent, QEventLoop,
+        Qt, QPoint, QRect, QRectF, QTimer, pyqtSignal, QEvent, QEventLoop,
         QPropertyAnimation, QEasingCurve, QParallelAnimationGroup
     )
     from PyQt6.QtGui import QPixmap, QIcon, QPainter, QPen, QColor, QFont, QKeySequence, QCursor
@@ -32,7 +32,7 @@ try:
     )
 except ImportError:
     from PySide6.QtCore import (
-        Qt, QPoint, QRect, QTimer, Signal as pyqtSignal, QEvent, QEventLoop,
+        Qt, QPoint, QRect, QRectF, QTimer, Signal as pyqtSignal, QEvent, QEventLoop,
         QPropertyAnimation, QEasingCurve, QParallelAnimationGroup
     )
     from PySide6.QtGui import QPixmap, QIcon, QPainter, QPen, QColor, QFont, QKeySequence, QCursor
@@ -54,8 +54,8 @@ from scripts.riven_compare_dialog import RivenCompareDialog, RivenRollEditDialog
 from scripts.build_edit_dialog import BuildEditDialog
 from scripts.build_store import GRID_SLOTS, RIVEN_MOD, is_riven_name
 from scripts.morphing_tab_bar import MorphingTabBar
-from scripts.hud_widgets import HudButton
-from scripts.persona_dialog import OrdisPersonaDialog
+from scripts.hud_widgets import HudButton, HUD_CYAN, HUD_TEXT, load_icon_pixmap, render_glyph
+from scripts.persona_dialog import OrdisPersonaDialog, EdgeMorpher, draw_capsule
 from scripts.layered_pet_renderer import LayeredPetRenderer
 from scripts.game_input_listener import GameInputListener
 
@@ -95,6 +95,61 @@ def qimage_to_pil(qimg) -> Image.Image:
         ptr.setsize(rgb.sizeInBytes())
     # Qt pads rows to 4 bytes, so widths like 1366 need the real row length.
     return Image.frombuffer('RGB', (rgb.width(), rgb.height()), bytes(ptr), 'raw', 'RGB', rgb.bytesPerLine(), 1)
+
+class MorphingContextMenu(QMenu):
+    """Rounded dark-HUD context menu with HUD icons and a vertically morphing cyan hover capsule.
+    Items are painted by hand so '&' is drawn literally instead of being eaten as a mnemonic."""
+    BG = QColor(12, 16, 23, int(0.94 * 255))
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowFlags(self.windowFlags() | Qt.WindowType.FramelessWindowHint | Qt.WindowType.NoDropShadowWindowHint)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setStyleSheet("QMenu { background: transparent; border: none; padding: 8px; font-size: 12px; }"
+                           "QMenu::item { padding: 9px 30px 9px 40px; }")
+        self.morph = EdgeMorpher(self)
+        self.hovered.connect(self._on_hovered)
+
+    def add_hud_action(self, icon_name, text):
+        act = self.addAction(text)
+        act.setData(icon_name)
+        return act
+
+    def _on_hovered(self, act):
+        if act in self.actions():
+            self.morph.morph_to(self.actions().index(act), animate=self.isVisible())
+
+    def indicator_rect(self):
+        acts = self.actions()
+        if self.morph.index < 0 or not acts:
+            return QRectF()
+        geos = [self.actionGeometry(a) for a in acts]
+        a, b = self.morph.span([(g.top(), g.bottom() + 1) for g in geos])
+        return QRectF(6.0, a, self.width() - 12.0, b - a)
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        p.setPen(QPen(HUD_CYAN, 1.2))
+        p.setBrush(self.BG)
+        p.drawRoundedRect(QRectF(self.rect()).adjusted(1, 1, -1, -1), 12, 12)
+        active = self.activeAction()
+        ind = self.indicator_rect()
+        if active is not None and not ind.isEmpty():
+            draw_capsule(p, ind)
+        p.setFont(self.font())
+        for act in self.actions():
+            r = QRectF(self.actionGeometry(act))
+            icon_rect = QRectF(r.left() + 14, r.center().y() - 8, 16, 16)
+            pix = load_icon_pixmap(act.data())
+            if pix is not None:
+                p.drawPixmap(icon_rect.toRect(), pix)
+            else:
+                render_glyph(p, act.data(), icon_rect)
+            p.setPen(QColor(255, 255, 255) if act == active else HUD_TEXT)
+            p.drawText(r.adjusted(40, 0, -8, 0), int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter), act.text())
+        p.end()
+
 
 # -------------------------------------------------------------------------
 # 1. Desktop Pet Floating Widget
@@ -176,12 +231,11 @@ class DesktopPet(QWidget):
         self.clicked.emit()
 
     def show_menu(self, pos):
-        menu = QMenu(self)
-        menu.setStyleSheet("QMenu { background: #121622; color: #fff; border: 1px solid #00d2ff; padding: 5px; } QMenu::item:selected { background: #0088cc; }")
-        open_act = menu.addAction("💬 오디스 메신저 열기")
-        persona_act = menu.addAction("⚙️ 설정 (오디스 성격 & 모델)...")
-        reset_act = menu.addAction("📍 위치 초기화")
-        exit_act = menu.addAction("❌ 종료")
+        menu = MorphingContextMenu(self)
+        open_act = menu.add_hud_action("chat", "오디스 메신저 열기")
+        persona_act = menu.add_hud_action("settings", "설정 (오디스 성격 & 모델)...")
+        reset_act = menu.add_hud_action("refresh", "위치 초기화")
+        exit_act = menu.add_hud_action("close", "종료")
 
         act = menu.exec(pos)
         if act == open_act:
