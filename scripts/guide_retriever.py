@@ -31,7 +31,9 @@ FILLER_WORDS = {
     '인데', '까는게', '지어', '사', '는법',
 }
 # Topic-free words that help ranking ("생존 미션") but should not decide whether a chunk answers.
-WEAK_WORDS = {'공략', '추천', '미션', '팁', '설명', '워프레임', '가이드', '정보', '질문', '수단', '종류', '시작', '패턴', '속성'}
+WEAK_WORDS = {'공략', '추천', '미션', '팁', '설명', '워프레임', '가이드', '정보', '질문', '수단', '종류', '시작', '패턴', '속성', '배수'}
+# "37", "2배수", "3번": numbers alone name no topic, yet match any doc quoting them (방어력 137%, 치명타 배수).
+NUMBER_WORD = re.compile(r'\d+(?:배수?|단|번|개|퍼센트)?')
 PARTICLE = re.compile(r'(한테|에게|에서|으로|이랑|부터|까지|인데|이야|은|는|이|가|을|를|에|의|로|와|과|도|만|랑|야)$')
 # These ask about the item itself, so its card outranks any guide text.
 SPEC_QUESTION = re.compile(r'스펙|공략|정보|체력|실드|방어력|에너지|치명|치확|연사|빌드|설명|어빌리티|능력|패시브')
@@ -177,7 +179,7 @@ class GuideRetriever:
             for word in self.word_aliases.get(stem, stem).split():
                 word = _strip_particle(word)
                 ordered.append(word)
-                if word not in WEAK_WORDS and len(word) >= 2 and word not in required:
+                if word not in WEAK_WORDS and len(word) >= 2 and word not in required and not NUMBER_WORD.fullmatch(word):
                     required.append(word)
         return required, ordered
 

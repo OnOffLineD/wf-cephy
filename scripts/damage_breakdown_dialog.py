@@ -144,17 +144,42 @@ def simulate_combat(base_dps, target, headshot=False, viral=False, corrosive=Fal
 
 
 # --- Option 3: build 2x4 grid, radar and weakness diagnosis ------------------
-STAT_KEYS = ("damage", "multishot", "elemental_damage", "crit_chance", "crit_damage", "fire_rate")
+STAT_KEYS = ("damage", "multishot", "elemental_damage", "crit_chance", "crit_damage", "fire_rate", "status")
 # (key, axis label, bucket value treated as the radar's outer ring)
 RADAR_AXES = [("damage", "피해", 3.0), ("multishot", "멀티샷", 2.0), ("elemental_damage", "속성", 3.6),
               ("crit_chance", "치확", 3.0), ("crit_damage", "치피", 2.5), ("fire_rate", "연사", 1.0)]
-STAT_LABELS = {k: label for k, label, _ in RADAR_AXES}
+# Melee weapons have no multishot; status and attack speed matter instead.
+MELEE_RADAR_AXES = [("damage", "피해", 3.0), ("status", "상태이상", 2.0), ("elemental_damage", "속성", 3.6),
+                    ("crit_chance", "치확", 3.0), ("crit_damage", "치피", 2.5), ("fire_rate", "공속", 1.0)]
+STAT_LABELS = dict({k: label for k, label, _ in RADAR_AXES}, status="상태이상")
+MELEE_STAT_LABELS = dict(STAT_LABELS, **{k: label for k, label, _ in MELEE_RADAR_AXES})
+# Same assumptions as WarframeDamageEngine.compute_full_stack for conditional melee mods.
+COMBO_MULT = 12.0
+STATUS_TYPES = 3
+
+
+def is_melee_weapon(w_meta):
+    return str((w_meta or {}).get("category") or "").lower() == "melee"
 
 
 def mod_stat(mod, key):
+    """Bucket value of one mod, counting conditional/stacking bonuses at their usual uptime."""
+    value = float(mod.get(key) or 0.0)
     if key == "damage":
-        return float(mod.get("damage") or mod.get("base_damage") or 0.0)
-    return float(mod.get(key) or 0.0)
+        value = float(mod.get("damage") or mod.get("base_damage") or 0.0)
+        value += float(mod.get("status_type_damage") or 0.0) * STATUS_TYPES
+    elif key == "crit_chance":
+        value += float(mod.get("combo_crit") or 0.0) * (COMBO_MULT - 1.0)
+    elif key == "status":
+        value += float(mod.get("status_chance") or 0.0) + float(mod.get("status_damage") or 0.0)
+        value += float(mod.get("combo_status") or 0.0) * (COMBO_MULT - 1.0)
+    for e in mod.get("on_kill") or []:
+        stat, total = e.get("stat"), float(e.get("value") or 0.0) * float(e.get("stacks") or 1)
+        if stat == key:
+            value += total
+        elif stat == "status_type_direct" and key == "damage":
+            value += total * STATUS_TYPES
+    return value
 
 
 def effective_mods(mod_objs, riven_stats):
@@ -177,34 +202,35 @@ def stat_totals(mods):
     return {k: sum(mod_stat(m, k) for m in mods) for k in STAT_KEYS}
 
 
-def dps_factor(totals, base_cc, base_cd):
+def dps_factor(totals, base_cc, base_cd, is_melee=False):
     cc = max(0.0, base_cc * (1.0 + totals["crit_chance"]))
     cd = max(1.0, base_cd * (1.0 + totals["crit_damage"]))
     product = 1.0 + cc * (cd - 1.0)
-    for k in ("damage", "multishot", "elemental_damage", "fire_rate"):
-        product *= max(0.1, 1.0 + totals[k])
+    keys = ("damage", "status", "elemental_damage", "fire_rate") if is_melee else ("damage", "multishot", "elemental_damage", "fire_rate")
+    for k in keys:
+        product *= max(0.1, 1.0 + totals.get(k, 0.0))
     return product
 
 
-def mod_dps_share(mod, totals, base_cc, base_cd):
+def mod_dps_share(mod, totals, base_cc, base_cd, is_melee=False):
     """Share of the build's DPS lost if this single mod were removed."""
-    full = dps_factor(totals, base_cc, base_cd)
-    without = {k: totals[k] - mod_stat(mod, k) for k in STAT_KEYS}
-    return 1.0 - dps_factor(without, base_cc, base_cd) / full if full > 0 else 0.0
+    full = dps_factor(totals, base_cc, base_cd, is_melee)
+    without = {k: totals.get(k, 0.0) - mod_stat(mod, k) for k in STAT_KEYS}
+    return 1.0 - dps_factor(without, base_cc, base_cd, is_melee) / full if full > 0 else 0.0
 
 
 def diagnose_weaknesses(totals, base_cc, is_melee=False):
     badges = []
     if totals["damage"] <= 0:
-        badges.append("기본 피해 모드 누락 — 서레이션/혼넷 스트라이크 계열 부재")
+        badges.append("기본 피해 모드 누락 — " + ("프레셔 포인트/컨디션 오버로드 계열 부재" if is_melee else "서레이션/혼넷 스트라이크 계열 부재"))
     if not is_melee and totals["multishot"] <= 0:
         badges.append("멀티샷 누락 — 분열 사격 계열 부재")
     if totals["elemental_damage"] <= 0:
         badges.append("속성 모드 누락 — 90%/60% 속성 모드 부재")
     if totals["crit_damage"] > 0 and base_cc * (1.0 + totals["crit_chance"]) < 0.25:
         badges.append("시너지 누락 — 치확 25% 미만에서 치피 투자")
-    for key, label, cap in RADAR_AXES:
-        if totals[key] > cap:
+    for key, label, cap in (MELEE_RADAR_AXES if is_melee else RADAR_AXES):
+        if totals.get(key, 0.0) > cap:
             badges.append(f"합연산 누수 — {label} 버킷 과적재 ({totals[key] * 100:+.0f}%), 다른 배수로 분산 권장")
     return badges
 
@@ -218,7 +244,9 @@ class RadarChart(QWidget):
         self.values = [0.0] * len(self.labels)
         self.setMinimumSize(200, 200)
 
-    def set_values(self, values):
+    def set_values(self, values, labels=None):
+        if labels is not None:
+            self.labels = list(labels)
         self.values = [min(1.0, max(0.0, float(v))) for v in values]
         self.update()
 
@@ -443,6 +471,8 @@ class DamageBreakdownDialog(FramelessDialog):
         base_cc, base_cd = self._crit_base()
         metrics = self.metrics or {}
         base_dps = float(metrics.get("sustained_dps") or metrics.get("burst_dps") or 0.0)
+        is_melee = is_melee_weapon(self.w_meta)
+        axes, labels = (MELEE_RADAR_AXES, MELEE_STAT_LABELS) if is_melee else (RADAR_AXES, STAT_LABELS)
 
         cells = [None] * 8
         loose = []
@@ -468,7 +498,7 @@ class DamageBreakdownDialog(FramelessDialog):
                 card.setProperty("empty", True)
                 box.addWidget(QLabel("빈 슬롯"))
             else:
-                share = mod_dps_share(m, totals, base_cc, base_cd)
+                share = mod_dps_share(m, totals, base_cc, base_cd, is_melee)
                 name = QLabel(m.get("kr_name") or m.get("name") or "?")
                 name.setWordWrap(True)
                 name.setStyleSheet("color: #facc15; font-weight: bold; border: none;")
@@ -476,17 +506,18 @@ class DamageBreakdownDialog(FramelessDialog):
                 pct.setStyleSheet("color: #00e5ff; border: none;")
                 box.addWidget(name)
                 box.addWidget(pct)
-                opts = [f"{STAT_LABELS[k]} {mod_stat(m, k) * 100:+.0f}%" for k in STAT_KEYS if mod_stat(m, k)]
+                opts = [f"{labels[k]} {mod_stat(m, k) * 100:+.0f}%" for k in STAT_KEYS
+                        if mod_stat(m, k) and not (is_melee and k == "multishot")]
                 card.setToolTip("\n".join([m.get("kr_name") or m.get("name") or "?"] + (opts or ["유틸리티 (DPS 옵션 없음)"])
                                           + [f"단독 DPS 기여도: {share * 100:+.1f}% (≈ {base_dps * share:,.0f} DPS)"]))
                 self.mod_cards.append(card)
             self.mod_grid.addWidget(card, idx // 4, idx % 4)
 
-        self.radar_values = [min(1.0, max(0.0, totals[k] / cap)) for k, _, cap in RADAR_AXES]
-        self.radar_chart.set_values(self.radar_values)
+        self.radar_values = [min(1.0, max(0.0, totals[k] / cap)) for k, _, cap in axes]
+        self.radar_chart.set_values(self.radar_values, [label for _, label, _ in axes])
 
         self.weakness_badges = []
-        issues = diagnose_weaknesses(totals, base_cc, is_melee=(self.w_meta or {}).get("category") == "Melee") if mods else []
+        issues = diagnose_weaknesses(totals, base_cc, is_melee=is_melee) if mods else []
         for text in issues or ["오디스 진단: 배수 버킷 밸런스 양호" if mods else "오디스 진단: 장착 모드 데이터 없음"]:
             badge = QLabel(("⚠ " if issues else "✔ ") + text)
             badge.setObjectName("weaknessBadge")

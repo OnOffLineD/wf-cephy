@@ -103,6 +103,33 @@ def test_mod_share_and_diagnosis_rules(qapp):
     assert any("시너지 누락" in b for b in diagnose_weaknesses(dict(full, damage=1.0, crit_chance=0.0), 0.05))
 
 
+MELEE_MODS = [
+    {"name": "Condition Overload", "kr_name": "컨디션 오버로드", "damage": 0.0, "status_type_damage": 0.8, "slot_name": "R1_C1"},
+    {"name": "Blood Rush", "kr_name": "블러드 러쉬", "crit_chance": 0.0, "combo_crit": 0.4, "slot_name": "R1_C2"},
+    {"name": "Galvanized Steel", "kr_name": "갈바나이즈드 스틸", "crit_chance": 1.1,
+     "on_kill": [{"stat": "crit_damage", "value": 0.3, "stacks": 4}], "slot_name": "R1_C3"},
+    {"name": "Galvanized Elementalist", "kr_name": "갈바나이즈드 엘리멘탈리스트", "status_damage": 0.8,
+     "on_kill": [{"stat": "status", "value": 0.3, "stacks": 4}], "slot_name": "R1_C4"},
+    {"name": "Weeping Wounds", "kr_name": "위핑 운즈", "combo_status": 0.4, "slot_name": "R2_C1"},
+]
+
+
+def test_melee_radar_drops_multishot_and_counts_conditional_mods(qapp):
+    melee = DamageBreakdownDialog(w_meta={"name": "Prisma Skana", "category": "Melee", "crit_chance": 0.2, "crit_mult": 2.0},
+                                  mod_objs=MELEE_MODS, metrics={"sustained_dps": 1000.0})
+    labels = melee.radar_chart.labels
+    assert "멀티샷" not in labels and "상태이상" in labels and "공속" in labels
+    totals = stat_totals(MELEE_MODS)
+    for mod in MELEE_MODS:
+        assert mod_dps_share(mod, totals, 0.2, 2.0, is_melee=True) > 0, mod["name"]
+    assert all("+0.0%" not in c.findChildren(QLabel)[1].text() for c in melee.mod_cards)
+    texts = [b.text() for b in melee.weakness_badges]
+    assert not any("기본 피해 모드 누락" in t or "멀티샷" in t for t in texts)
+    assert any("프레셔 포인트/컨디션 오버로드" in b for b in diagnose_weaknesses(stat_totals(MELEE_MODS[1:]), 0.2, is_melee=True))
+    lower = DamageBreakdownDialog(w_meta={"name": "Skana", "category": "melee"}, mod_objs=MELEE_MODS[:1])
+    assert "멀티샷" not in lower.radar_chart.labels
+
+
 def test_set_data_rebuilds_without_duplicates(dialog):
     dialog.set_data("x", W_META, MODS[:1], {"sustained_dps": 500.0}, None)
     assert len(dialog.mod_cards) == 1 and dialog.mod_grid.count() == 8

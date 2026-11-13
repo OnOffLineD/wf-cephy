@@ -157,13 +157,38 @@ def test_beginner_question_is_not_a_todo(orc):
     assert orc.classify_intent("초보인데 뭐부터 해야돼") == "GUIDE"
 
 
-def test_missing_data_is_said_out_loud_and_logged(orc):
+def test_missing_data_is_said_out_loud_and_not_logged(orc):
+    misses = get_user_data_path("logs", "guide-misses.jsonl")
+    before = open(misses, encoding="utf-8").read() if os.path.exists(misses) else None
     res = orc.chat("낚시 어떻게 해?")
     assert res["type"] == "GUIDE"
     assert res["report"] == orc.emotion_parser.parse(NO_DATA_REPLY)["clean_text"]
+    assert "기록해 두겠습니다" not in NO_DATA_REPLY
     orc._call_llm.assert_not_called()
-    with open(get_user_data_path("logs", "guide-misses.jsonl"), encoding="utf-8") as f:
-        assert "낚시 어떻게 해?" in f.read()
+    after = open(misses, encoding="utf-8").read() if os.path.exists(misses) else None
+    assert after == before
+    assert "낚시 어떻게 해?" not in orc.memory.get_context_for_prompt()
+
+
+def test_number_words_are_not_required_topics(retriever):
+    assert retriever._query_words("37에 2배수는?")[0] == []
+    assert retriever.retrieve("37에 2배수는?") == []
+
+
+@pytest.mark.parametrize("query, answer", [("37에 2배수는?", "74"), ("12 곱하기 3은?", "36"), ("7+5는?", "12")])
+def test_simple_math_goes_to_smalltalk_with_the_right_value(orc, query, answer):
+    assert orc.classify_intent(query) == "SMALLTALK"
+    res = orc.chat(query)
+    assert res["type"] == "SMALLTALK" and answer in res["report"]
+    orc._call_llm.assert_not_called()
+
+
+def test_model_guide_guess_without_game_ties_becomes_smalltalk(orc):
+    orc.classify_intent = lambda *_: "GUIDE"
+    orc.chat_smalltalk = MagicMock(return_value="[MOOD:happy:1] 잡담")
+    res = orc.chat("요즘 볼만한 영화 뭐 있어?")
+    assert res["type"] == "SMALLTALK"
+    orc.chat_smalltalk.assert_called_once()
 
 
 def test_drop_question_is_answered_from_the_table(orc):
