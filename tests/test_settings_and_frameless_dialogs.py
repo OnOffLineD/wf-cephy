@@ -380,3 +380,81 @@ def test_header_uses_system_move_and_card_does_not_drag(qapp, monkeypatch):
         assert dlg.result() == QDialog.DialogCode.Accepted
         assert sm.get_mode() == "caretaker"
         assert not dlg.isVisible()
+
+
+def test_settings_morphing_tab_bar_and_select_indicators(qapp):
+    from scripts.morphing_tab_bar import MorphingTabBar
+    from scripts.persona_dialog import MorphingSelectFrame, MorphingPresetFrame
+    try:
+        from PyQt6.QtCore import QAbstractAnimation, QEasingCurve
+    except ImportError:
+        from PySide6.QtCore import QAbstractAnimation, QEasingCurve
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        dlg = OrdisPersonaDialog(persona_manager=SettingsManager(config_path=os.path.join(tmpdir, "s.json")))
+        bar, tabs = dlg.morphing_tab_bar, dlg.tab_widget
+        assert isinstance(bar, MorphingTabBar)
+        assert tabs.tabBar().isHidden()
+        assert [t["text"] for t in bar.tabs] == [tabs.tabText(0), tabs.tabText(1)]
+        assert bar.active_index == tabs.currentIndex() == 0
+        bar.switch_tab(1)
+        assert tabs.currentIndex() == 1
+        tabs.setCurrentIndex(0)
+        assert bar.active_index == 0
+
+        rf = dlg.radio_frame
+        assert isinstance(rf, MorphingSelectFrame) and rf.buttons[4] is dlg.radio_custom
+        dlg.radio_caretaker.setChecked(True)
+        assert rf.morph.index == 1 and rf.morph.lo == rf.morph.hi == 1.0  # hidden -> snaps
+        assert not rf.indicator_rect().isEmpty()
+
+        dlg.show()
+        qapp.processEvents()
+        top_before = rf.indicator_rect().top()
+        dlg.radio_tactical.setChecked(True)
+        assert rf.morph.index == 3
+        # Moving down: bottom edge leads (OutCubic), top edge trails (OutQuint)
+        assert rf._anim_bot.state() == QAbstractAnimation.State.Running
+        assert rf._anim_bot.easingCurve().type() == QEasingCurve.Type.OutCubic
+        assert rf._anim_top.easingCurve().type() == QEasingCurve.Type.OutQuint
+        for anim in (rf._anim_top, rf._anim_bot):
+            anim.setCurrentTime(anim.duration())
+        assert rf.morph.lo == rf.morph.hi == 3.0
+        geo = dlg.radio_tactical.geometry()
+        ind = rf.indicator_rect()
+        assert ind.top() > top_before and ind.top() == geo.top() and ind.bottom() == geo.bottom() + 1
+        assert not rf.grab().isNull()
+
+        pb = dlg.preset_bar  # horizontal morphing capsule bar, ctx_preset_buttons dict kept
+        assert isinstance(pb, MorphingPresetFrame) and pb.buttons == list(dlg.ctx_preset_buttons.values())
+        dlg.context_size_spin.setValue(8192)
+        assert pb.morph.index == 2
+        dlg.ctx_preset_buttons[8192].click()  # re-clicking the active preset keeps it selected
+        assert dlg.ctx_preset_buttons[8192].isChecked() and pb.morph.index == 2
+        dlg.context_size_spin.setValue(3000)
+        assert pb.morph.index == -1 and pb.indicator_rect().isEmpty()
+        dlg.close()
+
+
+def test_pet_context_menu_morphing_hud(qapp, monkeypatch):
+    from scripts.desktop_companion import DesktopPet, MorphingContextMenu, QMenu, QWidget
+
+    captured = []
+    monkeypatch.setattr(MorphingContextMenu, "exec", lambda self, *a: captured.append(self))
+    owner = QWidget()  # keep the menu's parent alive
+    DesktopPet.show_menu(owner, QPoint(0, 0))  # exec() returns None -> no action taken
+    (menu,) = captured
+    assert isinstance(menu, MorphingContextMenu) and isinstance(menu, QMenu)
+    acts = menu.actions()
+    assert [a.text() for a in acts] == ["오디스 메신저 열기", "설정 (오디스 성격 & 모델)...", "위치 초기화", "종료"]
+    assert [a.data() for a in acts] == ["chat", "settings", "refresh", "close"]
+    assert "&" in acts[1].text()
+
+    menu.resize(menu.sizeHint())
+    assert menu.indicator_rect().isEmpty()
+    menu._on_hovered(acts[1])
+    assert menu.morph.index == 1
+    geo = menu.actionGeometry(acts[1])
+    ind = menu.indicator_rect()
+    assert ind.top() == geo.top() and ind.bottom() == geo.bottom() + 1
+    assert not menu.grab().isNull()

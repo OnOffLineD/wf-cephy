@@ -8,21 +8,145 @@ try:
         QVBoxLayout, QHBoxLayout, QLabel, QFrame, QApplication,
         QTabWidget, QWidget, QLineEdit, QFileDialog, QSpinBox, QComboBox, QCheckBox
     )
-    from PyQt6.QtCore import Qt, QPoint, QSize
-    from PyQt6.QtGui import QIcon, QPixmap
+    from PyQt6.QtCore import Qt, QPoint, QSize, QRectF, QVariantAnimation, QEasingCurve
+    from PyQt6.QtGui import QIcon, QPixmap, QPainter, QPen, QColor
 except ImportError:
     from PySide6.QtWidgets import (
         QDialog, QRadioButton, QButtonGroup, QTextEdit, QPushButton,
         QVBoxLayout, QHBoxLayout, QLabel, QFrame, QApplication,
         QTabWidget, QWidget, QLineEdit, QFileDialog, QSpinBox, QComboBox, QCheckBox
     )
-    from PySide6.QtCore import Qt, QPoint, QSize
-    from PySide6.QtGui import QIcon, QPixmap
+    from PySide6.QtCore import Qt, QPoint, QSize, QRectF, QVariantAnimation, QEasingCurve
+    from PySide6.QtGui import QIcon, QPixmap, QPainter, QPen, QColor
 
 from scripts.persona_manager import PersonaManager, DEFAULT_PRESETS
-from scripts.hud_widgets import load_icon_pixmap, ICON_DIR
+from scripts.hud_widgets import load_icon_pixmap, ICON_DIR, HUD_CYAN
 from scripts.path_config import get_path
 from scripts.frameless_dialog import FramelessDialog
+from scripts.morphing_tab_bar import MorphingTabBar, BAR_BG, BAR_BORDER, IND_FILL, LEAD_MS, TRAIL_MS
+
+
+class EdgeMorpher:
+    """Capsule edges (lo, hi) in item-index units, animated like MorphingTabBar:
+    the leading edge moves fast (OutCubic) and the trailing edge follows (OutQuint)."""
+
+    def __init__(self, widget):
+        self.widget = widget
+        self.index = -1
+        self.lo = self.hi = 0.0
+        self.anim_lo, self.anim_hi = self._make_anim("lo"), self._make_anim("hi")
+
+    def _make_anim(self, attr):
+        anim = QVariantAnimation(self.widget)
+
+        def _on_value(v, a=attr):
+            setattr(self, a, float(v))
+            self.widget.update()
+
+        anim.valueChanged.connect(_on_value)
+        return anim
+
+    def morph_to(self, index, animate=True):
+        prev, self.index = self.index, index
+        if index >= 0 and (prev < 0 or not animate):
+            self.anim_lo.stop()
+            self.anim_hi.stop()
+            self.lo = self.hi = float(index)
+        elif index >= 0 and index != prev:
+            lead, trail = (self.anim_hi, self.anim_lo) if index > prev else (self.anim_lo, self.anim_hi)
+            for anim, ms, curve in ((lead, LEAD_MS, QEasingCurve.Type.OutCubic),
+                                    (trail, TRAIL_MS, QEasingCurve.Type.OutQuint)):
+                anim.stop()
+                anim.setDuration(ms)
+                anim.setEasingCurve(curve)
+                anim.setStartValue(self.hi if anim is self.anim_hi else self.lo)
+                anim.setEndValue(float(index))
+                anim.start()
+        self.widget.update()
+
+    def span(self, edges):
+        """edges: [(start, end)] pixel extents per item -> interpolated (start, end) of the capsule."""
+        def at(pos, k):
+            pos = min(max(pos, 0.0), len(edges) - 1.0)
+            i = int(pos)
+            j = min(i + 1, len(edges) - 1)
+            return edges[i][k] + (edges[j][k] - edges[i][k]) * (pos - i)
+        return at(self.lo, 0), at(self.hi, 1)
+
+
+def draw_capsule(p, rect):
+    """Cyan neon capsule (same look as the MorphingTabBar indicator)."""
+    rad = min(rect.height(), rect.width()) / 2
+    p.setPen(QPen(HUD_CYAN, 1.5))
+    p.setBrush(IND_FILL)
+    p.drawRoundedRect(rect.adjusted(0.75, 0.75, -0.75, -0.75), rad, rad)
+
+
+class _MorphingButtonFrame(QFrame):
+    """Dark HUD frame painting a morphing cyan capsule behind its checked child button."""
+    VERTICAL = True
+    INSET = 4.0
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.buttons = []
+        self.morph = EdgeMorpher(self)
+
+    def add_button(self, btn):
+        self.buttons.append(btn)
+        self.layout().addWidget(btn)
+        btn.toggled.connect(self._sync)
+
+    def _sync(self, *_):
+        idx = next((i for i, b in enumerate(self.buttons) if b.isChecked()), -1)
+        self.morph.morph_to(idx, animate=self.isVisible())
+
+    def indicator_rect(self):
+        if self.morph.index < 0 or not self.buttons:
+            return QRectF()
+        geos = [b.geometry() for b in self.buttons]
+        if self.VERTICAL:
+            a, b = self.morph.span([(g.top(), g.bottom() + 1) for g in geos])
+            return QRectF(self.INSET, a, self.width() - 2 * self.INSET, b - a)
+        a, b = self.morph.span([(g.left(), g.right() + 1) for g in geos])
+        return QRectF(a, self.INSET, b - a, self.height() - 2 * self.INSET)
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        outer = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
+        rad = 10.0 if self.VERTICAL else outer.height() / 2
+        p.setPen(QPen(BAR_BORDER, 1.0))
+        p.setBrush(BAR_BG)
+        p.drawRoundedRect(outer, rad, rad)
+        ind = self.indicator_rect()
+        if not ind.isEmpty():
+            draw_capsule(p, ind)
+        p.end()
+
+
+class MorphingSelectFrame(_MorphingButtonFrame):
+    """Vertical radio list (persona modes) with a morphing selection capsule."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._anim_top, self._anim_bot = self.morph.anim_lo, self.morph.anim_hi
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(12, 6, 12, 6)
+        layout.setSpacing(4)
+
+
+class MorphingPresetFrame(_MorphingButtonFrame):
+    """Horizontal capsule bar (context presets) with a morphing selection capsule."""
+    VERTICAL = False
+    INSET = 3.0
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._anim_left, self._anim_right = self.morph.anim_lo, self.morph.anim_hi
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(3, 3, 3, 3)
+        layout.setSpacing(2)
 
 class OrdisPersonaDialog(FramelessDialog):
     """WF-Companion Settings & Cephalon Ordis Persona Customization Dialog.
@@ -87,6 +211,9 @@ class OrdisPersonaDialog(FramelessDialog):
             QRadioButton:hover {
                 color: #00e5ff;
             }
+            QRadioButton:checked {
+                color: #ffffff;
+            }
             QRadioButton::indicator {
                 width: 16px;
                 height: 16px;
@@ -146,9 +273,13 @@ class OrdisPersonaDialog(FramelessDialog):
         )
         card_layout.addWidget(header)
 
-        # 2. Tabs Widget: Tab 1 = Persona, Tab 2 = Local Model & Engine
+        # 2. Tabs Widget: Tab 1 = Persona, Tab 2 = Local Model & Engine.
+        # The native tab bar is hidden; the chat window's MorphingTabBar drives it instead.
+        self.morphing_tab_bar = MorphingTabBar(self)
+        card_layout.addWidget(self.morphing_tab_bar, alignment=Qt.AlignmentFlag.AlignHCenter)
         self.tab_widget = QTabWidget()
         self.tab_widget.setIconSize(QSize(18, 18))
+        self.tab_widget.tabBar().hide()
         card_layout.addWidget(self.tab_widget)
 
         # -------------------------------------------------------------
@@ -194,11 +325,9 @@ class OrdisPersonaDialog(FramelessDialog):
 
         pt_layout.addWidget(banner_frame)
 
-        # Radio button selection frame
-        radio_frame = QFrame()
-        radio_frame.setStyleSheet("background: rgba(18, 24, 38, 0.5); border: 1px solid #1e293b; border-radius: 10px; padding: 6px;")
-        rf_layout = QVBoxLayout(radio_frame)
-        rf_layout.setSpacing(6)
+        # Radio button selection frame (morphing cyan capsule follows the checked radio)
+        radio_frame = MorphingSelectFrame()
+        self.radio_frame = radio_frame
 
         self.btn_group = QButtonGroup(self)
         self.radio_random = QRadioButton("[랜덤 변주]  매번 3가지 성격 중 무작위 변신")
@@ -214,7 +343,7 @@ class OrdisPersonaDialog(FramelessDialog):
         self.btn_group.addButton(self.radio_custom, 4)
 
         for btn in [self.radio_random, self.radio_caretaker, self.radio_glitch, self.radio_tactical, self.radio_custom]:
-            rf_layout.addWidget(btn)
+            radio_frame.add_button(btn)
             btn.toggled.connect(self.on_mode_changed)
 
         pt_layout.addWidget(radio_frame)
@@ -325,9 +454,8 @@ class OrdisPersonaDialog(FramelessDialog):
         self.context_size_spin.setValue(self.persona_manager.get_context_size())
         self.context_size_spin.setSuffix(" 토큰")
 
-        # Quick preset buttons
-        preset_box = QHBoxLayout()
-        preset_box.setSpacing(6)
+        # Quick preset buttons inside a capsule bar with a morphing selection capsule
+        self.preset_frame = self.preset_bar = MorphingPresetFrame()
         self.ctx_preset_buttons = {}
         for val in [2048, 4096, 8192, 16384]:
             btn = QPushButton(f"{val}")
@@ -335,33 +463,25 @@ class OrdisPersonaDialog(FramelessDialog):
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             btn.setStyleSheet("""
                 QPushButton {
-                    background: #162030;
+                    background: transparent;
                     color: #94a3b8;
-                    border: 1px solid #24324d;
-                    border-radius: 10px;
+                    border: none;
                     padding: 4px 10px;
                     font-size: 11px;
                     font-weight: bold;
                 }
-                QPushButton:hover {
-                    background: #24324d;
-                    color: #00e5ff;
-                    border: 1px solid rgba(0, 229, 255, 0.45);
-                }
-                QPushButton:checked {
-                    background: rgba(0, 229, 255, 0.18);
-                    color: #00e5ff;
-                    border: 1px solid #00e5ff;
-                }
+                QPushButton:hover { color: #00e5ff; }
+                QPushButton:checked { color: #ffffff; }
             """)
-            btn.clicked.connect(lambda _, v=val: self.context_size_spin.setValue(v))
+            # Re-sync after setValue: re-clicking the active preset must not leave it unchecked.
+            btn.clicked.connect(lambda _, v=val: (self.context_size_spin.setValue(v), self._sync_ctx_presets(v)))
             self.ctx_preset_buttons[val] = btn
-            preset_box.addWidget(btn)
+            self.preset_bar.add_button(btn)
         self.context_size_spin.valueChanged.connect(self._sync_ctx_presets)
         self._sync_ctx_presets(self.context_size_spin.value())
 
         ctx_box.addWidget(self.context_size_spin)
-        ctx_box.addLayout(preset_box)
+        ctx_box.addWidget(self.preset_bar)
         mt_layout.addLayout(ctx_box)
 
         # Section 3: GPU Offload Layers
@@ -394,6 +514,13 @@ class OrdisPersonaDialog(FramelessDialog):
 
         mt_layout.addStretch()
         self.tab_widget.addTab(model_tab, self._tab_icon("model"), "로컬 모델 & 엔진")
+
+        # Two-way sync: morphing bar <-> QTabWidget (indices/icons/texts stay owned by tab_widget)
+        self.morphing_tab_bar.add_tab("성격 및 페르소나", icon_name="persona")
+        self.morphing_tab_bar.add_tab("로컬 모델 & 엔진", icon_name="model")
+        self.morphing_tab_bar.tab_changed.connect(self.tab_widget.setCurrentIndex)
+        self.tab_widget.currentChanged.connect(self._on_tab_widget_changed)
+        self.morphing_tab_bar.switch_tab(self.tab_widget.currentIndex())
 
         # -------------------------------------------------------------
         # 3. Bottom Action Buttons (Save & Apply / Cancel)
@@ -497,6 +624,10 @@ class OrdisPersonaDialog(FramelessDialog):
         h_layout.addWidget(title_lbl)
         h_layout.addStretch()
         return header, icon_lbl, title_lbl
+
+    def _on_tab_widget_changed(self, index):
+        if index != self.morphing_tab_bar.active_index:
+            self.morphing_tab_bar.switch_tab(index)
 
     def _sync_ctx_presets(self, value):
         for val, btn in self.ctx_preset_buttons.items():
