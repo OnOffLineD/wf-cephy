@@ -48,8 +48,35 @@ BUILD_LEAD_DEFAULT = "오퍼레이터님, 저장된 기록을 찾아왔습니다
 DROP_LEAD = "오퍼레이터님, 드롭 표를 확인했습니다."
 NO_DATA_REPLY = (
     "[MOOD:worried] 오퍼레이터님, 그 내용은 아직 제 공략 자료에 없습니다. "
-    "추측으로 말씀드렸다가 틀리면 전장에서 곤란해지니, 위키나 커뮤니티에서 한 번 확인해 주십시오. 답하지 못한 질문은 기록해 두겠습니다."
+    "추측으로 말씀드렸다가 틀리면 전장에서 곤란해지니, 위키나 커뮤니티에서 한 번 확인해 주십시오."
 )
+# Simple arithmetic: "37에 2배수는?", "37의 3배", "12 곱하기 3", "7+5".
+MULTIPLE_QUESTION = re.compile(r'(\d+(?:\.\d+)?)\s*(?:에|의)\s*(\d+(?:\.\d+)?)\s*배')
+ARITH_QUESTION = re.compile(r'(\d+(?:\.\d+)?)\s*(\+|-|\*|x|×|/|÷|더하기|빼기|곱하기|나누기)\s*(\d+(?:\.\d+)?)')
+ARITH_SYMBOLS = {'+': '+', '더하기': '+', '-': '-', '빼기': '-', '*': '×', 'x': '×', '×': '×', '곱하기': '×',
+                 '/': '÷', '÷': '÷', '나누기': '÷'}
+
+
+def _number_text(value: float) -> str:
+    return str(int(value)) if float(value).is_integer() else f"{value:.4f}".rstrip('0').rstrip('.')
+
+
+def simple_math_reply(text: str) -> Optional[str]:
+    """Ordis' answer to a plain arithmetic question, computed here so a small model can't get it wrong."""
+    q = text.strip().lower()
+    m = MULTIPLE_QUESTION.search(q)
+    if m:
+        a, op, b = float(m.group(1)), '×', float(m.group(2))
+    else:
+        m = ARITH_QUESTION.search(q)
+        if not m:
+            return None
+        a, op, b = float(m.group(1)), ARITH_SYMBOLS[m.group(2)], float(m.group(3))
+    expr = f"{_number_text(a)} {op} {_number_text(b)}"
+    if op == '÷' and b == 0:
+        return f"[MOOD:glitch:2] 오퍼레이터님, {expr}... 0으로 나누라니요! 연산 회로가 무한 루프에 빠질 뻔했습니다. 그건 정의되지 않습니다!"
+    result = {'+': a + b, '-': a - b, '×': a * b, '÷': a / b if b else 0.0}[op]
+    return f"[MOOD:proud:1] 오퍼레이터님, {expr} = {_number_text(result)}입니다! 세팔론 연산 회로가 눈 깜짝할 새에 계산을 마쳤습니다."
 GUIDE_MAX_CHUNKS = 3
 GUIDE_MAX_CONTEXT_CHARS = 2400
 GUIDE_MIN_RELATIVE_SCORE = 0.5
@@ -209,6 +236,11 @@ class LLMOrchestrator:
         return None
 
     def chat_smalltalk(self, user_text: str) -> str:
+            # 0. Plain arithmetic is answered exactly, even with the model offline.
+            math_reply = simple_math_reply(user_text)
+            if math_reply:
+                return math_reply
+
             # 1. Status check keywords
             status_keywords = ['작동중', '작동 중', '살아있', '켜져', '상태 어때', '오디스 상태', '너 살아', '너 작동', '시스템 상태', '함선 상태', '특이사항', '함선']
             if any(k in user_text for k in status_keywords):
@@ -358,14 +390,8 @@ class LLMOrchestrator:
         return f"{format_report(report)}\n• 스크린샷 진단에는 앱을 다시 시작하면 반영됩니다."
 
     def _log_unanswered(self, query: str):
-        """Local record of what the docs lack, so new guide cards follow real questions."""
-        try:
-            path = get_user_data_path('logs', 'guide-misses.jsonl')
-            os.makedirs(os.path.dirname(path), exist_ok=True)
-            with open(path, 'a', encoding='utf-8') as f:
-                f.write(json.dumps({'at': time.strftime('%Y-%m-%dT%H:%M:%S'), 'query': query}, ensure_ascii=False) + "\n")
-        except OSError:
-            pass
+        """Unanswered questions are no longer recorded anywhere."""
+        return None
 
     def _drop_reply(self, query: str, doc_hits: list) -> Optional[Dict[str, Any]]:
         body = self.drop_index.answer_relic(query)
@@ -472,14 +498,16 @@ class LLMOrchestrator:
                 if todo_reply:
                     return todo_reply
 
+            # Nothing ties a "GUIDE" guess to the game (no keyword, drop item or doc): Ordis just answers it.
+            if intent == 'GUIDE' and not retrieved and not self._mentions_game(q_lower):
+                intent = 'SMALLTALK'
+
             # Decision logic: Drop tables, then guide docs, then an honest "not in my data"
             if intent == 'GUIDE':
                 doc_hits = [c for c in retrieved if c.get('type') != 'weapon_spec']
                 drop_reply = self._drop_reply(user_query, doc_hits)
                 if drop_reply:
                     return drop_reply
-                if not retrieved:
-                    self._log_unanswered(user_query)
                 report = self.chat_guide(search_query)
                 res_type = 'GUIDE'
             else:
@@ -489,7 +517,9 @@ class LLMOrchestrator:
             # 6. Parse emotion tags and store clean text in memory
             parsed = self.emotion_parser.parse(report)
             clean_text = parsed.get('clean_text', report)
-            self.memory.add_turn(user_query, clean_text)
+            # An unanswered question is not remembered either.
+            if report != NO_DATA_REPLY:
+                self.memory.add_turn(user_query, clean_text)
 
             return {
                 'type': res_type,
@@ -639,6 +669,12 @@ class LLMOrchestrator:
     
         return confirmation_messages[mode]
 
+    def _names_drop_item(self, q_lower: str) -> bool:
+        return bool(DROP_QUESTION.search(q_lower) and self.drop_index.resolve_item(q_lower)[0])
+
+    def _mentions_game(self, q_lower: str) -> bool:
+        return any(kw in q_lower for kw in GUIDE_KEYWORDS) or self._names_drop_item(q_lower)
+
     def classify_intent(self, user_query: str, rag_top_score: float = 0.0) -> str:
         q_lower = user_query.strip().lower()
         if any(k in q_lower for k in SMALLTALK_ABOUT_ORDIS):
@@ -651,7 +687,11 @@ class LLMOrchestrator:
         has_guide_kw = any(kw in q_lower for kw in GUIDE_KEYWORDS)
         # Search only returns chunks that cover the question, so any score means the docs answer it.
         has_answer = rag_top_score > 0
-        names_drop_item = bool(DROP_QUESTION.search(q_lower) and self.drop_index.resolve_item(q_lower)[0])
+        names_drop_item = self._names_drop_item(q_lower)
+
+        # "37에 2배수는?" is arithmetic, not a guide question with missing docs.
+        if not (has_guide_kw or names_drop_item or has_answer) and simple_math_reply(q_lower):
+            return 'SMALLTALK'
 
         # '하이' must stand alone: it also starts names like 하이드로이드.
         is_greeting = re.search(r'(^|\s)하이($|[\s!~.,])', q_lower) is not None
