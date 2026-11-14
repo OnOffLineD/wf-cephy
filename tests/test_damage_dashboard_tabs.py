@@ -250,6 +250,25 @@ def test_spinbox_arrow_clicks_step_under_global_theme(qapp, monkeypatch):
         qapp.setStyleSheet(old_sheet)
 
 
+def test_numeric_test_row_fits_default_dialog_width(qapp):
+    dlg = DamageBreakdownDialog(breakdown_text="1. 기본", w_meta=MELEE_META, mod_objs=MELEE_MODS, metrics=MELEE_METRICS)
+    try:
+        dlg.tab_widget.setCurrentIndex(2)
+        dlg.show()
+        qapp.processEvents()
+        assert dlg.width() == 860
+        for spin in (dlg.gladiator_spin, dlg.status_types_spin):
+            assert 80 <= spin.width() <= 115, spin.width()
+        viewport = dlg.tab_widget.currentWidget().viewport()
+        for widget in (dlg.on_kill_check, dlg.reset_test_btn):
+            assert widget.isVisible()
+            for host in (dlg, viewport):  # inside the 860px window and the visible (unscrolled) tab area
+                left = widget.mapTo(host, widget.rect().topLeft()).x()
+                assert left >= 0 and left + widget.width() <= host.width(), (widget, host, left, widget.width())
+    finally:
+        dlg.close()
+
+
 def test_gladiator_spin_alone_activates_test_and_card_renders_on_top(qapp):
     dlg = DamageBreakdownDialog(breakdown_text="1. 무기 코덱스 기본 스탯\n  - 기본 피해: 18.0\n  - 치명타 확률: 20.0%\n"
                                 "  - 연사력: 1.0\n\n2. 모드 합산\n  - 서레이션: 피해 +165.0%\n  ↳ 🎯 [총합 적용치]: 피해 +165.0%\n\n"

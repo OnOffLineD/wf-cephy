@@ -98,7 +98,7 @@ QFrame#modCard[empty="true"] { border: 1px dashed #24324d; }
 QLabel#weaknessBadge { background-color: #2a1520; color: #ff8fa3; border: 1px solid #ff3366; border-radius: 9px; padding: 4px 8px; }
 QLabel#weaknessBadge[ok="true"] { background-color: #0f2a22; color: #5eead4; border: 1px solid #14b8a6; }
 QComboBox, QCheckBox { color: #e2e8f0; background-color: #161e2e; padding: 4px; }
-QSpinBox { color: #e2e8f0; background-color: #161e2e; border: 1px solid #24324d; border-radius: 4px; padding: 4px 52px 4px 8px; min-width: 96px; selection-background-color: #1e2a40; }
+QSpinBox { color: #e2e8f0; background-color: #161e2e; border: 1px solid #24324d; border-radius: 4px; padding: 4px 48px 4px 6px; min-width: 36px; max-width: 48px; selection-background-color: #1e2a40; }
 """ + BREAKDOWN_BUTTON_STYLE
 
 # --- Option 2: combat simulator model -------------------------------------
