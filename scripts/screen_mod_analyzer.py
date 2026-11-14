@@ -1487,6 +1487,8 @@ class ScreenModAnalyzer:
         return res
 
     def format_calculation_breakdown(self, w_meta: Dict[str, Any], mod_objs: List[Dict[str, Any]], metrics: Dict[str, Any], riven_stats: Optional[Dict[str, float]] = None) -> str:
+        ON_KILL_LABELS = {'damage': '피해', 'crit_chance': '치명타 확률', 'crit_damage': '치명타 피해', 'multishot': '멀티샷',
+                          'status': '상태이상 확률', 'status_chance': '상태이상 확률', 'status_type_direct': '상태이상 종류당 피해'}
         w_name = w_meta.get('name', '')
         w_kr = w_meta.get('kr_name', '')
         w_disp = f'{w_name} ({w_kr})' if w_kr else w_name
@@ -1494,6 +1496,8 @@ class ScreenModAnalyzer:
         base_cc = float(w_meta.get('crit_chance', 0.1))
         base_cd = float(w_meta.get('crit_mult', 1.5))
         base_fr = float(w_meta.get('fire_rate', 1.0))
+        base_sc = float(w_meta.get('status_chance') or w_meta.get('status') or w_meta.get('procChance') or 0.0)
+        base_sc = base_sc / 100.0 if base_sc > 1.0 else base_sc
 
         mod_dmg = 0.0
         mod_ms = 0.0
@@ -1513,6 +1517,19 @@ class ScreenModAnalyzer:
                 f"치명타 확률 +{mod.get('crit_chance', 0.0)*100:.1f}%" if mod.get('crit_chance', 0.0) != 0 else "",
                 f"치명타 피해 +{mod.get('crit_damage', 0.0)*100:.1f}%" if mod.get('crit_damage', 0.0) != 0 else "",
                 f"연사력 +{mod.get('fire_rate', 0.0)*100:.1f}%" if mod.get('fire_rate', 0.0) != 0 else ""
+            ]
+            # Conditional effects stay visible instead of collapsing into [유틸리티/효과].
+            glad = 'Gladiator' in str(mod.get('modSet') or '') or mod.get('set') == 'Gladiator' or 'gladiator' in f"{mod.get('name', '')}".lower() or '글래디에이터' in str(mod.get('kr_name') or '')
+            br = float(mod.get('combo_crit') or 0.0) - (0.10 if glad and mod.get('_set_applied') else 0.0)
+            sc = float(mod.get('status') or 0.0) + float(mod.get('status_chance') or 0.0)
+            mod_stats += [
+                f"블러드 러쉬: 연속기 배수당 치명타 확률 +{br*100:.0f}% (12x 시 +{br*1100:.0f}%)" if br > 0 else "",
+                "글래디에이터 세트: 세트 모드당 연속기 배수마다 치명타 확률 +10%" if glad else "",
+                f"위핑 운즈: 연속기 배수당 상태이상 확률 +{float(mod.get('combo_status') or 0)*100:.0f}% (12x 시 +{float(mod.get('combo_status') or 0)*1100:.0f}%)" if mod.get('combo_status') else "",
+                f"컨디션 오버로드: 적의 상태이상 종류당 피해 +{float(mod.get('status_type_damage') or 0)*100:.0f}%" if mod.get('status_type_damage') else "",
+                f"상태이상 확률 +{sc*100:.1f}%" if sc else "",
+                f"상태이상 피해 +{float(mod.get('status_damage') or 0)*100:.1f}%" if mod.get('status_damage') else "",
+                *(f"처치 시 {ON_KILL_LABELS.get(e.get('stat'), e.get('stat'))} +{float(e.get('value') or 0)*100:.0f}% (최대 {e.get('stacks', 1)}스택)" for e in mod.get('on_kill') or []),
             ]
             mod_stats = [s for s in mod_stats if s]
             if mod_stats:
@@ -1594,6 +1611,7 @@ class ScreenModAnalyzer:
             f"  - 기본 멀티샷(발사체): {base_ms:.1f}발" if not is_melee else f"  - 사거리: {w_meta.get('range', 2.5):.1f}m",
             f"  - 치명타 확률: {base_cc*100:.1f}%",
             f"  - 치명타 배수: {base_cd:.1f}",
+            f"  - 상태이상 확률: {base_sc*100:.1f}%",
             f"  - 연사력: {base_fr:.1f}",
             "",
             f"2. 인식된 모드 & 리벤 합산 수치 (대입값)",

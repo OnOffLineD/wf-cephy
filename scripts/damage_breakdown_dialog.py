@@ -7,7 +7,7 @@ try:
     from PyQt6.QtWidgets import (
         QApplication, QDialog, QVBoxLayout, QTabWidget, QTextBrowser,
         QTableWidget, QTableWidgetItem, QPushButton, QHBoxLayout, QWidget,
-        QLabel, QFrame, QGridLayout, QComboBox, QCheckBox, QScrollArea, QSizePolicy
+        QLabel, QFrame, QGridLayout, QComboBox, QCheckBox, QScrollArea, QSizePolicy, QSpinBox
     )
     from PyQt6.QtGui import QColor, QPalette, QPainter, QPen, QBrush, QPolygonF
     from PyQt6.QtCore import Qt, QPoint, QPointF
@@ -15,7 +15,7 @@ except ImportError:
     from PySide6.QtWidgets import (
         QApplication, QDialog, QVBoxLayout, QTabWidget, QTextBrowser,
         QTableWidget, QTableWidgetItem, QPushButton, QHBoxLayout, QWidget,
-        QLabel, QFrame, QGridLayout, QComboBox, QCheckBox, QScrollArea, QSizePolicy
+        QLabel, QFrame, QGridLayout, QComboBox, QCheckBox, QScrollArea, QSizePolicy, QSpinBox
     )
     from PySide6.QtGui import QColor, QPalette, QPainter, QPen, QBrush, QPolygonF
     from PySide6.QtCore import Qt, QPoint, QPointF
@@ -94,7 +94,8 @@ QFrame#modCard { background-color: #161e2e; border: 1px solid #b08d2e; border-ra
 QFrame#modCard[empty="true"] { border: 1px dashed #24324d; }
 QLabel#weaknessBadge { background-color: #2a1520; color: #ff8fa3; border: 1px solid #ff3366; border-radius: 9px; padding: 4px 8px; }
 QLabel#weaknessBadge[ok="true"] { background-color: #0f2a22; color: #5eead4; border: 1px solid #14b8a6; }
-QComboBox, QCheckBox { color: #e2e8f0; background-color: #161e2e; padding: 4px; }
+QComboBox, QCheckBox, QSpinBox { color: #e2e8f0; background-color: #161e2e; padding: 4px; }
+QSpinBox { border: 1px solid #24324d; border-radius: 4px; selection-background-color: #1e2a40; }
 """ + BREAKDOWN_BUTTON_STYLE
 
 # --- Option 2: combat simulator model -------------------------------------
@@ -151,7 +152,8 @@ RADAR_AXES = [("damage", "피해", 3.0), ("multishot", "멀티샷", 2.0), ("elem
 # Melee weapons have no multishot; status and attack speed matter instead.
 MELEE_RADAR_AXES = [("damage", "피해", 3.0), ("status", "상태이상", 2.0), ("elemental_damage", "속성", 3.6),
                     ("crit_chance", "치확", 3.0), ("crit_damage", "치피", 2.5), ("fire_rate", "공속", 1.0)]
-STAT_LABELS = dict({k: label for k, label, _ in RADAR_AXES}, status="상태이상")
+STAT_LABELS = dict({k: label for k, label, _ in RADAR_AXES}, status="상태이상", status_chance="상태이상 확률",
+                   status_type_direct="상태이상 종류당 피해")
 MELEE_STAT_LABELS = dict(STAT_LABELS, **{k: label for k, label, _ in MELEE_RADAR_AXES})
 # Same assumptions as WarframeDamageEngine.compute_full_stack for conditional melee mods.
 COMBO_MULT = 12.0
@@ -217,6 +219,131 @@ def mod_dps_share(mod, totals, base_cc, base_cd, is_melee=False):
     full = dps_factor(totals, base_cc, base_cd, is_melee)
     without = {k: totals.get(k, 0.0) - mod_stat(mod, k) for k in STAT_KEYS}
     return 1.0 - dps_factor(without, base_cc, base_cd, is_melee) / full if full > 0 else 0.0
+
+
+TABLE_KEYS = ("damage", "multishot", "elemental_damage", "crit_chance", "crit_damage", "fire_rate")
+GLADIATOR_COMBO_CRIT = 0.10
+SNIPER_MULTS = (1.0, 1.5, 2.0, 2.5, 3.0)
+
+
+def is_gladiator_mod(m):
+    name = f"{m.get('name') or ''} {m.get('kr_name') or ''}".lower()
+    return ("Gladiator" in str(m.get("modSet") or "") or m.get("set") == "Gladiator"
+            or "gladiator" in name or "글래디에이터" in name)
+
+
+def blood_rush_crit(m):
+    """combo_crit without the Gladiator set +10% that _apply_mod_sets() already folded in."""
+    cc = float(m.get("combo_crit") or 0.0)
+    if m.get("_set_applied") and is_gladiator_mod(m):
+        cc = max(0.0, cc - GLADIATOR_COMBO_CRIT)
+    return cc
+
+
+def conditional_effects(m, test=None):
+    """(active extra stats per table column, readable notes) for combo/status-type/on-kill mods."""
+    test = test or {}
+    cx = max(0.0, float(test.get("combo_mult", 1.0)) - 1.0)
+    st, on_kill = int(test.get("status_types", 0)), bool(test.get("on_kill_active"))
+    extra, notes = dict.fromkeys(TABLE_KEYS, 0.0), []
+    br, ww, co = blood_rush_crit(m), float(m.get("combo_status") or 0.0), float(m.get("status_type_damage") or 0.0)
+    if br:
+        extra["crit_chance"] += br * cx
+        notes.append(f"블러드 러쉬: 연속기당 치확 +{br * 100:g}% → +{br * cx * 100:.0f}%")
+    if is_gladiator_mod(m):
+        notes.append(f"글래디에이터 세트: 연속기당 치확 +{GLADIATOR_COMBO_CRIT * 100:g}%/세트")
+    if ww:
+        notes.append(f"위핑 운즈: 연속기당 상확 +{ww * 100:g}% → +{ww * cx * 100:.0f}%")
+    if co:
+        extra["damage"] += co * st
+        notes.append(f"컨디션 오버로드: 상태이상 종류당 피해 +{co * 100:g}% → +{co * st * 100:.0f}% ({st}종)")
+    sc, sd = float(m.get("status") or 0.0) + float(m.get("status_chance") or 0.0), float(m.get("status_damage") or 0.0)
+    if sc:
+        notes.append(f"상태이상 확률 +{sc * 100:.0f}%")
+    if sd:
+        notes.append(f"상태이상 피해 +{sd * 100:.0f}%")
+    for e in m.get("on_kill") or []:
+        stat, total = e.get("stat"), float(e.get("value") or 0.0) * float(e.get("stacks") or 1)
+        if on_kill and stat == "status_type_direct":
+            extra["damage"] += total * st
+        elif on_kill and stat in extra:
+            extra[stat] += total
+        notes.append(f"온킬 {STAT_LABELS.get(stat, stat)} +{total * 100:.0f}% ({'풀스택 적용' if on_kill else '미적용'})")
+    return extra, notes
+
+
+def compute_numeric_test(w_meta, mod_objs, metrics, riven_stats=None, *, combo_mult=1, sniper_mult=1.0,
+                         gladiator_stacks=None, status_types=0, on_kill_active=False):
+    """Re-scales the build's metrics for the conditional test knobs (combo, sniper combo, CO, galvanized)."""
+    w_meta, metrics = w_meta or {}, metrics or {}
+    mods = effective_mods(mod_objs, riven_stats)
+    combo_mult, sniper_mult = max(1.0, float(combo_mult)), max(1.0, float(sniper_mult))
+    status_types = max(0, int(status_types))
+    if gladiator_stacks is None:
+        gladiator_stacks = sum(1 for m in mods if is_gladiator_mod(m))
+    test = dict(combo_mult=combo_mult, sniper_mult=sniper_mult, gladiator_stacks=int(gladiator_stacks),
+                status_types=status_types, on_kill_active=bool(on_kill_active))
+    test["is_test_active"] = combo_mult != 1 or sniper_mult != 1.0 or status_types != 0 or bool(on_kill_active)
+    cx = combo_mult - 1.0
+
+    base_cc = float(w_meta.get("crit_chance", 0.1) or 0.0)
+    base_cc = base_cc / 100.0 if base_cc > 1.0 else base_cc
+    base_cd = float(w_meta.get("crit_mult", 1.5) or 1.5)
+    base_sc = float(w_meta.get("status_chance") or w_meta.get("status") or w_meta.get("procChance") or 0.0)
+    base_sc = base_sc / 100.0 if base_sc > 1.0 else base_sc
+    flat = {k: sum(float(m.get(k) or (m.get("base_damage") if k == "damage" else 0.0) or 0.0) for m in mods) for k in TABLE_KEYS}
+    extra = dict.fromkeys(TABLE_KEYS, 0.0)
+    for m in mods:
+        for k, v in conditional_effects(m, test)[0].items():
+            extra[k] += v
+    br_cc = sum(blood_rush_crit(m) for m in mods) * cx
+    glad_cc = GLADIATOR_COMBO_CRIT * test["gladiator_stacks"] * cx
+    on_kill = [e for m in mods for e in (m.get("on_kill") or [])] if on_kill_active else []
+    ok_sc = sum(float(e.get("value") or 0.0) * float(e.get("stacks") or 1) for e in on_kill if e.get("stat") in ("status", "status_chance"))
+    flat_sc = sum(float(m.get("status") or 0.0) + float(m.get("status_chance") or 0.0) for m in mods)
+    ww_sc = sum(float(m.get("combo_status") or 0.0) for m in mods) * cx
+
+    cc0, cd0 = max(0.0, base_cc * (1.0 + flat["crit_chance"])), max(1.0, base_cd * (1.0 + flat["crit_damage"]))
+    cc1 = max(0.0, base_cc * (1.0 + flat["crit_chance"] + extra["crit_chance"] + glad_cc))
+    cd1 = max(1.0, base_cd * (1.0 + flat["crit_damage"] + extra["crit_damage"]))
+    dmg_ratio = max(0.1, 1.0 + flat["damage"] + extra["damage"]) / max(0.1, 1.0 + flat["damage"])
+    ms_ratio = max(0.1, 1.0 + flat["multishot"] + extra["multishot"]) / max(0.1, 1.0 + flat["multishot"])
+    fr_ratio = max(0.1, 1.0 + flat["fire_rate"] + extra["fire_rate"]) / max(0.1, 1.0 + flat["fire_rate"])
+    hit_ratio = dmg_ratio * ms_ratio * sniper_mult
+    dps_ratio = hit_ratio * fr_ratio * (1.0 + cc1 * (cd1 - 1.0)) / (1.0 + cc0 * (cd0 - 1.0))
+    test.update(base_crit_chance=base_cc, final_crit_chance=cc1, br_cc_bonus=br_cc, glad_cc_bonus=glad_cc,
+                base_status_chance=base_sc, final_status_chance=base_sc * (1.0 + flat_sc + ww_sc + ok_sc),
+                ww_sc_bonus=ww_sc, on_kill_sc=ok_sc, final_crit_mult=cd1, co_damage_bonus=extra["damage"],
+                damage_bonus_total=flat["damage"] + extra["damage"], dps_ratio=dps_ratio, extra=extra)
+
+    scaled = dict(metrics)
+
+    def tier(level, cd):  # crit tier multiplier, as min_crit/max_crit in WarframeDamageEngine
+        return 1.0 + int(level) * (cd - 1.0)
+    if test["is_test_active"]:
+        for key, ratio in (("sustained_dps", dps_ratio), ("burst_dps", dps_ratio),
+                           ("max_crit_hit", hit_ratio * tier(math.ceil(cc1), cd1) / tier(math.ceil(cc0), cd0)),
+                           ("min_hit", hit_ratio * tier(int(cc1), cd1) / tier(int(cc0), cd0))):
+            if isinstance(metrics.get(key), (int, float)):
+                scaled[key] = metrics[key] * ratio
+    test["metrics"] = scaled
+    test.update(expected_dps=scaled.get("sustained_dps"), burst_dps=scaled.get("burst_dps"),
+                peak=scaled.get("max_crit_hit"), trough=scaled.get("min_hit"))
+    test["summary"] = ("🧪 테스트 OFF — 원본 수치 표시 중" if not test["is_test_active"] else
+                       f"🧪 연속기 {combo_mult:g}x · 저격 {sniper_mult:.1f}x · 치확 {cc0 * 100:.1f}%→{cc1 * 100:.1f}% · "
+                       f"상확 {base_sc * (1 + flat_sc) * 100:.1f}%→{test['final_status_chance'] * 100:.1f}% · "
+                       f"CO +{extra['damage'] * 100:.0f}% · DPS x{dps_ratio:.2f}")
+    test["breakdown_text"] = "\n".join([
+        "🧪 조건부 수치 테스트 (실시간 반영)",
+        f"• 치명타 확률 = {base_cc * 100:.1f}% × (1 + 모드 {flat['crit_chance'] * 100:+.0f}% + 블러드 러쉬 {br_cc * 100:+.0f}%"
+        f" + 글래디에이터 {test['gladiator_stacks']}세트 {glad_cc * 100:+.0f}%"
+        f" + 온킬 {(extra['crit_chance'] - br_cc) * 100:+.0f}%) = {cc1 * 100:.1f}%",
+        f"• 상태이상 확률 = {base_sc * 100:.1f}% × (1 + 모드 {flat_sc * 100:+.0f}% + 위핑 운즈 {ww_sc * 100:+.0f}%"
+        f" + 온킬 {ok_sc * 100:+.0f}%) = {test['final_status_chance'] * 100:.1f}%",
+        f"• 피해 보너스 = 모드 {flat['damage'] * 100:+.0f}% + 조건부(CO {status_types}종/온킬) {extra['damage'] * 100:+.0f}%",
+        f"• 저격총 연속 적중 배수 x{sniper_mult:.1f} · 연속기 x{combo_mult:g} → DPS 배율 x{dps_ratio:.2f}",
+    ]) if test["is_test_active"] else ""
+    return test
 
 
 def diagnose_weaknesses(totals, base_cc, is_melee=False):
@@ -345,6 +472,36 @@ class DamageBreakdownDialog(FramelessDialog):
         steps_page = QWidget()
         steps_layout = QVBoxLayout(steps_page)
         steps_layout.setContentsMargins(4, 4, 4, 4)
+        test_row = QHBoxLayout()
+        self.combo_mult_combo = QComboBox()
+        self.combo_mult_combo.addItems([f"{i}x" for i in range(1, 13)])
+        self.sniper_mult_combo = QComboBox()
+        self.sniper_mult_combo.addItems([f"{v:.1f}x" for v in SNIPER_MULTS])
+        self.gladiator_spin, self.status_types_spin = QSpinBox(), QSpinBox()
+        self.gladiator_spin.setRange(0, 6)
+        self.status_types_spin.setRange(0, 10)
+        self.on_kill_check = QCheckBox("갈바나이즈드 풀스택")
+        self.reset_test_btn = QPushButton("초기화")
+        self.reset_test_btn.setStyleSheet(BREAKDOWN_BUTTON_STYLE)
+        for title, widget in (("연속기", self.combo_mult_combo), ("저격총", self.sniper_mult_combo),
+                              ("글래디에이터", self.gladiator_spin), ("상태이상 종류", self.status_types_spin)):
+            test_row.addWidget(QLabel(title))
+            test_row.addWidget(widget)
+        test_row.addWidget(self.on_kill_check)
+        test_row.addWidget(self.reset_test_btn)
+        steps_layout.addLayout(test_row)
+        self.test_summary_label = QLabel()
+        self.test_summary_label.setWordWrap(True)
+        self.test_summary_label.setStyleSheet("color: #facc15;")
+        steps_layout.addWidget(self.test_summary_label)
+        self.combo_mult_combo.currentIndexChanged.connect(self._on_numeric_test_changed)
+        self.sniper_mult_combo.currentIndexChanged.connect(self._on_numeric_test_changed)
+        self.gladiator_spin.valueChanged.connect(self._on_numeric_test_changed)
+        self.status_types_spin.valueChanged.connect(self._on_numeric_test_changed)
+        self.on_kill_check.toggled.connect(self._on_numeric_test_changed)
+        self.reset_test_btn.clicked.connect(self.reset_numeric_test)
+        self._sync_gladiator_spin()
+        self._compute_test()
         self.text_browser = QTextBrowser()
         self.text_browser.setHtml(self.generate_html_content())
         steps_layout.addWidget(self.text_browser, 3)
@@ -373,7 +530,47 @@ class DamageBreakdownDialog(FramelessDialog):
 
         layout.addLayout(button_layout)
         self.setLayout(layout)
+        self.test_summary_label.setText(self.test_result["summary"])
         self.refresh_dashboard()
+
+    def _sync_gladiator_spin(self):
+        """Default the Gladiator spin to the number of equipped Gladiator set mods."""
+        count = sum(1 for m in effective_mods(self.mod_objs, self.riven_stats) if is_gladiator_mod(m))
+        self.gladiator_spin.blockSignals(True)
+        self.gladiator_spin.setValue(min(6, count))
+        self.gladiator_spin.blockSignals(False)
+
+    def _compute_test(self):
+        self.test_result = compute_numeric_test(
+            self.w_meta, self.mod_objs, self.metrics, self.riven_stats,
+            combo_mult=self.combo_mult_combo.currentIndex() + 1,
+            sniper_mult=SNIPER_MULTS[max(0, self.sniper_mult_combo.currentIndex())],
+            gladiator_stacks=self.gladiator_spin.value(), status_types=self.status_types_spin.value(),
+            on_kill_active=self.on_kill_check.isChecked())
+        return self.test_result
+
+    def _display_metrics(self):
+        test = getattr(self, "test_result", None)
+        return test["metrics"] if test and test["is_test_active"] else (self.metrics or {})
+
+    def _on_numeric_test_changed(self, *_):
+        self.test_summary_label.setText(self._compute_test()["summary"])
+        self.text_browser.setHtml(self.generate_html_content())
+        self.populate_table()
+        self.refresh_dashboard()
+
+    def reset_numeric_test(self):
+        controls = (self.combo_mult_combo, self.sniper_mult_combo, self.status_types_spin, self.on_kill_check)
+        for w in controls:
+            w.blockSignals(True)
+        self.combo_mult_combo.setCurrentIndex(0)
+        self.sniper_mult_combo.setCurrentIndex(0)
+        self.status_types_spin.setValue(0)
+        self.on_kill_check.setChecked(False)
+        for w in controls:
+            w.blockSignals(False)
+        self._sync_gladiator_spin()
+        self._on_numeric_test_changed()
 
     def _scroll_page(self, page):
         page.setObjectName("dashPage")
@@ -438,7 +635,7 @@ class DamageBreakdownDialog(FramelessDialog):
         return base_cc, float(w_meta.get("crit_mult", 1.5) or 1.5)
 
     def refresh_dashboard(self):
-        metrics = self.metrics or {}
+        metrics = self._display_metrics()
         values = {"expected_dps": metrics.get("sustained_dps"), "burst_dps": metrics.get("burst_dps"),
                   "peak": metrics.get("max_crit_hit"), "trough": metrics.get("min_hit")}
         for key, lbl in self.kpi_labels.items():
@@ -448,13 +645,15 @@ class DamageBreakdownDialog(FramelessDialog):
         self.update_simulation()
 
     def update_simulation(self, *_):
-        metrics = self.metrics or {}
+        metrics, test = self._display_metrics(), getattr(self, "test_result", None) or {}
         base_dps = metrics.get("sustained_dps") or metrics.get("burst_dps") or 0.0
         mods = effective_mods(self.mod_objs, self.riven_stats)
         target = SIM_TARGETS[max(0, self.target_combo.currentIndex())]
+        bonus = test["damage_bonus_total"] if test.get("is_test_active") else stat_totals(mods)["damage"]
         sim = simulate_combat(base_dps, target, headshot=self.headshot_check.isChecked(),
                               viral=self.viral_check.isChecked(), corrosive=self.corrosive_check.isChecked(),
-                              arcane=self.arcane_check.isChecked(), damage_bonus=stat_totals(mods)["damage"])
+                              arcane=self.arcane_check.isChecked(), damage_bonus=bonus)
+        sim["damage_bonus"] = bonus
         self.last_simulation = sim
         self.sim_dps_label.setText(f"실효 DPS: {sim['effective_dps']:,.0f}")
         ttk = sim["ttk"]
@@ -528,6 +727,9 @@ class DamageBreakdownDialog(FramelessDialog):
 
     def generate_html_content(self):
         text = getattr(self, 'breakdown_text', '') or ''
+        test = getattr(self, 'test_result', None)
+        if test and test.get('is_test_active'):
+            text = f"{text}\n{test['breakdown_text']}".strip()
         if not text:
             return """
             <html>
@@ -596,18 +798,20 @@ class DamageBreakdownDialog(FramelessDialog):
         total_crit_chance = 0
         total_crit_damage = 0
         total_fire_rate = 0
+        test = getattr(self, 'test_result', None) or {}
 
         for m in self.mod_objs or []:
             # The riven's values get their own row below; this is only its slot marker.
             if self.riven_stats and m.get('name') == 'Riven Mod':
                 continue
             mod_name = m.get('kr_name') or m.get('name')
-            damage = float(m.get('damage') or 0.0)
-            multishot = float(m.get('multishot') or 0.0)
-            elemental_damage = float(m.get('elemental_damage') or 0.0)
-            crit_chance = float(m.get('crit_chance') or 0.0)
-            crit_damage = float(m.get('crit_damage') or 0.0)
-            fire_rate = float(m.get('fire_rate') or 0.0)
+            extra, cond_notes = conditional_effects(m, test)
+            damage = float(m.get('damage') or 0.0) + extra['damage']
+            multishot = float(m.get('multishot') or 0.0) + extra['multishot']
+            elemental_damage = float(m.get('elemental_damage') or 0.0) + extra['elemental_damage']
+            crit_chance = float(m.get('crit_chance') or 0.0) + extra['crit_chance']
+            crit_damage = float(m.get('crit_damage') or 0.0) + extra['crit_damage']
+            fire_rate = float(m.get('fire_rate') or 0.0) + extra['fire_rate']
 
             total_damage += damage
             total_multishot += multishot
@@ -618,6 +822,8 @@ class DamageBreakdownDialog(FramelessDialog):
 
             is_zero = not any([damage, multishot, elemental_damage, crit_chance, crit_damage, fire_rate])
             note = "[스탠스]" if "stance" in str(m.get("type", "")).lower() else ("[유틸리티]" if is_zero else "-")
+            if cond_notes:
+                note = " / ".join(cond_notes)
 
             row_data = [
                 mod_name,
@@ -650,6 +856,12 @@ class DamageBreakdownDialog(FramelessDialog):
                 percent(riven.get('fire_rate', 0.0)),
                 "고유 롤 옵션 합산"
             ])
+
+        glad_cc = test.get('glad_cc_bonus', 0.0) if test.get('is_test_active') else 0.0
+        if glad_cc:
+            total_crit_chance += glad_cc
+            data.append(["글래디에이터 세트", "-", "-", "-", percent(glad_cc), "-", "-",
+                         f"{test['gladiator_stacks']}세트 × 10% × 연속기 {test['combo_mult'] - 1:g}"])
 
         summary_row = [
             "🎯 총합 적용치",
@@ -709,9 +921,8 @@ class DamageBreakdownDialog(FramelessDialog):
         if w_meta:
             self.setWindowTitle(f"Warframe Damage Breakdown - {w_meta.get('name', 'Unknown Weapon')}")
 
-        self.text_browser.setHtml(self.generate_html_content())
-        self.populate_table()
-        self.refresh_dashboard()
+        self._sync_gladiator_spin()
+        self._on_numeric_test_changed()
 
 
 if __name__ == "__main__":
