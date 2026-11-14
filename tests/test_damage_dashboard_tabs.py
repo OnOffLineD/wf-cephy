@@ -212,6 +212,62 @@ def test_sniper_multiplier_doubles_kpis_and_simulator(dialog):
     assert dialog.kpi_labels["expected_dps"].text() == "12,000"
 
 
+def test_spinbox_arrow_clicks_step_under_global_theme(qapp, monkeypatch):
+    try:
+        from PyQt6.QtTest import QTest
+        from PyQt6.QtWidgets import QStyle, QStyleOptionSpinBox
+    except ImportError:
+        from PySide6.QtTest import QTest
+        from PySide6.QtWidgets import QStyle, QStyleOptionSpinBox
+    from scripts.desktop_companion import OrdisCompanionApp
+    monkeypatch.setattr(OrdisCompanionApp, "refresh_world_events", lambda self: None)
+    panel, old_sheet = OrdisCompanionApp(), qapp.styleSheet()
+    try:
+        import qdarktheme
+        qapp.setStyleSheet(qdarktheme.load_stylesheet())
+    except Exception:
+        pass  # theme package optional; the companion app's own widgets are still alive
+    dlg = DamageBreakdownDialog(breakdown_text="1. 기본", w_meta=MELEE_META, mod_objs=MELEE_MODS, metrics=MELEE_METRICS)
+    try:
+        dlg.tab_widget.setCurrentIndex(2)
+        dlg.show()
+        qapp.processEvents()
+        for spin, covered in ((s, c) for s in (dlg.gladiator_spin, dlg.status_types_spin) for c in (False, True)):
+            spin.setValue(2)
+            if covered:  # a theme stretching the inner QLineEdit over the arrow buttons
+                spin.lineEdit().setGeometry(spin.rect())
+            for sub, delta in ((QStyle.SubControl.SC_SpinBoxUp, 1), (QStyle.SubControl.SC_SpinBoxDown, -1)):
+                opt = QStyleOptionSpinBox()
+                spin.initStyleOption(opt)
+                center = spin.style().subControlRect(QStyle.ComplexControl.CC_SpinBox, opt, sub, spin).center()
+                target = spin.childAt(center) or spin
+                before = spin.value()
+                QTest.mouseClick(target, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, target.mapFrom(spin, center))
+                assert spin.value() == before + delta, (spin, sub)
+    finally:
+        dlg.close()
+        panel.close()
+        qapp.setStyleSheet(old_sheet)
+
+
+def test_gladiator_spin_alone_activates_test_and_card_renders_on_top(qapp):
+    dlg = DamageBreakdownDialog(breakdown_text="1. 무기 코덱스 기본 스탯\n  - 기본 피해: 18.0\n  - 치명타 확률: 20.0%\n"
+                                "  - 연사력: 1.0\n\n2. 모드 합산\n  - 서레이션: 피해 +165.0%\n  ↳ 🎯 [총합 적용치]: 피해 +165.0%\n\n"
+                                "3. 단계별 공식\n  ① 근접 타격 판정 = 1,000.0;",
+                                w_meta=MELEE_META, mod_objs=MELEE_MODS + [GLADIATOR_VICE], metrics=MELEE_METRICS)
+    assert dlg.test_result["is_test_active"] is False and "조건부" not in dlg.text_browser.toPlainText()
+    base_tip = dlg.test_summary_label.text()
+    dlg.gladiator_spin.setValue(3)
+    assert dlg.test_result["is_test_active"] is True and dlg.test_summary_label.text() != base_tip
+    plain = dlg.text_browser.toPlainText()
+    assert "조건부 수치 테스트" in plain and plain.index("조건부 수치 테스트") < plain.index("1.")
+    assert "12x 기준 예상 치확" in plain and "기본 피해" in plain and "1,000.0" in plain
+    page = dlg.generate_html_content()
+    assert "<table" in page and "#00d2ff" in page and "#4ade80" in page
+    dlg.reset_numeric_test()
+    assert dlg.test_result["is_test_active"] is False and dlg.gladiator_spin.value() == 1
+
+
 def test_breakdown_text_shows_conditional_mod_effects():
     from scripts.screen_mod_analyzer import ScreenModAnalyzer
     text = ScreenModAnalyzer.format_calculation_breakdown(None, MELEE_META, MELEE_MODS + [GLADIATOR_VICE], {})
