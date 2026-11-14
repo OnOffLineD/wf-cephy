@@ -209,6 +209,37 @@ def test_eye_offset_clamped_to_face_ellipse_and_renders():
     assert renderer.eye_offset_x != 0.0
     assert not renderer.grab().isNull()
 
+def test_face_features_move_together_and_centered_without_overlap():
+    from scripts.layered_pet_renderer import QPointF
+    app, renderer = _make_renderer()
+    assert renderer.FACE_BASE_OFFSET_X == 2.0
+    assert renderer.BROW_BASE_OFFSET_Y < 0
+    assert renderer.MOUTH_BASE_OFFSET_Y > 0
+    # At rest the face is shifted right onto the visor center
+    assert renderer._face_feature_offset() == (renderer.FACE_BASE_OFFSET_X, 0.0)
+    fx, fy = _face_center(renderer)
+    renderer.set_mood("happy", vfx="blush")
+    for dx, dy in ((0, 0), (120, 80), (-90, 40), (60, -100), (-5000, -5000)):
+        renderer.update_eye_target(QPointF(fx + dx, fy + dy), is_local=True)
+        for _ in range(40):
+            renderer._step_motion()
+        ex, ey = renderer._face_feature_offset("eye")
+        bx, by = renderer._face_feature_offset("brow")
+        mx, my = renderer._face_feature_offset("mouth")
+        assert renderer._face_feature_offset("blush") == (ex, ey)
+        # All features shift identically by the gaze offset (1:1, no 0.35 lag)
+        assert ex == pytest.approx(renderer.FACE_BASE_OFFSET_X + renderer.eye_offset_x)
+        assert ey == pytest.approx(renderer.eye_offset_y)
+        # Vertical spacing between features is invariant -> no overlap
+        assert (bx - ex, by - ey) == pytest.approx((0.0, renderer.BROW_BASE_OFFSET_Y))
+        assert (mx - ex, my - ey) == pytest.approx((0.0, renderer.MOUTH_BASE_OFFSET_Y))
+        assert not renderer.grab().isNull()
+    # Procedural chibi fallback with the whole face translated
+    renderer.has_layers = False
+    renderer.asset_dir = os.path.join(renderer.asset_dir, "__missing__")
+    renderer._cache.clear()
+    assert not renderer.grab().isNull()
+
 def test_desktop_pet_layered_renderer_integration():
     os.environ["QT_QPA_PLATFORM"] = "offscreen"
     try:

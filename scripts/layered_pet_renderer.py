@@ -25,6 +25,10 @@ class LayeredPetRenderer(QWidget):
     MAX_EYE_OFFSET_Y = 3.0
     EYE_LERP_FACTOR = 0.18
     EYE_RESPONSE_RADIUS = 140.0
+    # Face features move as one unit with the gaze; base offsets center them on the visor
+    FACE_BASE_OFFSET_X = 2.0
+    BROW_BASE_OFFSET_Y = -3.5
+    MOUTH_BASE_OFFSET_Y = 1.0
 
     def __init__(self, asset_dir: Optional[str] = None, parent=None):
         super().__init__(parent)
@@ -111,6 +115,16 @@ class LayeredPetRenderer(QWidget):
         if norm > 1.0:
             dx, dy = dx / norm, dy / norm
         return max(-mx, min(mx, dx)), max(-my, min(my, dy))
+
+    def _face_feature_offset(self, part: str = "eye") -> Tuple[float, float]:
+        """Shared gaze translation for a face part ('eye', 'brow', 'mouth', 'blush')."""
+        fx = self.FACE_BASE_OFFSET_X + self.eye_offset_x
+        fy = self.eye_offset_y
+        if part == "brow":
+            return fx, fy + self.BROW_BASE_OFFSET_Y
+        if part == "mouth":
+            return fx, fy + self.MOUTH_BASE_OFFSET_Y
+        return fx, fy
 
     def _compute_eye_target(self, local_pos) -> Tuple[float, float]:
         """Map a widget-local cursor position to an eye offset inside the face ellipse."""
@@ -378,17 +392,17 @@ class LayeredPetRenderer(QWidget):
                 eye_pix = self._load_layer_pixmap("eyes", f"eye_{eye_mood}.png") or self._load_layer_pixmap("eyes", "eye_idle.png")
             if eye_pix:
                 painter.save()
-                painter.translate(self.eye_offset_x, self.eye_offset_y)
+                painter.translate(*self._face_feature_offset("eye"))
                 painter.drawPixmap(target_rect, eye_pix)
                 painter.restore()
                 drawn_any = True
 
-            # Layer C: Brows (subtly follow the gaze)
+            # Layer C: Brows (move 1:1 with the gaze, lifted above the eyes)
             brow_mood = self.secondary_mood or self.mood
             brow_pix = self._load_layer_pixmap("brows", f"brow_{brow_mood}.png") or self._load_layer_pixmap("brows", "brow_idle.png")
             if brow_pix:
                 painter.save()
-                painter.translate(self.eye_offset_x * 0.35, self.eye_offset_y * 0.35)
+                painter.translate(*self._face_feature_offset("brow"))
                 painter.drawPixmap(target_rect, brow_pix)
                 painter.restore()
                 drawn_any = True
@@ -401,7 +415,10 @@ class LayeredPetRenderer(QWidget):
             else:
                 mouth_pix = self._load_layer_pixmap("mouth", f"mouth_{self.mood}.png") or self._load_layer_pixmap("mouth", "mouth_idle.png")
             if mouth_pix:
+                painter.save()
+                painter.translate(*self._face_feature_offset("mouth"))
                 painter.drawPixmap(target_rect, mouth_pix)
+                painter.restore()
                 drawn_any = True
 
         painter.restore()
@@ -423,7 +440,11 @@ class LayeredPetRenderer(QWidget):
             if vfx_name:
                 vfx_pix = self._load_layer_pixmap("vfx", f"vfx_{vfx_name}.png")
                 if vfx_pix:
+                    painter.save()
+                    if vfx_name == "blush":
+                        painter.translate(*self._face_feature_offset("blush"))
                     painter.drawPixmap(target_rect, vfx_pix)
+                    painter.restore()
                     drawn_any = True
 
         # 3. Single Image Fallback (e.g. idle.png, glitch.png)
@@ -503,9 +524,9 @@ class LayeredPetRenderer(QWidget):
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(QBrush(glow_color))
 
-        # Gaze offset applies only to the eyes; restored before mouth/VFX
+        # Gaze offset moves the whole face (eyes + mouth + blush) as one unit
         p.save()
-        p.translate(self.eye_offset_x, self.eye_offset_y)
+        p.translate(*self._face_feature_offset("eye"))
         if self.is_blinking:
             # Closed line eyes
             p.setPen(QPen(glow_color, 2.5))
@@ -525,7 +546,6 @@ class LayeredPetRenderer(QWidget):
             # Round open eyes
             p.drawEllipse(cx - eye_spacing - 5, eye_y - 5, 10, 10)
             p.drawEllipse(cx + eye_spacing - 5, eye_y - 5, 10, 10)
-        p.restore()
 
         # Mouth (reacts to is_talking)
         mouth_y = cy + 16
@@ -557,3 +577,4 @@ class LayeredPetRenderer(QWidget):
             p.setPen(QPen(QColor(100, 200, 255), 1.5))
             p.setBrush(QBrush(QColor(100, 220, 255, 160)))
             p.drawEllipse(cx + r - 12, cy - r + 8, 5, 8)
+        p.restore()
