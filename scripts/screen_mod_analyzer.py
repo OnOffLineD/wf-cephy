@@ -1496,7 +1496,7 @@ class ScreenModAnalyzer:
         base_cc = float(w_meta.get('crit_chance', 0.1))
         base_cd = float(w_meta.get('crit_mult', 1.5))
         base_fr = float(w_meta.get('fire_rate', 1.0))
-        base_sc = float(w_meta.get('status_chance') or w_meta.get('status') or 0.0)
+        base_sc = float(w_meta.get('status_chance') or w_meta.get('status') or w_meta.get('procChance') or 0.0)
         base_sc = base_sc / 100.0 if base_sc > 1.0 else base_sc
 
         mod_dmg = 0.0

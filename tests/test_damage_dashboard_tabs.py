@@ -154,6 +154,10 @@ def test_compute_numeric_test_combo_gladiator_and_defaults():
     assert test["br_cc_bonus"] == pytest.approx(0.4 * 11) and test["glad_cc_bonus"] == pytest.approx(0.10 * 2 * 11)
     assert test["final_crit_chance"] == pytest.approx(0.2 * (1 + 1.1 + 4.4 + 2.2))
     assert test["expected_dps"] > 1000.0
+    # 42% -> 174% crit chance: orange crits raise the peak tier (2.0 -> 3.0x) and the trough tier (1.0 -> 2.0x).
+    assert test["peak"] == pytest.approx(500.0 * 3.0 / 2.0) and test["trough"] == pytest.approx(100.0 * 2.0)
+    proc = compute_numeric_test({"crit_chance": 0.2, "procChance": 0.3}, MELEE_MODS, MELEE_METRICS, combo_mult=12)
+    assert proc["base_status_chance"] == pytest.approx(0.3)
     auto = compute_numeric_test(MELEE_META, MELEE_MODS + [GLADIATOR_VICE], MELEE_METRICS, combo_mult=12)
     assert auto["gladiator_stacks"] == 1 and auto["glad_cc_bonus"] == pytest.approx(1.1)
     sniper = compute_numeric_test(W_META, MODS, METRICS, RIVEN, sniper_mult=2.0)

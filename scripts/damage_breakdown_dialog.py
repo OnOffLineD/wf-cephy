@@ -94,7 +94,8 @@ QFrame#modCard { background-color: #161e2e; border: 1px solid #b08d2e; border-ra
 QFrame#modCard[empty="true"] { border: 1px dashed #24324d; }
 QLabel#weaknessBadge { background-color: #2a1520; color: #ff8fa3; border: 1px solid #ff3366; border-radius: 9px; padding: 4px 8px; }
 QLabel#weaknessBadge[ok="true"] { background-color: #0f2a22; color: #5eead4; border: 1px solid #14b8a6; }
-QComboBox, QCheckBox { color: #e2e8f0; background-color: #161e2e; padding: 4px; }
+QComboBox, QCheckBox, QSpinBox { color: #e2e8f0; background-color: #161e2e; padding: 4px; }
+QSpinBox { border: 1px solid #24324d; border-radius: 4px; selection-background-color: #1e2a40; }
 """ + BREAKDOWN_BUTTON_STYLE
 
 # --- Option 2: combat simulator model -------------------------------------
@@ -151,7 +152,8 @@ RADAR_AXES = [("damage", "피해", 3.0), ("multishot", "멀티샷", 2.0), ("elem
 # Melee weapons have no multishot; status and attack speed matter instead.
 MELEE_RADAR_AXES = [("damage", "피해", 3.0), ("status", "상태이상", 2.0), ("elemental_damage", "속성", 3.6),
                     ("crit_chance", "치확", 3.0), ("crit_damage", "치피", 2.5), ("fire_rate", "공속", 1.0)]
-STAT_LABELS = dict({k: label for k, label, _ in RADAR_AXES}, status="상태이상")
+STAT_LABELS = dict({k: label for k, label, _ in RADAR_AXES}, status="상태이상", status_chance="상태이상 확률",
+                   status_type_direct="상태이상 종류당 피해")
 MELEE_STAT_LABELS = dict(STAT_LABELS, **{k: label for k, label, _ in MELEE_RADAR_AXES})
 # Same assumptions as WarframeDamageEngine.compute_full_stack for conditional melee mods.
 COMBO_MULT = 12.0
@@ -287,7 +289,7 @@ def compute_numeric_test(w_meta, mod_objs, metrics, riven_stats=None, *, combo_m
     base_cc = float(w_meta.get("crit_chance", 0.1) or 0.0)
     base_cc = base_cc / 100.0 if base_cc > 1.0 else base_cc
     base_cd = float(w_meta.get("crit_mult", 1.5) or 1.5)
-    base_sc = float(w_meta.get("status_chance") or w_meta.get("status") or 0.0)
+    base_sc = float(w_meta.get("status_chance") or w_meta.get("status") or w_meta.get("procChance") or 0.0)
     base_sc = base_sc / 100.0 if base_sc > 1.0 else base_sc
     flat = {k: sum(float(m.get(k) or (m.get("base_damage") if k == "damage" else 0.0) or 0.0) for m in mods) for k in TABLE_KEYS}
     extra = dict.fromkeys(TABLE_KEYS, 0.0)
@@ -315,9 +317,13 @@ def compute_numeric_test(w_meta, mod_objs, metrics, riven_stats=None, *, combo_m
                 damage_bonus_total=flat["damage"] + extra["damage"], dps_ratio=dps_ratio, extra=extra)
 
     scaled = dict(metrics)
+
+    def tier(level, cd):  # crit tier multiplier, as min_crit/max_crit in WarframeDamageEngine
+        return 1.0 + int(level) * (cd - 1.0)
     if test["is_test_active"]:
         for key, ratio in (("sustained_dps", dps_ratio), ("burst_dps", dps_ratio),
-                           ("max_crit_hit", hit_ratio * cd1 / cd0), ("min_hit", hit_ratio)):
+                           ("max_crit_hit", hit_ratio * tier(math.ceil(cc1), cd1) / tier(math.ceil(cc0), cd0)),
+                           ("min_hit", hit_ratio * tier(int(cc1), cd1) / tier(int(cc0), cd0))):
             if isinstance(metrics.get(key), (int, float)):
                 scaled[key] = metrics[key] * ratio
     test["metrics"] = scaled
