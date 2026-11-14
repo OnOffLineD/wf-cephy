@@ -1,3 +1,4 @@
+import html
 import math
 import re
 import sys
@@ -7,18 +8,20 @@ try:
     from PyQt6.QtWidgets import (
         QApplication, QDialog, QVBoxLayout, QTabWidget, QTextBrowser,
         QTableWidget, QTableWidgetItem, QPushButton, QHBoxLayout, QWidget,
-        QLabel, QFrame, QGridLayout, QComboBox, QCheckBox, QScrollArea, QSizePolicy, QSpinBox
+        QLabel, QFrame, QGridLayout, QComboBox, QCheckBox, QScrollArea, QSizePolicy, QSpinBox,
+        QStyle, QStyleOptionSpinBox
     )
     from PyQt6.QtGui import QColor, QPalette, QPainter, QPen, QBrush, QPolygonF
-    from PyQt6.QtCore import Qt, QPoint, QPointF
+    from PyQt6.QtCore import Qt, QPoint, QPointF, QEvent
 except ImportError:
     from PySide6.QtWidgets import (
         QApplication, QDialog, QVBoxLayout, QTabWidget, QTextBrowser,
         QTableWidget, QTableWidgetItem, QPushButton, QHBoxLayout, QWidget,
-        QLabel, QFrame, QGridLayout, QComboBox, QCheckBox, QScrollArea, QSizePolicy, QSpinBox
+        QLabel, QFrame, QGridLayout, QComboBox, QCheckBox, QScrollArea, QSizePolicy, QSpinBox,
+        QStyle, QStyleOptionSpinBox
     )
     from PySide6.QtGui import QColor, QPalette, QPainter, QPen, QBrush, QPolygonF
-    from PySide6.QtCore import Qt, QPoint, QPointF
+    from PySide6.QtCore import Qt, QPoint, QPointF, QEvent
 
 from scripts.frameless_dialog import FramelessDialog
 
@@ -94,8 +97,8 @@ QFrame#modCard { background-color: #161e2e; border: 1px solid #b08d2e; border-ra
 QFrame#modCard[empty="true"] { border: 1px dashed #24324d; }
 QLabel#weaknessBadge { background-color: #2a1520; color: #ff8fa3; border: 1px solid #ff3366; border-radius: 9px; padding: 4px 8px; }
 QLabel#weaknessBadge[ok="true"] { background-color: #0f2a22; color: #5eead4; border: 1px solid #14b8a6; }
-QComboBox, QCheckBox, QSpinBox { color: #e2e8f0; background-color: #161e2e; padding: 4px; }
-QSpinBox { border: 1px solid #24324d; border-radius: 4px; selection-background-color: #1e2a40; }
+QComboBox, QCheckBox { color: #e2e8f0; background-color: #161e2e; padding: 4px; }
+QSpinBox { color: #e2e8f0; background-color: #161e2e; border: 1px solid #24324d; border-radius: 4px; padding: 4px 52px 4px 8px; min-width: 96px; selection-background-color: #1e2a40; }
 """ + BREAKDOWN_BUTTON_STYLE
 
 # --- Option 2: combat simulator model -------------------------------------
@@ -279,11 +282,14 @@ def compute_numeric_test(w_meta, mod_objs, metrics, riven_stats=None, *, combo_m
     mods = effective_mods(mod_objs, riven_stats)
     combo_mult, sniper_mult = max(1.0, float(combo_mult)), max(1.0, float(sniper_mult))
     status_types = max(0, int(status_types))
+    equipped_gladiator = sum(1 for m in mods if is_gladiator_mod(m))
     if gladiator_stacks is None:
-        gladiator_stacks = sum(1 for m in mods if is_gladiator_mod(m))
+        gladiator_stacks = equipped_gladiator
     test = dict(combo_mult=combo_mult, sniper_mult=sniper_mult, gladiator_stacks=int(gladiator_stacks),
                 status_types=status_types, on_kill_active=bool(on_kill_active))
-    test["is_test_active"] = combo_mult != 1 or sniper_mult != 1.0 or status_types != 0 or bool(on_kill_active)
+    glad_changed = int(gladiator_stacks) != equipped_gladiator
+    test["is_test_active"] = (combo_mult != 1 or sniper_mult != 1.0 or status_types != 0 or bool(on_kill_active)
+                              or glad_changed)
     cx = combo_mult - 1.0
 
     base_cc = float(w_meta.get("crit_chance", 0.1) or 0.0)
@@ -342,7 +348,9 @@ def compute_numeric_test(w_meta, mod_objs, metrics, riven_stats=None, *, combo_m
         f" + 온킬 {ok_sc * 100:+.0f}%) = {test['final_status_chance'] * 100:.1f}%",
         f"• 피해 보너스 = 모드 {flat['damage'] * 100:+.0f}% + 조건부(CO {status_types}종/온킬) {extra['damage'] * 100:+.0f}%",
         f"• 저격총 연속 적중 배수 x{sniper_mult:.1f} · 연속기 x{combo_mult:g} → DPS 배율 x{dps_ratio:.2f}",
-    ]) if test["is_test_active"] else ""
+    ] + ([f"• 글래디에이터 {test['gladiator_stacks']}세트 (장착 {equipped_gladiator}) — 연속기 1x에서는 보너스 없음, 12x 기준 예상 치확 "
+          f"{base_cc * (1.0 + flat['crit_chance'] + GLADIATOR_COMBO_CRIT * test['gladiator_stacks'] * (COMBO_MULT - 1.0)) * 100:.1f}%"]
+         if glad_changed and combo_mult == 1 else [])) if test["is_test_active"] else ""
     return test
 
 
@@ -405,6 +413,49 @@ class RadarChart(QWidget):
                 painter.drawText(QPointF(pt.x() - 14, pt.y() + 4), self.labels[i])
         finally:
             painter.end()
+
+
+class ClickableSpinBox(QSpinBox):
+    """QSpinBox whose arrow areas step even when the inner QLineEdit (or a theme) covers the buttons."""
+    ARROW_WIDTH = 52
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.lineEdit().installEventFilter(self)
+
+    def _arrow_step(self, pos):
+        opt = QStyleOptionSpinBox()
+        self.initStyleOption(opt)
+        cc, sc = QStyle.ComplexControl.CC_SpinBox, QStyle.SubControl
+        up = self.style().subControlRect(cc, opt, sc.SC_SpinBoxUp, self)
+        down = self.style().subControlRect(cc, opt, sc.SC_SpinBoxDown, self)
+        if up.isEmpty() or down.isEmpty():  # fallback: right-hand strip, upper half up / lower half down
+            if pos.x() < self.width() - self.ARROW_WIDTH:
+                return 0
+            return 1 if pos.y() < self.height() / 2 else -1
+        if up.top() == down.top():  # buttons side by side: accept the full height of each
+            up = up.adjusted(0, -up.top(), 0, self.height() - up.bottom())
+            down = down.adjusted(0, -down.top(), 0, self.height() - down.bottom())
+        return 1 if up.contains(pos) else (-1 if down.contains(pos) else 0)
+
+    def _handle_arrow_press(self, local_pos):
+        step = self._arrow_step(local_pos) if self.isEnabled() else 0
+        if step:
+            self.stepUp() if step > 0 else self.stepDown()
+        return bool(step)
+
+    def eventFilter(self, obj, event):
+        if (obj is self.lineEdit() and event.type() in (QEvent.Type.MouseButtonPress, QEvent.Type.MouseButtonDblClick)
+                and event.button() == Qt.MouseButton.LeftButton
+                and self._handle_arrow_press(obj.mapTo(self, event.position().toPoint()))):
+            return True
+        return super().eventFilter(obj, event)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton and self._handle_arrow_press(event.position().toPoint()):
+            event.accept()
+            return
+        super().mousePressEvent(event)
 
 
 def _clear_layout(layout):
@@ -477,7 +528,7 @@ class DamageBreakdownDialog(FramelessDialog):
         self.combo_mult_combo.addItems([f"{i}x" for i in range(1, 13)])
         self.sniper_mult_combo = QComboBox()
         self.sniper_mult_combo.addItems([f"{v:.1f}x" for v in SNIPER_MULTS])
-        self.gladiator_spin, self.status_types_spin = QSpinBox(), QSpinBox()
+        self.gladiator_spin, self.status_types_spin = ClickableSpinBox(), ClickableSpinBox()
         self.gladiator_spin.setRange(0, 6)
         self.status_types_spin.setRange(0, 10)
         self.on_kill_check = QCheckBox("갈바나이즈드 풀스택")
@@ -728,9 +779,8 @@ class DamageBreakdownDialog(FramelessDialog):
     def generate_html_content(self):
         text = getattr(self, 'breakdown_text', '') or ''
         test = getattr(self, 'test_result', None)
-        if test and test.get('is_test_active'):
-            text = f"{text}\n{test['breakdown_text']}".strip()
-        if not text:
+        test_lines = test['breakdown_text'].split('\n') if test and test.get('is_test_active') and test.get('breakdown_text') else []
+        if not text and not test_lines:
             return """
             <html>
             <head>
@@ -744,41 +794,65 @@ class DamageBreakdownDialog(FramelessDialog):
             </html>
             """
 
-        lines = text.split('\n')
-        html_content = """
-        <html>
-        <head>
-            <style>
-                body { background-color: #0f172a; color: #D4AF37; }
-                h1 { color: #D4AF37; }
-                .section-header { color: #D4AF37; font-weight: bold; }
-                .step { background-color: #1e293b; color: #38bdf8; border: 1px solid #38bdf8; padding: 5px; border-radius: 5px; }
-                .bullet-item { background-color: #1e293b; color: #D4AF37; padding: 5px; border-radius: 5px; }
-                .total-highlight { background-color: #D4AF37; color: #0f172a; padding: 5px; border-radius: 5px; }
-            </style>
-        </head>
-        <body>
-            <h1>Damage Calculation Breakdown</h1>
-        """
+        esc = html.escape
 
-        for line in lines:
-            line = line.strip()
-            if line.startswith(('1.', '2.', '3.', '4.', '5.', '6.', '7.')):
-                html_content += f'<p class="section-header">{line}</p>'
-            elif line.startswith(('①', '②', '③', '④', '⑤', '⑥', '⑦')):
-                html_content += f'<p class="step">{line}</p>'
+        def hl(s):  # colour every +XX% / -XX% bonus
+            return re.sub(r"([+\-]\d[\d,.]*%)", r"<span style='color:#4ade80; font-weight:bold;'>\1</span>", esc(s))
+
+        out = ["<html><head><style>"
+               "body { background-color: #0f172a; color: #e2e8f0; }"
+               "h3 { color: #D4AF37; margin: 2px; }"
+               ".section-header { color: #D4AF37; font-weight: bold; font-size: 14px; margin-top: 8px; }"
+               ".lbl { color: #94a3b8; font-size: 11px; }"
+               ".val { color: #00e5ff; font-weight: bold; font-size: 14px; }"
+               ".mod { color: #facc15; font-weight: bold; }"
+               ".result { color: #facc15; font-weight: bold; font-size: 14px; }"
+               ".bullet-item { color: #fde68a; margin: 2px; }"
+               ".total-highlight { background-color: #D4AF37; color: #0f172a; font-weight: bold; }"
+               "</style></head><body><h3>Damage Calculation Breakdown</h3>"]
+        if test_lines:  # active test results sit on top so they are visible without scrolling
+            rows = "".join(f"<p class='bullet-item'>{hl(line)}</p>" for line in test_lines[1:])
+            out.append("<table width='100%' cellspacing='0' cellpadding='8' border='1' bgcolor='#2a2410' style='border-color:#facc15;'>"
+                       f"<tr><td><p style='color:#facc15; font-weight:bold; font-size:14px;'>{esc(test_lines[0])}</p>{rows}</td></tr></table>")
+        stats, section = [], 0
+
+        def flush_stats():  # Section 1: compact 3-column dark stat cards
+            cells = [f"<td bgcolor='#161e2e'><span class='lbl'>{esc(k)}</span><br/><span class='val'>{esc(v)}</span></td>" for k, v in stats]
+            if cells:
+                out.append("<table width='100%' cellspacing='4' cellpadding='4'>"
+                           + "".join("<tr>" + "".join(cells[i:i + 3]) + "</tr>" for i in range(0, len(cells), 3)) + "</table>")
+            stats.clear()
+
+        for line in (line.strip() for line in text.split('\n')):
+            if section == 1 and line.startswith('- ') and ': ' in line:
+                stats.append(line[2:].split(': ', 1))
+                continue
+            flush_stats()
+            if not line:
+                continue
+            if re.match(r"[1-7]\.", line):
+                section = int(line[0])
+                out.append(f"<p class='section-header'>{esc(line)}</p>")
+            elif line.startswith('↳'):
+                out.append("<table width='100%' cellspacing='2' cellpadding='6'><tr>"
+                           f"<td bgcolor='#0e3a4a' style='color:#00e5ff; font-weight:bold;'>{hl(line)}</td></tr></table>")
+            elif line.startswith('- ') and ': ' in line:
+                name, vals = line[2:].split(': ', 1)
+                out.append(f"<p style='margin: 2px 0 2px 8px;'><span class='mod'>{esc(name)}</span> {hl(vals)}</p>")
+            elif line[0] in '①②③④⑤⑥⑦':  # Section 3: step cards with a cyan left accent
+                left, sep, right = line.rpartition(' = ')
+                body = f"{hl(left)} = <span class='result'>{esc(right)}</span>" if sep else hl(line)
+                out.append("<table width='100%' cellspacing='2' cellpadding='6'><tr><td width='4' bgcolor='#00d2ff'>&nbsp;</td>"
+                           f"<td bgcolor='#162033'>{body}</td></tr></table>")
             elif line.startswith('•'):
-                html_content += f'<p class="bullet-item">{line}</p>'
+                out.append(f"<p class='bullet-item'>{hl(line)}</p>")
             elif line.startswith('Total:'):
-                html_content += f'<p class="total-highlight">{line}</p>'
+                out.append(f"<p class='total-highlight'>{esc(line)}</p>")
             else:
-                html_content += f'<p>{line}</p>'
-
-        html_content += """
-        </body>
-        </html>
-        """
-        return html_content
+                out.append(f"<p>{hl(line)}</p>")
+        flush_stats()
+        out.append("</body></html>")
+        return "".join(out)
 
     def populate_table(self):
         self.table_widget.setRowCount(0)  # Clear existing rows
