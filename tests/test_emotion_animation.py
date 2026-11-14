@@ -151,6 +151,64 @@ def test_glitch_jitter_offset():
     assert len(hand_samples) > 1
     assert not renderer.grab().isNull()
 
+def _face_center(renderer):
+    c = renderer.body_rect().center()
+    return float(c.x()), float(c.y()) - 8.0
+
+def _in_eye_ellipse(renderer, x, y):
+    return (x / renderer.MAX_EYE_OFFSET_X) ** 2 + (y / renderer.MAX_EYE_OFFSET_Y) ** 2 <= 1.0 + 1e-6
+
+def test_eye_target_tracks_cursor_direction():
+    from scripts.layered_pet_renderer import QPointF
+    app, renderer = _make_renderer()
+    fx, fy = _face_center(renderer)
+    tx, ty = renderer.update_eye_target(QPointF(fx + 100, fy + 60), is_local=True)
+    assert tx > 0 and ty > 0
+    assert (tx, ty) == (renderer.eye_target_x, renderer.eye_target_y)
+    assert _in_eye_ellipse(renderer, tx, ty)
+    for dx, dy, sx, sy in ((-80, 0, -1, 0), (80, 0, 1, 0), (0, -80, 0, -1), (0, 80, 0, 1)):
+        tx, ty = renderer.update_eye_target(QPointF(fx + dx, fy + dy), is_local=True)
+        assert (tx > 0) - (tx < 0) == sx
+        assert (ty > 0) - (ty < 0) == sy
+    # Manual local cursor persists across ticks (no live cursor override)
+    renderer.update_eye_target()
+    assert renderer.eye_target_y > 0 and renderer.eye_target_x == pytest.approx(0.0)
+
+def test_eye_offset_lerps_gradually_and_converges():
+    from scripts.layered_pet_renderer import QPointF
+    app, renderer = _make_renderer()
+    fx, fy = _face_center(renderer)
+    tx, ty = renderer.update_eye_target(QPointF(fx + 100, fy + 60), is_local=True)
+    renderer._step_motion()
+    assert renderer.eye_offset_x == pytest.approx(tx * renderer.EYE_LERP_FACTOR)
+    assert renderer.eye_offset_y == pytest.approx(ty * renderer.EYE_LERP_FACTOR)
+    assert 0 < renderer.eye_offset_x < tx and 0 < renderer.eye_offset_y < ty
+    prev = renderer.eye_offset_x
+    for _ in range(80):
+        renderer._step_motion()
+        assert renderer.eye_offset_x >= prev
+        prev = renderer.eye_offset_x
+    assert renderer.eye_offset_x == pytest.approx(tx)
+    assert renderer.eye_offset_y == pytest.approx(ty)
+
+def test_eye_offset_clamped_to_face_ellipse_and_renders():
+    from scripts.layered_pet_renderer import QPointF
+    app, renderer = _make_renderer()
+    assert _in_eye_ellipse(renderer, *renderer._clamp_eye_offset(100.0, -100.0))
+    for pt in ((10000, -10000), (-5000, 8000)):
+        tx, ty = renderer.update_eye_target(QPointF(*pt), is_local=True)
+        assert _in_eye_ellipse(renderer, tx, ty)
+        for _ in range(60):
+            renderer._step_motion()
+            assert _in_eye_ellipse(renderer, renderer.eye_offset_x, renderer.eye_offset_y)
+        assert not renderer.grab().isNull()
+    # Procedural chibi fallback with eye offset applied
+    renderer.has_layers = False
+    renderer.asset_dir = os.path.join(renderer.asset_dir, "__missing__")
+    renderer._cache.clear()
+    assert renderer.eye_offset_x != 0.0
+    assert not renderer.grab().isNull()
+
 def test_desktop_pet_layered_renderer_integration():
     os.environ["QT_QPA_PLATFORM"] = "offscreen"
     try:

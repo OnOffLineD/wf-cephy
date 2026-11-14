@@ -2,16 +2,16 @@ import os
 import sys
 import math
 import random
-from typing import Optional, Dict
+from typing import Optional, Dict, Tuple
 
 try:
     from PyQt6.QtWidgets import QWidget, QApplication
-    from PyQt6.QtGui import QPainter, QPixmap, QColor, QPen, QBrush, QFont, QRadialGradient
-    from PyQt6.QtCore import QTimer, Qt, QRect, QPoint
+    from PyQt6.QtGui import QPainter, QPixmap, QColor, QPen, QBrush, QFont, QRadialGradient, QCursor
+    from PyQt6.QtCore import QTimer, Qt, QRect, QPoint, QPointF
 except ImportError:
     from PySide6.QtWidgets import QWidget, QApplication
-    from PySide6.QtGui import QPainter, QPixmap, QColor, QPen, QBrush, QFont, QRadialGradient
-    from PySide6.QtCore import QTimer, Qt, QRect, QPoint
+    from PySide6.QtGui import QPainter, QPixmap, QColor, QPen, QBrush, QFont, QRadialGradient, QCursor
+    from PySide6.QtCore import QTimer, Qt, QRect, QPoint, QPointF
 
 from scripts.path_config import get_path
 
@@ -20,6 +20,11 @@ class LayeredPetRenderer(QWidget):
     JUMP_IMPULSE = -18.0
     STRETCH_X, STRETCH_Y = 0.85, 1.25
     SQUISH_X, SQUISH_Y = 1.15, 0.80
+    # Cursor-tracking eyes: elliptical bound keeps the pupils inside the face/visor
+    MAX_EYE_OFFSET_X = 4.5
+    MAX_EYE_OFFSET_Y = 3.0
+    EYE_LERP_FACTOR = 0.18
+    EYE_RESPONSE_RADIUS = 140.0
 
     def __init__(self, asset_dir: Optional[str] = None, parent=None):
         super().__init__(parent)
@@ -59,6 +64,13 @@ class LayeredPetRenderer(QWidget):
         self.hand_motion_l = (0.0, 0.0)
         self.hand_motion_r = (0.0, 0.0)
 
+        # Eye gaze offset (lerped toward the cursor-derived target)
+        self.eye_offset_x = 0.0
+        self.eye_offset_y = 0.0
+        self.eye_target_x = 0.0
+        self.eye_target_y = 0.0
+        self._manual_cursor_local: Optional[QPointF] = None
+
         # Canvas has top/side headroom so the halo never clips at jump apex + stretch
         self.setFixedSize(self.CANVAS_W, self.CANVAS_H)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
@@ -88,8 +100,47 @@ class LayeredPetRenderer(QWidget):
         self.tick = (self.tick + 1) % 10000
         if self.is_talking:
             self.talk_tick = (self.talk_tick + 1) % 10000
+        self.update_eye_target()
         self._step_motion()
         self.update()
+
+    def _clamp_eye_offset(self, dx: float, dy: float) -> Tuple[float, float]:
+        """Scale (dx, dy) back onto the face ellipse, then hard-clamp each axis."""
+        mx, my = self.MAX_EYE_OFFSET_X, self.MAX_EYE_OFFSET_Y
+        norm = math.hypot(dx / mx, dy / my)
+        if norm > 1.0:
+            dx, dy = dx / norm, dy / norm
+        return max(-mx, min(mx, dx)), max(-my, min(my, dy))
+
+    def _compute_eye_target(self, local_pos) -> Tuple[float, float]:
+        """Map a widget-local cursor position to an eye offset inside the face ellipse."""
+        rect = self.body_rect()
+        face_cx = rect.center().x()
+        face_cy = rect.center().y() - 8.0
+        vx = (local_pos.x() - face_cx) / self.EYE_RESPONSE_RADIUS
+        vy = (local_pos.y() - face_cy) / self.EYE_RESPONSE_RADIUS
+        mag = math.hypot(vx, vy)
+        if mag > 1.0:
+            vx, vy = vx / mag, vy / mag
+        return self._clamp_eye_offset(vx * self.MAX_EYE_OFFSET_X, vy * self.MAX_EYE_OFFSET_Y)
+
+    def update_eye_target(self, pos=None, *, is_local: bool = False) -> Tuple[float, float]:
+        """Refresh the gaze target from pos (local or global) or the live cursor."""
+        try:
+            if pos is not None and is_local:
+                self._manual_cursor_local = QPointF(pos)
+                local = self._manual_cursor_local
+            elif pos is not None:
+                self._manual_cursor_local = None
+                local = self.mapFromGlobal(QPointF(pos))
+            elif self._manual_cursor_local is not None:
+                local = self._manual_cursor_local
+            else:
+                local = self.mapFromGlobal(QCursor.pos())
+            self.eye_target_x, self.eye_target_y = self._compute_eye_target(local)
+        except Exception:
+            pass  # keep the current target if the cursor can't be resolved
+        return self.eye_target_x, self.eye_target_y
 
     def _step_motion(self):
         """One spring step: curr += (target - curr) * 0.25, snapping when settled."""
@@ -119,6 +170,16 @@ class LayeredPetRenderer(QWidget):
             if abs(hx) < 0.01 and abs(hy) < 0.01:
                 hx, hy = 0.0, 0.0
             setattr(self, f"hand_motion_{side}", (hx, hy))
+
+        # Eye gaze: gentle lerp toward the cursor target, snapping when settled
+        for axis in ("x", "y"):
+            curr = getattr(self, f"eye_offset_{axis}")
+            target = getattr(self, f"eye_target_{axis}")
+            curr += (target - curr) * self.EYE_LERP_FACTOR
+            if abs(target - curr) < 0.005:
+                curr = target
+            setattr(self, f"eye_offset_{axis}", curr)
+        self.eye_offset_x, self.eye_offset_y = self._clamp_eye_offset(self.eye_offset_x, self.eye_offset_y)
 
     def body_rect(self) -> QRect:
         """128x128 sprite rect with 40px top headroom (jump -18 + stretch overshoot + bob)."""
@@ -316,14 +377,20 @@ class LayeredPetRenderer(QWidget):
             else:
                 eye_pix = self._load_layer_pixmap("eyes", f"eye_{eye_mood}.png") or self._load_layer_pixmap("eyes", "eye_idle.png")
             if eye_pix:
+                painter.save()
+                painter.translate(self.eye_offset_x, self.eye_offset_y)
                 painter.drawPixmap(target_rect, eye_pix)
+                painter.restore()
                 drawn_any = True
 
-            # Layer C: Brows
+            # Layer C: Brows (subtly follow the gaze)
             brow_mood = self.secondary_mood or self.mood
             brow_pix = self._load_layer_pixmap("brows", f"brow_{brow_mood}.png") or self._load_layer_pixmap("brows", "brow_idle.png")
             if brow_pix:
+                painter.save()
+                painter.translate(self.eye_offset_x * 0.35, self.eye_offset_y * 0.35)
                 painter.drawPixmap(target_rect, brow_pix)
+                painter.restore()
                 drawn_any = True
 
             # Layer D: Mouth (respect is_talking lip-sync)
@@ -436,6 +503,9 @@ class LayeredPetRenderer(QWidget):
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(QBrush(glow_color))
 
+        # Gaze offset applies only to the eyes; restored before mouth/VFX
+        p.save()
+        p.translate(self.eye_offset_x, self.eye_offset_y)
         if self.is_blinking:
             # Closed line eyes
             p.setPen(QPen(glow_color, 2.5))
@@ -455,6 +525,7 @@ class LayeredPetRenderer(QWidget):
             # Round open eyes
             p.drawEllipse(cx - eye_spacing - 5, eye_y - 5, 10, 10)
             p.drawEllipse(cx + eye_spacing - 5, eye_y - 5, 10, 10)
+        p.restore()
 
         # Mouth (reacts to is_talking)
         mouth_y = cy + 16
