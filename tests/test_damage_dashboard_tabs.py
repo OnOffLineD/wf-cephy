@@ -11,7 +11,7 @@ except ImportError:
 
 from scripts.damage_breakdown_dialog import (
     DamageBreakdownDialog, SIM_TARGETS, HEADSHOT_MULT, VIRAL_MULT, ARMOR_CAP,
-    simulate_combat, scaled_armor, mod_dps_share, stat_totals, diagnose_weaknesses,
+    simulate_combat, scaled_armor, mod_dps_share, stat_totals, diagnose_weaknesses, compute_numeric_test,
 )
 
 W_META = {"name": "Test Rifle", "crit_chance": 0.2, "crit_mult": 2.0}
@@ -136,3 +136,81 @@ def test_set_data_rebuilds_without_duplicates(dialog):
     assert dialog.kpi_labels["expected_dps"].text() == "500" and dialog.kpi_labels["peak"].text() == "-"
     page = dialog.tab_widget.widget(1).widget()
     assert len(page.findChildren(QLabel, "weaknessBadge")) == len(dialog.weakness_badges) > 0
+
+
+MELEE_META = {"name": "Prisma Skana", "category": "Melee", "crit_chance": 0.2, "crit_mult": 2.0, "status_chance": 0.16}
+GLADIATOR_VICE = {"name": "Gladiator Vice", "kr_name": "글래디에이터 바이스", "fire_rate": 0.3,
+                  "modSet": "/Lotus/Upgrades/Mods/Sets/Gladiator/GladiatorSetMod", "combo_crit": 0.10, "_set_applied": True}
+MELEE_METRICS = {"sustained_dps": 1000.0, "burst_dps": 1200.0, "max_crit_hit": 500.0, "min_hit": 100.0}
+
+
+def test_compute_numeric_test_combo_gladiator_and_defaults():
+    default = compute_numeric_test(MELEE_META, MELEE_MODS, MELEE_METRICS)
+    assert default["is_test_active"] is False and default["metrics"] == MELEE_METRICS and default["breakdown_text"] == ""
+    test = compute_numeric_test(MELEE_META, MELEE_MODS + [GLADIATOR_VICE], MELEE_METRICS, combo_mult=12, gladiator_stacks=2)
+    assert test["ww_sc_bonus"] == pytest.approx(0.4 * 11)
+    assert test["final_status_chance"] == pytest.approx(0.16 * (1 + 4.4))
+    # Gladiator Vice's set-applied combo_crit is not counted again as Blood Rush.
+    assert test["br_cc_bonus"] == pytest.approx(0.4 * 11) and test["glad_cc_bonus"] == pytest.approx(0.10 * 2 * 11)
+    assert test["final_crit_chance"] == pytest.approx(0.2 * (1 + 1.1 + 4.4 + 2.2))
+    assert test["expected_dps"] > 1000.0
+    auto = compute_numeric_test(MELEE_META, MELEE_MODS + [GLADIATOR_VICE], MELEE_METRICS, combo_mult=12)
+    assert auto["gladiator_stacks"] == 1 and auto["glad_cc_bonus"] == pytest.approx(1.1)
+    sniper = compute_numeric_test(W_META, MODS, METRICS, RIVEN, sniper_mult=2.0)
+    for key, src in (("expected_dps", "sustained_dps"), ("burst_dps", "burst_dps"), ("peak", "max_crit_hit"), ("trough", "min_hit")):
+        assert sniper[key] == pytest.approx(METRICS[src] * 2.0)
+    co = compute_numeric_test(MELEE_META, MELEE_MODS, MELEE_METRICS, status_types=4)
+    assert co["co_damage_bonus"] == pytest.approx(3.2) and co["expected_dps"] == pytest.approx(1000.0 * 4.2)
+    galv = compute_numeric_test(MELEE_META, MELEE_MODS, MELEE_METRICS, on_kill_active=True)
+    assert galv["on_kill_sc"] == pytest.approx(1.2) and galv["final_crit_mult"] == pytest.approx(2.0 * 2.2)
+
+
+def table_rows(dlg):
+    t = dlg.table_widget
+    return {t.item(r, 0).text(): [t.item(r, c).text() for c in range(t.columnCount())] for r in range(t.rowCount())}
+
+
+def test_numeric_test_controls_update_kpis_table_and_simulator(qapp):
+    dlg = DamageBreakdownDialog(breakdown_text="1. 기본", w_meta=MELEE_META, mod_objs=MELEE_MODS + [GLADIATOR_VICE], metrics=MELEE_METRICS)
+    assert dlg.gladiator_spin.value() == 1 and dlg.kpi_labels["expected_dps"].text() == "1,000"
+    rows = table_rows(dlg)
+    assert "블러드 러쉬" in rows["블러드 러쉬"][7] and "위핑 운즈" in rows["위핑 운즈"][7]
+    assert "컨디션 오버로드" in rows["컨디션 오버로드"][7] and "미적용" in rows["갈바나이즈드 스틸"][7]
+    base_sim, base_tip = dict(dlg.last_simulation), dlg.test_summary_label.text()
+    dlg.combo_mult_combo.setCurrentIndex(11)  # 12x
+    rows = table_rows(dlg)
+    assert rows["블러드 러쉬"][4] == "+440.0%" and rows["글래디에이터 세트"][4] == "+110.0%"
+    assert dlg.test_result["final_status_chance"] == pytest.approx(0.16 * (1 + 4.4))
+    assert "위핑 운즈 +440%" in dlg.text_browser.toPlainText() and dlg.test_summary_label.text() != base_tip
+    assert dlg.last_simulation["effective_dps"] > base_sim["effective_dps"]
+    dlg.reset_numeric_test()
+    dlg.status_types_spin.setValue(4)
+    rows = table_rows(dlg)
+    assert rows["컨디션 오버로드"][1] == "+320.0%" and rows["🎯 총합 적용치"][1] == "+320.0%"
+    assert dlg.last_simulation["damage_bonus"] == pytest.approx(3.2)
+    assert dlg.last_simulation["effective_dps"] == pytest.approx(base_sim["effective_dps"] * 4.2)
+    dlg.on_kill_check.setChecked(True)
+    assert "풀스택 적용" in table_rows(dlg)["갈바나이즈드 스틸"][7]
+    assert table_rows(dlg)["갈바나이즈드 스틸"][5] == "+120.0%"
+    dlg.reset_numeric_test()
+    assert dlg.test_result["is_test_active"] is False and dlg.kpi_labels["expected_dps"].text() == "1,000"
+    assert dlg.last_simulation["effective_dps"] == pytest.approx(base_sim["effective_dps"])
+
+
+def test_sniper_multiplier_doubles_kpis_and_simulator(dialog):
+    base = dict(dialog.last_simulation)
+    dialog.sniper_mult_combo.setCurrentIndex(2)  # 2.0x
+    texts = {k: lbl.text() for k, lbl in dialog.kpi_labels.items()}
+    assert texts == {"expected_dps": "24,000", "burst_dps": "30,000", "peak": "8,400", "trough": "1,800"}
+    assert dialog.last_simulation["effective_dps"] == pytest.approx(base["effective_dps"] * 2.0)
+    assert "저격총 연속 적중 배수 x2.0" in dialog.text_browser.toPlainText()
+    dialog.reset_test_btn.click()
+    assert dialog.kpi_labels["expected_dps"].text() == "12,000"
+
+
+def test_breakdown_text_shows_conditional_mod_effects():
+    from scripts.screen_mod_analyzer import ScreenModAnalyzer
+    text = ScreenModAnalyzer.format_calculation_breakdown(None, MELEE_META, MELEE_MODS + [GLADIATOR_VICE], {})
+    assert "[유틸리티/효과]" not in text and "상태이상 확률: 16.0%" in text
+    for needle in ("블러드 러쉬", "위핑 운즈", "컨디션 오버로드", "글래디에이터 세트", "처치 시 치명타 피해 +30%"):
+        assert needle in text
