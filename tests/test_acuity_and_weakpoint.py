@@ -36,11 +36,25 @@ def test_acuity_indexing(indexer, name):
 
 
 def test_headshot_and_weak_point_phrases_indexed(indexer):
-    assert indexer.mods_index['target acquired']['weak_point_damage'] == pytest.approx(0.6)
+    # Target Acquired grants +60% to Headshot Multiplier (multiplicative bucket, like Deadhead), not additive weak_point_damage.
+    assert indexer.mods_index['target acquired']['headshot_bonus'] == pytest.approx(0.6)
+    assert indexer.mods_index['target acquired']['weak_point_damage'] == 0.0
     assert indexer.mods_index['meticulous aim']['weak_point_damage'] == pytest.approx(1.05)
     serration = indexer.mods_index['serration']
     assert serration['weak_point_crit_chance'] == 0.0
     assert serration['lock_multishot'] is False
+
+
+def test_target_acquired_headshot_bonus_multiplies_weak_point(indexer):
+    engine = WarframeDamageEngine()
+    sniper = dict(RIFLE, type='Sniper')
+    mods = _mods(indexer, 'target acquired')
+    m = engine.compute_metrics(sniper, mod_objs=mods)
+    # 3.0 base headshot * (1 + 0.60) = 4.80x (NOT 3.0 + 1.5*0.60 = 3.90x).
+    assert m['wp_mult'] == pytest.approx(4.8)
+    # Stacks additively with Primary Deadhead passive +30% -> 3.0 * (1 + 0.60 + 0.30) = 5.70x.
+    m_dh = engine.compute_metrics(sniper, mod_objs=mods, arcane={'name': 'Primary Deadhead', 'headshot_bonus': 0.30})
+    assert m_dh['wp_mult'] == pytest.approx(5.7)
 
 
 def test_acuity_locks_multishot(indexer):
@@ -109,3 +123,26 @@ def test_report_shows_headshot_peak_and_acuity_notice(indexer):
 
     plain = engine.compute_metrics(RIFLE, left_stats={}, mod_objs=_mods(indexer, 'serration'))
     assert '멀티샷 고정' not in analyzer.format_ordis_briefing(RIFLE, ['Serration'], plain)
+
+
+def test_headcrit_bonus_only_applies_to_crits():
+    engine = WarframeDamageEngine()
+    no_crit = engine.compute_metrics(dict(RIFLE, crit_chance=0.0), left_stats={}, mod_objs=[])
+    # Without any crit, a headshot is the plain 3x weak point hit, never the 2x headcrit on top.
+    assert no_crit['headshot_expected_hit'] == pytest.approx(no_crit['expected_hit'] * 3.0)
+    assert no_crit['headshot_min_hit'] == pytest.approx(no_crit['min_hit'] * 3.0)
+    assert no_crit['headshot_max_crit_hit'] == pytest.approx(no_crit['max_non_crit'] * 3.0)
+
+    m = engine.compute_metrics(RIFLE, left_stats={}, mod_objs=[])  # 30% crit, 2.5x
+    assert m['headshot_expected_hit'] == pytest.approx(100.0 * 3.0 * (0.7 * 1.0 + 0.3 * 2.5 * 2.0))
+    assert m['headshot_min_hit'] == pytest.approx(100.0 * 3.0)
+    assert m['headshot_max_crit_hit'] == pytest.approx(100.0 * 3.0 * 2.5 * 2.0)
+
+
+def test_full_stack_headshot_matches_metrics_with_riven_weak_point():
+    engine = WarframeDamageEngine()
+    riven = {'weak_point_damage': 1.0, 'headshot_bonus': 0.5, 'weak_point_crit_chance': 0.5}
+    for weapon in (RIFLE, dict(RIFLE, crit_chance=0.0), dict(RIFLE, crit_chance=0.8)):
+        m = engine.compute_metrics(weapon, left_stats={}, mod_objs=[], riven_stats=riven)
+        fs = engine.compute_full_stack(weapon, left_stats={}, mod_objs=[], riven_stats=riven)
+        assert fs['headshot_burst_dps'] == pytest.approx(m['headshot_burst_dps'])

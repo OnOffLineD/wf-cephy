@@ -8,6 +8,9 @@
   "felarx": "게이지 완충 시 전자동 쌍권총 산탄 모드로 변신!",
   "praedos": "게이지 완충 시 공격 사거리 대폭 증가 및 파쿠르/이동 속도 극대화!",
   "innodem": "게이지 완충 시 공중 공격 시 관통 투사체 연속 사출!",
+  "onos": "게이지 완충 시 적을 관통·폭발시키는 고출력 암 캐논 충전 포격으로 변신!",
+  "ruvox": "게이지 완충 시 지면 강타로 적을 꿰뚫는 보이드 가시 폭발 생성!",
+  "thalys": "게이지 완충 시 적에게 박혀 연쇄 폭발하는 보이드 파편을 생성하는 중낫으로 변신!",
   "latron": "게이지 완충 시 지형과 적을 튕겨다니며 폭발하는 도탄 바운싱 탄환 발사!",
   "braton": "게이지 완충 시 초고속 연사 폭발탄으로 광역 제압!",
   "burston": "게이지 완충 시 600발 대용량 탄창의 초고속 전자동 폭발탄 난사!",
@@ -30,5 +33,722 @@
   "ack & brunt": "게이지 완충 시 원거리 적에게 분쇄 도끼를 투척하고 끌어당김!",
   "paris": "게이지 완충 시 착탄 지점을 붕괴시키는 관통 에너지 화살 방출!",
   "boltor": "게이지 완충 시 산탄형 폭발 못을 난사하는 전자동 모드!",
-  "bronco": "게이지 완충 시 적을 공중에 띄우는 음파 충격파 산탄 방출!"
+  "bronco": "게이지 완충 시 적을 공중에 띄우는 음파 충격파 산탄 방출!",
+  "lato": "게이지 완충 시 적 사이를 도탄하며 연쇄 타격하는 탄환 발사!",
+  "gammacor": "게이지 완충 시 주변 적을 끌어당긴 뒤 대폭발하는 냉기 구체 발사!",
+  "sicarus": "게이지 완충 시 적 사이를 도탄하는 고속 점사 에너지탄 발사!",
+  "sybaris": "게이지 완충 시 4연발 폭발 강제 폭발 상태이상 점사 소총으로 변신!",
+  "dera": "게이지 완충 시 고출력 관통 자성 빔 탄환을 발사하는 정밀 소총으로 변신!",
+  "cestra": "게이지 완충 시 사격할수록 치명타 확률이 급증하는 고속 연사 캐논으로 변신!",
+  "skana": "게이지 완충 시 근접 사거리·공격력 강화 및 마무리 일격 시 주변 적 기절!",
+  "anku": "게이지 완충 시 공격 사거리와 확정 베기 출혈 화력이 대폭 상승!",
+  "bo": "게이지 완충 시 광범위 근접 사거리와 공격 속도 대폭 강화!",
+  "furax": "게이지 완충 시 지면 강타로 화염 지대를 생성하는 고화력 피스트로 변신!",
+  "dual ichor": "게이지 완충 시 처치 지점에 적을 녹이는 맹독 구름 생성!",
+  "nami solo": "게이지 완충 시 압도적 사거리와 팔로우스루 100% 광역 마체테로 변신!",
+  "okina": "게이지 완충 시 처치 시 적을 추적해 얼리는 유령 단검 소환!",
+  "_evolutions": {
+    "laetum": {
+      "is_original": true,
+      "is_beam": false,
+      "is_melee": false,
+      "variants": ["laetum"],
+      "default_evolutions": {
+        "flat_base_damage": 0.0,
+        "flat_crit_chance": -0.10,
+        "flat_status": 0.20,
+        "crit_mult": 0.0,
+        "multishot": 0.0,
+        "reload_speed": 0.0,
+        "non_crit_attrition": {"chance": 0.5, "bonus": 20.0}
+      }
+    },
+    "phenmor": {
+      "is_original": true,
+      "is_beam": false,
+      "is_melee": false,
+      "variants": ["phenmor"],
+      "default_evolutions": {
+        "flat_base_damage": 0.0,
+        "flat_crit_chance": -0.10,
+        "flat_status": 0.20,
+        "crit_mult": 0.0,
+        "multishot": 0.0,
+        "reload_speed": 0.0,
+        "non_crit_attrition": {"chance": 0.5, "bonus": 20.0}
+      }
+    },
+    "felarx": {
+      "is_original": true,
+      "is_beam": false,
+      "is_melee": false,
+      "variants": ["felarx"],
+      "default_evolutions": {
+        "flat_base_damage": 0.0,
+        "flat_crit_chance": -0.10,
+        "flat_status": 0.0,
+        "crit_mult": 0.0,
+        "multishot": 0.0,
+        "reload_speed": 0.0,
+        "non_crit_attrition": {"chance": 0.5, "bonus": 20.0}
+      }
+    },
+    "onos": {
+      "is_original": true,
+      "is_beam": false,
+      "is_melee": false,
+      "variants": ["onos"],
+      "default_evolutions": {
+        "flat_base_damage": 0.0,
+        "flat_crit_chance": 0.0,
+        "flat_status": 0.0,
+        "crit_mult": 0.0,
+        "multishot": 0.0,
+        "reload_speed": 0.0
+      }
+    },
+    "innodem": {
+      "is_original": true,
+      "is_beam": false,
+      "is_melee": true,
+      "variants": ["innodem"],
+      "default_evolutions": {
+        "flat_base_damage": 0.0,
+        "flat_crit_chance": 0.0,
+        "flat_status": 0.0,
+        "crit_mult": 0.0,
+        "multishot": 0.0,
+        "reload_speed": 0.0
+      }
+    },
+    "praedos": {
+      "is_original": true,
+      "is_beam": false,
+      "is_melee": true,
+      "variants": ["praedos"],
+      "default_evolutions": {
+        "flat_base_damage": 0.0,
+        "flat_crit_chance": 0.0,
+        "flat_status": 0.0,
+        "crit_mult": 0.0,
+        "multishot": 0.0,
+        "reload_speed": 0.0
+      }
+    },
+    "ruvox": {
+      "is_original": true,
+      "is_beam": false,
+      "is_melee": true,
+      "variants": ["ruvox"],
+      "default_evolutions": {
+        "flat_base_damage": 0.0,
+        "flat_crit_chance": 0.0,
+        "flat_status": 0.0,
+        "crit_mult": 0.0,
+        "multishot": 0.0,
+        "reload_speed": 0.0
+      }
+    },
+    "thalys": {
+      "is_original": true,
+      "is_beam": false,
+      "is_melee": true,
+      "variants": ["thalys"],
+      "default_evolutions": {
+        "flat_base_damage": 0.0,
+        "flat_crit_chance": 0.0,
+        "flat_status": 0.0,
+        "crit_mult": 0.0,
+        "multishot": 0.0,
+        "reload_speed": 0.0
+      }
+    },
+    "torid": {
+      "is_original": false,
+      "is_beam": true,
+      "is_melee": false,
+      "variants": ["torid"],
+      "default_evolutions": {
+        "flat_base_damage": 51.0,
+        "flat_crit_chance": 0.20,
+        "flat_status": 0.0,
+        "crit_mult": 0.0,
+        "multishot": 0.0,
+        "reload_speed": 0.0
+      }
+    },
+    "burston": {
+      "is_original": false,
+      "is_beam": false,
+      "is_melee": false,
+      "variants": ["burston", "burston prime"],
+      "default_evolutions": {
+        "flat_base_damage": 42.0,
+        "flat_crit_chance": 0.20,
+        "flat_status": 0.0,
+        "crit_mult": 0.0,
+        "multishot": 0.0,
+        "reload_speed": 0.0
+      }
+    },
+    "strun": {
+      "is_original": false,
+      "is_beam": false,
+      "is_melee": false,
+      "variants": ["strun", "strun prime", "strun wraith", "mk1-strun"],
+      "default_evolutions": {
+        "flat_base_damage": 2.0,
+        "flat_crit_chance": 0.22,
+        "flat_status": 0.0,
+        "crit_mult": 0.4,
+        "multishot": 0.0,
+        "reload_speed": 0.0
+      },
+      "variant_overrides": {
+        "strun": {"flat_base_damage": 54.0},
+        "strun wraith": {"flat_base_damage": 24.0},
+        "mk1-strun": {"flat_base_damage": 68.0}
+      }
+    },
+    "latron": {
+      "is_original": false,
+      "is_beam": false,
+      "is_melee": false,
+      "variants": ["latron", "latron prime", "latron wraith"],
+      "default_evolutions": {
+        "flat_base_damage": 6.0,
+        "flat_crit_chance": 0.20,
+        "flat_status": 0.0,
+        "crit_mult": 0.0,
+        "multishot": 0.0,
+        "reload_speed": 0.0
+      },
+      "variant_overrides": {
+        "latron": {"flat_base_damage": 48.0, "flat_crit_chance": 0.18},
+        "latron wraith": {"flat_base_damage": 12.0, "flat_crit_chance": 0.18}
+      }
+    },
+    "dual toxocyst": {
+      "is_original": false,
+      "is_beam": false,
+      "is_melee": false,
+      "variants": ["dual toxocyst"],
+      "default_evolutions": {
+        "flat_base_damage": 32.0,
+        "flat_crit_chance": 0.20,
+        "flat_status": 0.0,
+        "crit_mult": 0.0,
+        "multishot": 0.0,
+        "reload_speed": 0.0
+      }
+    },
+    "furis": {
+      "is_original": false,
+      "is_beam": true,
+      "is_melee": false,
+      "variants": ["furis", "mk1-furis"],
+      "default_evolutions": {
+        "flat_base_damage": 28.0,
+        "flat_crit_chance": 0.0,
+        "flat_status": 0.28,
+        "crit_mult": 0.0,
+        "multishot": 0.0,
+        "reload_speed": 0.0
+      },
+      "variant_overrides": {
+        "mk1-furis": {"flat_status": 0.39}
+      }
+    },
+    "lex": {
+      "is_original": false,
+      "is_beam": false,
+      "is_melee": false,
+      "variants": ["lex", "lex prime"],
+      "default_evolutions": {
+        "flat_base_damage": 40.0,
+        "flat_crit_chance": 0.19,
+        "flat_status": 0.0,
+        "crit_mult": 0.4,
+        "multishot": 0.0,
+        "reload_speed": 0.0
+      },
+      "variant_overrides": {
+        "lex": {"flat_base_damage": 60.0, "flat_crit_chance": 0.20}
+      }
+    },
+    "boar": {
+      "is_original": false,
+      "is_beam": true,
+      "is_melee": false,
+      "variants": ["boar", "boar prime"],
+      "default_evolutions": {
+        "flat_base_damage": 10.0,
+        "flat_crit_chance": 0.20,
+        "flat_status": 0.0,
+        "crit_mult": 0.0,
+        "multishot": 0.0,
+        "reload_speed": 0.0
+      }
+    },
+    "miter": {
+      "is_original": false,
+      "is_beam": false,
+      "is_melee": false,
+      "variants": ["miter"],
+      "default_evolutions": {
+        "flat_base_damage": 30.0,
+        "flat_crit_chance": 0.22,
+        "flat_status": 0.0,
+        "crit_mult": 0.0,
+        "multishot": 0.0,
+        "reload_speed": 0.0
+      }
+    },
+    "braton": {
+      "is_original": false,
+      "is_beam": false,
+      "is_melee": false,
+      "variants": ["braton", "braton prime", "braton vandal", "mk1-braton"],
+      "default_evolutions": {
+        "flat_base_damage": 16.0,
+        "flat_crit_chance": 0.20,
+        "flat_status": 0.0,
+        "crit_mult": 0.0,
+        "multishot": 0.0,
+        "reload_speed": 0.0
+      }
+    },
+    "boltor": {
+      "is_original": false,
+      "is_beam": false,
+      "is_melee": false,
+      "variants": ["boltor", "boltor prime", "telos boltor"],
+      "default_evolutions": {
+        "flat_base_damage": 16.0,
+        "flat_crit_chance": 0.20,
+        "flat_status": 0.0,
+        "crit_mult": 0.0,
+        "multishot": 0.0,
+        "reload_speed": 0.0
+      },
+      "variant_overrides": {
+        "telos boltor": {"flat_crit_chance": 0.10}
+      }
+    },
+    "soma": {
+      "is_original": false,
+      "is_beam": false,
+      "is_melee": false,
+      "variants": ["soma", "soma prime"],
+      "default_evolutions": {
+        "flat_base_damage": 8.0,
+        "flat_crit_chance": 0.10,
+        "flat_status": 0.0,
+        "crit_mult": 0.4,
+        "multishot": 0.0,
+        "reload_speed": 0.0
+      }
+    },
+    "sicarus": {
+      "is_original": false,
+      "is_beam": false,
+      "is_melee": false,
+      "variants": ["sicarus", "sicarus prime"],
+      "default_evolutions": {
+        "flat_base_damage": 10.0,
+        "flat_crit_chance": 0.14,
+        "flat_status": 0.0,
+        "crit_mult": 0.0,
+        "multishot": 0.0,
+        "reload_speed": 0.0
+      },
+      "variant_overrides": {
+        "sicarus": {"flat_crit_chance": 0.18}
+      }
+    },
+    "dread": {
+      "is_original": false,
+      "is_beam": false,
+      "is_melee": false,
+      "variants": ["dread"],
+      "default_evolutions": {
+        "flat_base_damage": 20.0,
+        "flat_crit_chance": 0.10,
+        "flat_status": 0.10,
+        "crit_mult": 0.0,
+        "multishot": 0.0,
+        "reload_speed": 0.0
+      }
+    },
+    "paris": {
+      "is_original": false,
+      "is_beam": false,
+      "is_melee": false,
+      "variants": ["paris", "paris prime", "mk1-paris"],
+      "default_evolutions": {
+        "flat_base_damage": 40.0,
+        "flat_crit_chance": 0.10,
+        "flat_status": 0.10,
+        "crit_mult": 0.0,
+        "multishot": 0.0,
+        "reload_speed": 0.0
+      }
+    },
+    "angstrum": {
+      "is_original": false,
+      "is_beam": false,
+      "is_melee": false,
+      "variants": ["angstrum", "prisma angstrum"],
+      "default_evolutions": {
+        "flat_base_damage": 20.0,
+        "flat_crit_chance": 0.14,
+        "flat_status": 0.0,
+        "crit_mult": 0.4,
+        "multishot": 0.0,
+        "reload_speed": 0.0
+      }
+    },
+    "atomos": {
+      "is_original": false,
+      "is_beam": false,
+      "is_melee": false,
+      "variants": ["atomos"],
+      "default_evolutions": {
+        "flat_base_damage": 18.0,
+        "flat_crit_chance": 0.16,
+        "flat_status": 0.0,
+        "crit_mult": 0.0,
+        "multishot": 0.0,
+        "reload_speed": 0.0
+      }
+    },
+    "gorgon": {
+      "is_original": false,
+      "is_beam": false,
+      "is_melee": false,
+      "variants": ["gorgon", "gorgon wraith", "prisma gorgon"],
+      "default_evolutions": {
+        "flat_base_damage": 12.0,
+        "flat_crit_chance": 0.14,
+        "flat_status": 0.0,
+        "crit_mult": 0.0,
+        "multishot": 0.0,
+        "reload_speed": 0.0
+      }
+    },
+    "vasto": {
+      "is_original": false,
+      "is_beam": false,
+      "is_melee": false,
+      "variants": ["vasto", "vasto prime"],
+      "default_evolutions": {
+        "flat_base_damage": 20.0,
+        "flat_crit_chance": 0.20,
+        "flat_status": 0.0,
+        "crit_mult": 0.0,
+        "multishot": 0.0,
+        "reload_speed": 0.0
+      }
+    },
+    "zylok": {
+      "is_original": false,
+      "is_beam": false,
+      "is_melee": false,
+      "variants": ["zylok", "zylok prime"],
+      "default_evolutions": {
+        "flat_base_damage": 20.0,
+        "flat_crit_chance": 0.16,
+        "flat_status": 0.0,
+        "crit_mult": 0.0,
+        "multishot": 0.0,
+        "reload_speed": 0.0
+      }
+    },
+    "lato": {
+      "is_original": false,
+      "is_beam": false,
+      "is_melee": false,
+      "variants": ["lato", "lato prime", "lato vandal"],
+      "default_evolutions": {
+        "flat_base_damage": 20.0,
+        "flat_crit_chance": 0.16,
+        "flat_status": 0.0,
+        "crit_mult": 0.0,
+        "multishot": 0.0,
+        "reload_speed": 0.0
+      }
+    },
+    "gammacor": {
+      "is_original": false,
+      "is_beam": false,
+      "is_melee": false,
+      "variants": ["gammacor", "synoid gammacor"],
+      "default_evolutions": {
+        "flat_base_damage": 10.0,
+        "flat_crit_chance": 0.12,
+        "flat_status": 0.0,
+        "crit_mult": 0.0,
+        "multishot": 0.0,
+        "reload_speed": 0.0
+      }
+    },
+    "bronco": {
+      "is_original": false,
+      "is_beam": false,
+      "is_melee": false,
+      "variants": ["bronco", "bronco prime"],
+      "default_evolutions": {
+        "flat_base_damage": 12.0,
+        "flat_crit_chance": 0.12,
+        "flat_status": 0.0,
+        "crit_mult": 0.0,
+        "multishot": 0.0,
+        "reload_speed": 0.0
+      }
+    },
+    "kunai": {
+      "is_original": false,
+      "is_beam": false,
+      "is_melee": false,
+      "variants": ["kunai", "mk1-kunai"],
+      "default_evolutions": {
+        "flat_base_damage": 20.0,
+        "flat_crit_chance": 0.16,
+        "flat_status": 0.0,
+        "crit_mult": 0.0,
+        "multishot": 0.0,
+        "reload_speed": 0.0
+      }
+    },
+    "despair": {
+      "is_original": false,
+      "is_beam": false,
+      "is_melee": false,
+      "variants": ["despair"],
+      "default_evolutions": {
+        "flat_base_damage": 20.0,
+        "flat_crit_chance": 0.16,
+        "flat_status": 0.0,
+        "crit_mult": 0.0,
+        "multishot": 0.0,
+        "reload_speed": 0.0
+      }
+    },
+    "sybaris": {
+      "is_original": false,
+      "is_beam": false,
+      "is_melee": false,
+      "variants": ["sybaris", "sybaris prime", "dex sybaris"],
+      "default_evolutions": {
+        "flat_base_damage": 12.0,
+        "flat_crit_chance": 0.14,
+        "flat_status": 0.0,
+        "crit_mult": 0.0,
+        "multishot": 0.0,
+        "reload_speed": 0.0
+      }
+    },
+    "dera": {
+      "is_original": false,
+      "is_beam": false,
+      "is_melee": false,
+      "variants": ["dera", "dera vandal"],
+      "default_evolutions": {
+        "flat_base_damage": 16.0,
+        "flat_crit_chance": 0.14,
+        "flat_status": 0.0,
+        "crit_mult": 0.0,
+        "multishot": 0.0,
+        "reload_speed": 0.0
+      }
+    },
+    "cestra": {
+      "is_original": false,
+      "is_beam": false,
+      "is_melee": false,
+      "variants": ["cestra"],
+      "default_evolutions": {
+        "flat_base_damage": 16.0,
+        "flat_crit_chance": 0.16,
+        "flat_status": 0.0,
+        "crit_mult": 0.0,
+        "multishot": 0.0,
+        "reload_speed": 0.0
+      }
+    },
+    "ceramic dagger": {
+      "is_original": false,
+      "is_beam": false,
+      "is_melee": true,
+      "variants": ["ceramic dagger"],
+      "default_evolutions": {
+        "flat_base_damage": 0.0,
+        "flat_crit_chance": 0.16,
+        "flat_status": 0.0,
+        "crit_mult": 0.0,
+        "multishot": 0.0,
+        "reload_speed": 0.0
+      }
+    },
+    "hate": {
+      "is_original": false,
+      "is_beam": false,
+      "is_melee": true,
+      "variants": ["hate"],
+      "default_evolutions": {
+        "flat_base_damage": 0.0,
+        "flat_crit_chance": 0.14,
+        "flat_status": 0.0,
+        "crit_mult": 0.0,
+        "multishot": 0.0,
+        "reload_speed": 0.0
+      }
+    },
+    "magistar": {
+      "is_original": false,
+      "is_beam": false,
+      "is_melee": true,
+      "variants": ["magistar", "sancti magistar"],
+      "default_evolutions": {
+        "flat_base_damage": 0.0,
+        "flat_crit_chance": 0.16,
+        "flat_status": 0.0,
+        "crit_mult": 1.0,
+        "multishot": 0.0,
+        "reload_speed": 0.0
+      },
+      "variant_overrides": {
+        "sancti magistar": {"flat_crit_chance": 0.12, "crit_mult": 0.2}
+      }
+    },
+    "okina": {
+      "is_original": false,
+      "is_beam": false,
+      "is_melee": true,
+      "variants": ["okina", "okina prime"],
+      "default_evolutions": {
+        "flat_base_damage": 0.0,
+        "flat_crit_chance": 0.06,
+        "flat_status": 0.0,
+        "crit_mult": 0.0,
+        "multishot": 0.0,
+        "reload_speed": 0.0
+      },
+      "variant_overrides": {
+        "okina": {"flat_crit_chance": 0.12}
+      }
+    },
+    "dual ichor": {
+      "is_original": false,
+      "is_beam": false,
+      "is_melee": true,
+      "variants": ["dual ichor"],
+      "default_evolutions": {
+        "flat_base_damage": 0.0,
+        "flat_crit_chance": 0.14,
+        "flat_status": 0.0,
+        "crit_mult": 0.0,
+        "multishot": 0.0,
+        "reload_speed": 0.0
+      }
+    },
+    "nami solo": {
+      "is_original": false,
+      "is_beam": false,
+      "is_melee": true,
+      "variants": ["nami solo"],
+      "default_evolutions": {
+        "flat_base_damage": 0.0,
+        "flat_crit_chance": 0.10,
+        "flat_status": 0.10,
+        "crit_mult": 0.0,
+        "multishot": 0.0,
+        "reload_speed": 0.0
+      }
+    },
+    "sibear": {
+      "is_original": false,
+      "is_beam": false,
+      "is_melee": true,
+      "variants": ["sibear"],
+      "default_evolutions": {
+        "flat_base_damage": 0.0,
+        "flat_crit_chance": 0.15,
+        "flat_status": 0.0,
+        "crit_mult": 0.0,
+        "multishot": 0.0,
+        "reload_speed": 0.0
+      }
+    },
+    "skana": {
+      "is_original": false,
+      "is_beam": false,
+      "is_melee": true,
+      "variants": ["skana", "skana prime", "prisma skana"],
+      "default_evolutions": {
+        "flat_base_damage": 0.0,
+        "flat_crit_chance": 0.16,
+        "flat_status": 0.0,
+        "crit_mult": 0.0,
+        "multishot": 0.0,
+        "reload_speed": 0.0
+      }
+    },
+    "ack & brunt": {
+      "is_original": false,
+      "is_beam": false,
+      "is_melee": true,
+      "variants": ["ack & brunt"],
+      "default_evolutions": {
+        "flat_base_damage": 0.0,
+        "flat_crit_chance": 0.14,
+        "flat_status": 0.0,
+        "crit_mult": 0.0,
+        "multishot": 0.0,
+        "reload_speed": 0.0
+      }
+    },
+    "anku": {
+      "is_original": false,
+      "is_beam": false,
+      "is_melee": true,
+      "variants": ["anku"],
+      "default_evolutions": {
+        "flat_base_damage": 0.0,
+        "flat_crit_chance": 0.14,
+        "flat_status": 0.0,
+        "crit_mult": 0.0,
+        "multishot": 0.0,
+        "reload_speed": 0.0
+      }
+    },
+    "bo": {
+      "is_original": false,
+      "is_beam": false,
+      "is_melee": true,
+      "variants": ["bo", "bo prime", "mk1-bo"],
+      "default_evolutions": {
+        "flat_base_damage": 0.0,
+        "flat_crit_chance": 0.14,
+        "flat_status": 0.0,
+        "crit_mult": 0.0,
+        "multishot": 0.0,
+        "reload_speed": 0.0
+      }
+    },
+    "furax": {
+      "is_original": false,
+      "is_beam": false,
+      "is_melee": true,
+      "variants": ["furax", "furax wraith", "mk1-furax"],
+      "default_evolutions": {
+        "flat_base_damage": 0.0,
+        "flat_crit_chance": 0.14,
+        "flat_status": 0.0,
+        "crit_mult": 0.0,
+        "multishot": 0.0,
+        "reload_speed": 0.0
+      }
+    }
+  }
 }

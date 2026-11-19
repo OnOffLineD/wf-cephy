@@ -2,13 +2,11 @@ from typing import Any, Dict
 
 try:
     from PyQt6.QtWidgets import (
-        QDialog, QHBoxLayout, QLabel, QLineEdit, QPushButton,
-        QTableWidget, QTableWidgetItem, QVBoxLayout
+        QHBoxLayout, QLabel, QLineEdit, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout
     )
 except ImportError:
     from PySide6.QtWidgets import (
-        QDialog, QHBoxLayout, QLabel, QLineEdit, QPushButton,
-        QTableWidget, QTableWidgetItem, QVBoxLayout
+        QHBoxLayout, QLabel, QLineEdit, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout
     )
 
 from scripts.riven_reroll_reader import format_riven_stats, parse_riven_input

@@ -170,3 +170,40 @@ def test_extract_riven_stats_from_screen_none_without_stats(analyzer, text):
     analyzer.ocr_image = MagicMock(return_value=text)
     assert analyzer.extract_riven_stats_from_screen(Image.new("RGB", (600, 800))) is None
 
+
+
+@pytest.mark.parametrize("text, expected", [
+    # A bare 90 means 90%, and the element is counted once, not once per parser.
+    ("화염 90", {"heat": 0.9, "elemental_damage": 0.9}),
+    ("화염 90%", {"heat": 0.9, "elemental_damage": 0.9}),
+    ("화염 피해 90", {"heat": 0.9, "elemental_damage": 0.9}),
+    ("독성 90 치확 150", {"toxin": 0.9, "crit_chance": 1.5, "elemental_damage": 0.9}),
+    ("속성 60 화염 90", {"heat": 0.9, "elemental_damage": 1.5}),
+    ("상태 이상 확률 80", {"status_chance": 0.8}),
+    ("충격 120 관통 80", {"impact": 1.2, "puncture": 0.8}),
+    ("마무리 일격 피해 60", {"finisher_damage": 0.6}),
+    ("+150% 치명타 확률\n+120% 치명타 피해\n-30% 멀티샷", {"crit_chance": 1.5, "crit_damage": 1.2, "multishot": -0.3}),
+    ("+312.5% 치명타 확률", {"crit_chance": 3.125}),
+])
+def test_riven_chat_text_is_parsed_once_per_stat(analyzer, text, expected):
+    assert analyzer._parse_riven_text(text) == pytest.approx(expected)
+
+
+def _pending_torid(analyzer):
+    w_meta = {"name": "Torid", "kr_name": "토리드", "category": "Primary", "total_damage": 100, "crit_chance": 0.20, "crit_mult": 2.0, "fire_rate": 1.0}
+    analyzer.pending_riven_context = {"w_meta": w_meta, "left_stats": {}, "mod_objs": [], "riven_name": "리벤 모드",
+                                      "base_metrics": analyzer.calculate_comprehensive_metrics(w_meta, left_stats={}, mod_objs=[])}
+
+
+def test_bare_numbers_are_crit_shorthand(analyzer):
+    _pending_torid(analyzer)
+    res = analyzer.resume_pending_riven("150 120")
+    assert res["success"] is True
+    assert res["riven_stats"] == pytest.approx({"crit_chance": 1.5, "crit_damage": 1.2})
+
+
+def test_unreadable_labels_are_not_guessed_as_crit(analyzer):
+    _pending_torid(analyzer)
+    res = analyzer.resume_pending_riven("모르는옵션 120 다른옵션 80")
+    assert res["success"] is False
+    assert analyzer.has_pending_riven() is True

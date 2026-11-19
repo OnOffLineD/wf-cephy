@@ -140,10 +140,6 @@ class HudButton(QAbstractButton):
         self.update()
 
     @property
-    def press_t(self):
-        return self._press_t
-
-    @property
     def is_busy(self):
         return self._busy
 

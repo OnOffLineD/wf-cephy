@@ -149,6 +149,7 @@ class WorldStateTracker:
         'weekly_iron_wake': ['아이언 웨이크', '리벤 조각', '팔라디노']
     }
     QUESTION_WORDS = ('공략', '어떻게', '뭐야', '조건', '알려줘', '추천', '보상', '약점', '패턴')
+    SORTIE_RESET_HOUR_UTC = 16
     COMMAND_PREFIX = r'^(나\s*오늘|나\s*지금|방금|오늘|내일|이번\s*주|주간|일일)\s*'
     COMMAND_PARTICLE = r'(을|를|은|는|이|가|도)$'
 
@@ -183,11 +184,13 @@ class WorldStateTracker:
         self.save_checklist(items)
         return items
 
-    def load_checklist(self) -> List[Dict[str, Any]]:
+    def load_checklist(self, now: Optional[datetime] = None) -> List[Dict[str, Any]]:
         items = self._read_items()
 
-        now = datetime.now(timezone.utc)
+        now = now or datetime.now(timezone.utc)
         daily_key = now.strftime("%Y-%m-%d")
+        # The sortie rolls over at 16:00 UTC, not at midnight like the other dailies.
+        sortie_key = (now - timedelta(hours=self.SORTIE_RESET_HOUR_UTC)).strftime("%Y-%m-%d")
         iso = now.isocalendar()
         weekly_key = f"{iso[0]}-W{iso[1]:02d}"
 
@@ -201,18 +204,24 @@ class WorldStateTracker:
         # Older versions stored the bare week number.
         if meta.get("last_weekly_key") == iso[1]:
             meta["last_weekly_key"] = weekly_key
+        # Older versions reset the sortie with the other dailies; take that day over instead of wiping a done sortie.
+        if "last_sortie_key" not in meta and meta.get("last_daily_key") == daily_key:
+            meta["last_sortie_key"] = sortie_key
 
         new_day = daily_key != meta.get("last_daily_key")
+        new_sortie = sortie_key != meta.get("last_sortie_key")
         new_week = weekly_key != meta.get("last_weekly_key")
-        if not new_day and not new_week:
+        if not new_day and not new_sortie and not new_week:
             return items
 
         for item in items:
+            is_sortie = item.get("id") == "daily_sortie"
             is_daily = item.get("type") == "daily" or "[일일]" in item.get("text", "")
             is_weekly = item.get("type") == "weekly" or "[주간]" in item.get("text", "")
-            if (new_day and is_daily) or (new_week and is_weekly):
+            if (new_sortie if is_sortie else (new_day and is_daily)) or (new_week and is_weekly):
                 item["done"] = False
         meta["last_daily_key"] = daily_key
+        meta["last_sortie_key"] = sortie_key
         meta["last_weekly_key"] = weekly_key
 
         self.save_checklist(items)
@@ -343,17 +352,33 @@ class WorldStateTracker:
         name = re.sub(self.COMMAND_PREFIX, '', raw_name.strip()).strip()
         return re.sub(self.COMMAND_PARTICLE, '', name).strip()
 
-    def _find_item(self, items: List[Dict[str, Any]], task_name: str) -> Optional[Dict[str, Any]]:
+    def _find_item(self, items: List[Dict[str, Any]], task_name: str, strict: bool = False) -> Optional[Dict[str, Any]]:
+        """The item a name points at.
+
+        The item's own text wins over an alias, so "아콘 샤드 파밍" finds the custom item of that name rather
+        than the archon hunt. An alias counts only as a whole word; with strict (deletion) it must be the whole
+        name, and a name that fits more than one item finds nothing.
+        """
         # Too short to name anything ("일일 완료", "오늘 다 했어"): matching it would tick an arbitrary item.
         if len(task_name) < 2:
             return None
-        lowered = task_name.lower()
+        lowered = task_name.lower().strip()
         for item in items:
-            text = item.get('text', '')
-            if lowered in text.lower() or text.lower() in lowered:
+            if item.get('text', '').lower().strip() == lowered:
                 return item
-            if any(alias in lowered for alias in self.ITEM_ALIASES.get(item.get('id', ''), [])):
-                return item
+        by_text = [it for it in items if lowered in it.get('text', '').lower() or (not strict and it.get('text', '').lower() in lowered)]
+        if by_text:
+            return by_text[0] if len(by_text) == 1 or not strict else None
+
+        words = re.sub(r'\s+', ' ', lowered)
+        by_alias = []
+        for item in items:
+            for alias in self.ITEM_ALIASES.get(item.get('id', ''), []):
+                if (words == alias) if strict else re.search(rf'(^|\s){re.escape(alias)}', words):
+                    by_alias.append(item)
+                    break
+        if len(by_alias) == 1 or (by_alias and not strict):
+            return by_alias[0]
         return None
 
     def process_chat_todo_command(self, user_text: str, context_keyword: Optional[str] = None) -> Optional[Dict[str, Any]]:
@@ -379,14 +404,15 @@ class WorldStateTracker:
 
         deletion = re.search(r"(.+?)\s*(?:숙제\s*삭제|목록에서\s*빼|할\s*일\s*지워|숙제\s*지워|삭제(?:해\s*줘?)?|지워\s*줘?)[.!]?$", user_text, re.IGNORECASE)
         if deletion:
-            item = self._find_item(self.load_checklist(), self._clean_task_name(deletion.group(1)))
+            item = self._find_item(self.load_checklist(), self._clean_task_name(deletion.group(1)), strict=True)
             if item is None:
                 return None
-            self.delete_item(item['id'])
+            # A deleted item can't be undone, so a typed order only asks; the button does the deleting.
             return {
-                "action": "DELETE",
+                "action": "DELETE_CONFIRM",
+                "item_id": item['id'],
                 "task": item['text'],
-                "message": f"🗑️ 오퍼레이터님! [{item['text']}] 항목을 숙제 목록에서 삭제했습니다."
+                "message": f"[{item['text']}] 항목을 숙제 목록에서 삭제할까요? 삭제하려면 아래 버튼을 눌러 주십시오."
             }
 
         addition = re.search(
@@ -425,7 +451,7 @@ class WorldStateTracker:
             return None
         item = None
         if tool != "add_todo":
-            item = self._find_item(self.load_checklist(), task_name)
+            item = self._find_item(self.load_checklist(), task_name, strict=tool == "delete_todo")
             if item is None:
                 return None
         return {"tool": tool, "task": task_name, "item": item}
@@ -457,7 +483,7 @@ class WorldStateTracker:
                 "message": f"✅ 오퍼레이터님! [{item['text']}] 숙제 완료 체크해 두었습니다! 수고하셨습니다!",
             }
         elif tool == "delete_todo":
-            item = self._find_item(self.load_checklist(), task_name)
+            item = self._find_item(self.load_checklist(), task_name, strict=True)
             if item is None:
                 return None
             self.delete_item(item["id"])

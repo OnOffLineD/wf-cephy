@@ -1,8 +1,10 @@
 import os
 import json
 import random
+import shutil
+from datetime import datetime
 from typing import Dict, Any, Optional
-from scripts.path_config import get_user_data_path
+from scripts.path_config import get_user_data_path, write_json_atomic
 
 DEFAULT_MODEL_PATH = "models/google_gemma-4-E2B-it-Q4_K_M.gguf"
 DEFAULT_CONTEXT_SIZE = 4096
@@ -52,9 +54,19 @@ class PersonaManager:
         if os.path.exists(self.config_path):
             try:
                 with open(self.config_path, "r", encoding="utf-8") as f:
-                    self.config = json.load(f)
-            except Exception:
+                    loaded = json.load(f)
+            except (OSError, ValueError):
+                loaded = None
+            if isinstance(loaded, dict):
+                self.config = loaded
+            else:
+                # Unreadable or not a settings object: keep it for recovery before defaults replace it.
                 self.config = {}
+                try:
+                    stamp = datetime.now().strftime("%Y%m%d%H%M%S")
+                    shutil.copy2(self.config_path, f"{self.config_path}.corrupt-{stamp}")
+                except OSError:
+                    pass
 
         if not self.config:
             self.config = {
@@ -83,8 +95,7 @@ class PersonaManager:
 
     def save_config(self):
         os.makedirs(os.path.dirname(self.config_path), exist_ok=True)
-        with open(self.config_path, "w", encoding="utf-8") as f:
-            json.dump(self.config, f, ensure_ascii=False, indent=2)
+        write_json_atomic(self.config_path, self.config)
 
     def get_mode(self) -> str:
         return self.config.get("mode", "random")
@@ -100,10 +111,6 @@ class PersonaManager:
 
     def get_custom_prompt(self) -> str:
         return self.config.get("custom_prompt", "")
-
-    def set_custom_prompt(self, prompt: str):
-        self.config["custom_prompt"] = prompt.strip()
-        self.save_config()
 
     def get_presets(self) -> Dict[str, Dict[str, str]]:
         return DEFAULT_PRESETS

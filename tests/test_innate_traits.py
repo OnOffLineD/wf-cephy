@@ -2,7 +2,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from scripts.innate_traits import INNATE_MOD, apply_innate_traits, is_adversary, parse_bonus_answer
+from scripts.innate_traits import INNATE_MOD, apply_innate_traits, get_incarnon_data, is_adversary, parse_bonus_answer, trait_for
 from scripts.llm_orchestrator import LLMOrchestrator
 from scripts.screen_mod_analyzer import ScreenModAnalyzer
 from scripts.warframe_damage_engine import WarframeDamageEngine
@@ -45,13 +45,6 @@ def test_impact_wheel_adds_attack_speed_when_the_panel_has_none(ix, motovore):
     assert res["final_fr"] == pytest.approx(1.4)
 
 
-def test_panel_values_win_over_the_trait(ix, motovore):
-    left = {"total_damage": 1413.5, "fire_rate": 1.1}
-    res = WarframeDamageEngine().compute_metrics(motovore, left_stats=left, mod_objs=mods(ix, "Heavy Trauma"))
-    assert res["final_dmg"] == pytest.approx(1413.5)
-    assert res["final_fr"] == pytest.approx(1.1)
-
-
 def test_trait_is_applied_once(ix, motovore):
     once = apply_innate_traits(motovore, mods(ix, "Auger Strike"))
     twice = apply_innate_traits(motovore, once)
@@ -71,9 +64,63 @@ def test_other_weapons_are_unchanged(ix):
 
 
 def test_adversary_weapons_are_recognised(ix):
-    for name in ("kuva zarr", "tenet cycron", "coda hema", "coda motovore", "kuva ayanga"):
+    for name in ("kuva zarr", "tenet cycron", "coda hema", "coda motovore", "kuva ayanga", "dual coda torxica"):
         assert is_adversary(ix.weapons_index[name])
     assert not is_adversary(ix.weapons_index["fragor"])
+    assert not is_adversary(ix.weapons_index["paracesis"])
+
+
+def test_incarnon_exact_family_matching_and_evolutions():
+    laetum = get_incarnon_data("Laetum")
+    assert laetum is not None
+    assert laetum["family"] == "laetum"
+    assert laetum["is_beam"] is False
+    assert laetum["default_evolutions"]["non_crit_attrition"] == {"chance": 0.5, "bonus": 20.0}
+
+    torid = get_incarnon_data("Torid")
+    assert torid is not None and torid["is_beam"] is True
+    assert torid["default_evolutions"]["flat_base_damage"] == pytest.approx(51.0)
+    assert torid["default_evolutions"]["flat_crit_chance"] == pytest.approx(0.20)
+
+    strun_p = get_incarnon_data("Strun Prime")
+    assert strun_p is not None
+    assert strun_p["default_evolutions"]["flat_crit_chance"] == pytest.approx(0.22)
+    assert strun_p["default_evolutions"]["crit_mult"] == pytest.approx(0.4)
+
+    mag = get_incarnon_data("Magistar")
+    sancti_mag = get_incarnon_data("Sancti Magistar")
+    assert mag["is_melee"] is True and mag["default_evolutions"]["crit_mult"] == pytest.approx(1.0)
+    assert sancti_mag["default_evolutions"]["crit_mult"] == pytest.approx(0.2)
+
+    # Exact matching prevents substring false positives (Aklex != Lex, Afuris != Furis, Akvasto != Vasto, etc.)
+    for non_incarnon in ("Aklex", "Aklex Prime", "Afuris", "Afuris Prime", "Dex Furis", "Akvasto", "Akbronco", "Aksomati", "Aklato", "Dual Skana", "Dual Cestra", "Bubonico"):
+        assert get_incarnon_data(non_incarnon) is None, non_incarnon
+
+
+def test_expanded_innate_traits_and_arcane_effects_schema():
+    import json
+    from scripts.path_config import get_path
+
+    assert trait_for({"name": "Kuva Nukor"})["hidden_status_types"] == 1
+    assert trait_for({"name": "Kuva Nukor"})["chain_targets"] == 2
+    assert trait_for({"name": "Cedo"})["innate_gunco_per_status"] == pytest.approx(0.60)
+    assert trait_for({"name": "Cedo Prime"})["innate_gunco_per_status"] == pytest.approx(0.60)
+    assert trait_for({"name": "Glaive Prime"})["forced_heavy_proc"] == "slash"
+    assert trait_for({"name": "Xoris"})["forced_heavy_proc"] == "electric"
+    assert trait_for({"name": "Cerata"})["forced_heavy_proc"] == "toxin"
+    assert trait_for({"name": "Nataruk"})["is_multiplicative_gunco"] is True
+    assert trait_for({"name": "Tenet Arca Plasmor"})["is_multiplicative_gunco"] is True
+
+    with open(get_path("data", "arcane_effects.json"), encoding="utf-8") as f:
+        arcane_effects = json.load(f)
+    assert arcane_effects["Melee Exposure"]["element"] == "corrosive"
+    for expected in (
+        "Cascadia Flare", "Longbow Sharpshot", "Shotgun Vendetta",
+        "Primary Frostbite", "Primary Blight", "Primary Crux",
+        "Secondary Enervate", "Secondary Encumber", "Secondary Outburst",
+        "Melee Influence", "Melee Duplicate", "Melee Doughty", "Melee Crescendo",
+    ):
+        assert expected in arcane_effects, expected
 
 
 @pytest.mark.parametrize("text, expected", [

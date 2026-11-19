@@ -2,16 +2,12 @@ from typing import Dict
 
 try:
     from PyQt6.QtWidgets import (
-        QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
-        QPushButton, QComboBox, QGridLayout, QFrame
+        QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QComboBox, QGridLayout, QFrame
     )
-    from PyQt6.QtCore import Qt
 except ImportError:
     from PySide6.QtWidgets import (
-        QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
-        QPushButton, QComboBox, QGridLayout, QFrame
+        QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QComboBox, QGridLayout, QFrame
     )
-    from PySide6.QtCore import Qt
 
 from scripts.riven_reroll_reader import parse_riven_input
 from scripts.frameless_dialog import FramelessDialog, FRAMELESS_CARD_STYLE

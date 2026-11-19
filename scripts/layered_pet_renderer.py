@@ -1,16 +1,15 @@
 import os
-import sys
 import math
 import random
 from typing import Optional, Dict, Tuple
 
 try:
-    from PyQt6.QtWidgets import QWidget, QApplication
-    from PyQt6.QtGui import QPainter, QPixmap, QColor, QPen, QBrush, QFont, QRadialGradient, QCursor
+    from PyQt6.QtWidgets import QWidget
+    from PyQt6.QtGui import QPainter, QPixmap, QColor, QPen, QBrush, QCursor
     from PyQt6.QtCore import QTimer, Qt, QRect, QPoint, QPointF
 except ImportError:
-    from PySide6.QtWidgets import QWidget, QApplication
-    from PySide6.QtGui import QPainter, QPixmap, QColor, QPen, QBrush, QFont, QRadialGradient, QCursor
+    from PySide6.QtWidgets import QWidget
+    from PySide6.QtGui import QPainter, QPixmap, QColor, QPen, QBrush, QCursor
     from PySide6.QtCore import QTimer, Qt, QRect, QPoint, QPointF
 
 from scripts.path_config import get_path

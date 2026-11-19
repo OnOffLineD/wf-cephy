@@ -8,6 +8,12 @@ from PIL import Image, ImageChops, ImageOps
 from rapidfuzz import fuzz
 
 try:
+    # onnxruntime has to load its DLLs before winocr does: imported after winocr, it crashes the process.
+    import onnxruntime  # noqa: F401
+except ImportError:
+    pass
+
+try:
     import winocr
 except ImportError:
     winocr = None

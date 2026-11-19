@@ -2,16 +2,10 @@ from typing import Dict, List, Optional, Tuple
 
 try:
     from PyQt6.QtCore import Qt
-    from PyQt6.QtWidgets import (
-        QComboBox, QCompleter, QDialog, QGridLayout, QHBoxLayout,
-        QLabel, QPushButton, QVBoxLayout
-    )
+    from PyQt6.QtWidgets import QComboBox, QCompleter, QGridLayout, QHBoxLayout, QLabel, QPushButton, QVBoxLayout
 except ImportError:
     from PySide6.QtCore import Qt
-    from PySide6.QtWidgets import (
-        QComboBox, QCompleter, QDialog, QGridLayout, QHBoxLayout,
-        QLabel, QPushButton, QVBoxLayout
-    )
+    from PySide6.QtWidgets import QComboBox, QCompleter, QGridLayout, QHBoxLayout, QLabel, QPushButton, QVBoxLayout
 
 from scripts.build_store import GRID_SLOTS, RIVEN_MOD
 from scripts.frameless_dialog import FramelessDialog

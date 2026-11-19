@@ -122,3 +122,14 @@ def test_runner_compatibility_and_llama_only():
     assert isinstance(res, dict)
     assert "report" in res
     assert "mood" in res
+
+
+@pytest.mark.parametrize("content", ['{"mode": "glitch",', '["not", "a", "dict"]'])
+def test_unreadable_config_is_backed_up_before_defaults(tmp_path, content):
+    cfg_path = tmp_path / "persona_config.json"
+    cfg_path.write_text(content, encoding="utf-8")
+    pm = PersonaManager(config_path=str(cfg_path))
+    assert pm.get_mode() == "random"
+    backups = list(tmp_path.glob("persona_config.json.corrupt-*"))
+    assert len(backups) == 1 and backups[0].read_text(encoding="utf-8") == content
+    assert not list(tmp_path.glob("*.tmp"))

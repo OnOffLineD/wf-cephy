@@ -257,3 +257,10 @@ def test_long_conversations_leave_room_for_the_guide_context():
     assert len(context) * TOKENS_PER_CHAR <= memory.token_budget + 100
     assert "📎" not in context
     assert "29번째 질문" in context
+
+
+def test_number_filter_ignores_mood_header():
+    answer = "[MOOD:tactical:2] 테랄리스트는 다리 관절을 먼저 노리세요.\n체력은 99999입니다."
+    kept = LLMOrchestrator._without_invented_numbers(answer, "테랄리스트 다리 관절 약점", "테랄리스트 어떻게 잡아")
+    assert kept.startswith("[MOOD:tactical:2] 테랄리스트는")
+    assert "99999" not in kept

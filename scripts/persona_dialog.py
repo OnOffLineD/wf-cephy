@@ -8,19 +8,19 @@ try:
         QVBoxLayout, QHBoxLayout, QLabel, QFrame, QApplication,
         QTabWidget, QWidget, QLineEdit, QFileDialog, QSpinBox, QComboBox, QCheckBox
     )
-    from PyQt6.QtCore import Qt, QPoint, QSize, QRectF, QVariantAnimation, QEasingCurve
-    from PyQt6.QtGui import QIcon, QPixmap, QPainter, QPen, QColor
+    from PyQt6.QtCore import Qt, QSize, QRectF, QVariantAnimation, QEasingCurve
+    from PyQt6.QtGui import QIcon, QPainter, QPen
 except ImportError:
     from PySide6.QtWidgets import (
         QDialog, QRadioButton, QButtonGroup, QTextEdit, QPushButton,
         QVBoxLayout, QHBoxLayout, QLabel, QFrame, QApplication,
         QTabWidget, QWidget, QLineEdit, QFileDialog, QSpinBox, QComboBox, QCheckBox
     )
-    from PySide6.QtCore import Qt, QPoint, QSize, QRectF, QVariantAnimation, QEasingCurve
-    from PySide6.QtGui import QIcon, QPixmap, QPainter, QPen, QColor
+    from PySide6.QtCore import Qt, QSize, QRectF, QVariantAnimation, QEasingCurve
+    from PySide6.QtGui import QIcon, QPainter, QPen
 
 from scripts.persona_manager import PersonaManager, DEFAULT_PRESETS
-from scripts.hud_widgets import load_icon_pixmap, ICON_DIR, HUD_CYAN
+from scripts.hud_widgets import load_icon_pixmap, HUD_CYAN
 from scripts.path_config import get_path
 from scripts.frameless_dialog import FramelessDialog
 from scripts.morphing_tab_bar import MorphingTabBar, BAR_BG, BAR_BORDER, IND_FILL, LEAD_MS, TRAIL_MS

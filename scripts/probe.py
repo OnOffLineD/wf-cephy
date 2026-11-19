@@ -8,6 +8,7 @@ Gate 3: Graphify & Workspace Integrity Check
 import sys
 import os
 import re
+import math
 import subprocess
 
 # Ensure project root is in python path
@@ -69,7 +70,8 @@ def run_domain_sanity():
 
         # Pin worked examples from the wiki so a broken formula fails even without the test suite.
         from scripts.damage_formulas import average_crit_mult, combine_elements, enemy_armor_dr, weak_point_multiplier
-        assert abs(enemy_armor_dr(1350) - 0.45) < 1e-9, "Enemy armor formula changed"
+        assert abs(enemy_armor_dr(1350) - (0.9 * math.sqrt(1350.0 / 2700.0))) < 1e-9, "Enemy armor formula changed"
+        assert abs(enemy_armor_dr(2700) - 0.9) < 1e-9, "Enemy armor cap formula changed"
         assert abs(average_crit_mult(0.5, 3.0) - 2.0) < 1e-9, "Average crit formula changed"
         assert abs(weak_point_multiplier(3.0, 4.25, 0.7, True) - 15.9375) < 1e-9, "Weak point formula changed"
         combined = combine_elements([("heat", 1.0), ("cold", 1.0), ("toxin", 1.0)])["types"]

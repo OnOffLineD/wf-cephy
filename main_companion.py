@@ -1,7 +1,3 @@
-try:
-    import torch
-except Exception:
-    pass
 import sys
 import os
 
@@ -31,6 +27,7 @@ def main():
     # Staggered startup: let the UI paint its first frames before VRAM loading starts.
     QTimer.singleShot(1000, panel.start_llm_in_background)
     panel.check_game_data_in_background()
+    panel.check_app_update_in_background()
 
     # Floating pet widget (shown by default)
     pet = DesktopPet(asset_dir=os.path.join(ROOT_DIR, "assets", "character"))

@@ -157,9 +157,37 @@ def test_named_completion_marks_that_item(tracker, message, item_id):
     assert [i["id"] for i in tracker.load_checklist() if i["done"]] == [item_id]
 
 
-def test_plain_delete_command_removes_item(tracker):
-    assert tracker.process_chat_todo_command("집정관 삭제")["action"] == "DELETE"
-    assert "weekly_archon" not in [i["id"] for i in tracker.load_checklist()]
+def test_plain_delete_command_only_asks(tracker):
+    res = tracker.process_chat_todo_command("집정관 삭제")
+    assert res["action"] == "DELETE_CONFIRM" and res["item_id"] == "weekly_archon"
+    # Nothing is gone until the confirm button runs delete_item.
+    assert "weekly_archon" in [i["id"] for i in tracker.load_checklist()]
+
+
+def test_delete_targets_the_item_named_not_an_alias(tracker):
+    tracker.add_custom_item("아콘 샤드 파밍")
+    res = tracker.process_chat_todo_command("아콘 샤드 파밍 삭제")
+    assert res["task"] == "아콘 샤드 파밍" and res["item_id"].startswith("custom_")
+
+
+def test_ambiguous_delete_names_nothing(tracker):
+    tracker.add_custom_item("침공 미션 돌기")
+    before = tracker.load_checklist()
+    assert tracker.process_chat_todo_command("침공 삭제") is None
+    assert tracker.load_checklist() == before
+
+
+def test_alias_must_be_a_whole_word(tracker):
+    tracker.add_custom_item("레일잭 침공")
+    assert tracker._find_item(tracker.load_checklist(), "레일잭 침공 미션", strict=True) is None
+    assert tracker._find_item(tracker.load_checklist(), "출격을")["id"] == "daily_sortie"
+
+
+def test_model_delete_tool_is_strict_too(tracker):
+    tracker.add_custom_item("집정관 전용 빌드 맞추기")
+    assert tracker.plan_todo_tool({"tool": "delete_todo", "args": {"task": "집정관"}}) is None
+    assert tracker.execute_todo_tool({"tool": "delete_todo", "args": {"task": "집정관"}}) is None
+    assert len([i for i in tracker.load_checklist() if "집정관" in i["text"]]) == 2
 
 
 def test_delete_of_unknown_item_changes_nothing(tracker):
@@ -203,15 +231,53 @@ def test_load_does_not_rewrite_unchanged_file(tracker):
 
 
 def test_daily_reset_keeps_weekly_done(tracker):
-    tracker.toggle_item("daily_sortie")
+    tracker.toggle_item("daily_simaris")
     tracker.toggle_item("weekly_archon")
     meta_path = tracker.data_file + ".meta.json"
     meta = json.load(open(meta_path, encoding="utf-8"))
     meta["last_daily_key"] = "2000-01-01"
     json.dump(meta, open(meta_path, "w", encoding="utf-8"))
     done = {i["id"]: i["done"] for i in tracker.load_checklist()}
-    assert done["daily_sortie"] is False
+    assert done["daily_simaris"] is False
     assert done["weekly_archon"] is True
+
+
+def _mark_done(tracker, now, *ids):
+    items = tracker.load_checklist(now=now)
+    for item in items:
+        if item["id"] in ids:
+            item["done"] = True
+    tracker.save_checklist(items)
+
+
+def _done(tracker, now):
+    return {i["id"]: i["done"] for i in tracker.load_checklist(now=now)}
+
+
+def test_sortie_resets_at_1600_utc_not_midnight(tmp_path):
+    tracker = WorldStateTracker(data_file=str(tmp_path / "c.json"))
+    day1 = datetime(2026, 11, 16, 15, 0, tzinfo=timezone.utc)
+    _mark_done(tracker, day1, "daily_sortie", "daily_simaris")
+
+    after_sortie_reset = _done(tracker, day1.replace(hour=16, minute=30))
+    assert after_sortie_reset["daily_sortie"] is False
+    assert after_sortie_reset["daily_simaris"] is True
+
+    _mark_done(tracker, day1.replace(hour=17), "daily_sortie")
+    after_midnight = _done(tracker, datetime(2026, 11, 17, 0, 30, tzinfo=timezone.utc))
+    assert after_midnight["daily_sortie"] is True
+    assert after_midnight["daily_simaris"] is False
+
+
+def test_old_meta_without_sortie_key_keeps_todays_sortie(tmp_path):
+    tracker = WorldStateTracker(data_file=str(tmp_path / "c.json"))
+    now = datetime(2026, 11, 16, 18, 0, tzinfo=timezone.utc)
+    _mark_done(tracker, now, "daily_sortie")
+    meta_path = tracker.data_file + ".meta.json"
+    meta = json.load(open(meta_path, encoding="utf-8"))
+    del meta["last_sortie_key"]
+    json.dump(meta, open(meta_path, "w", encoding="utf-8"))
+    assert _done(tracker, now)["daily_sortie"] is True
 
 
 def test_old_integer_week_key_does_not_reset_same_week(tracker):

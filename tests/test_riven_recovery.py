@@ -94,14 +94,14 @@ def test_riven_values_entered_before_saving_are_kept(analyzer):
     analyzer.apply_slot_edits(res, {"R1_C1": "Hunter Munitions", "R1_C4": RIVEN_MOD})
     out = analyzer.resume_pending_riven({"multishot": 0.9, "crit_chance": 1.0})
     assert out["success"] is True
-    assert out["metrics"]["final_dmg"] == pytest.approx(3667.4)  # Already in the panel, not added again.
+    expected_dmg = res["w_meta"]["total_damage"] * res["w_meta"]["base_multishot"] * (1.0 + 0.9)
+    assert out["metrics"]["final_dmg"] == pytest.approx(expected_dmg)  # DB + mods/riven only, ignoring panel OCR.
 
     analyzer.save_scanned_build(res)
     build = analyzer.build_store.get_build("Corinth Prime")
     assert build["panel_has_riven"] is True
     assert build["riven"] == {"multishot": 0.9, "crit_chance": 1.0}
-    assert build["panel_riven"] == build["riven"]
-    assert analyzer.evaluate_saved_build(build)["final_dmg"] == pytest.approx(3667.4)
+    assert analyzer.evaluate_saved_build(build)["final_dmg"] == pytest.approx(expected_dmg)
 
 
 def test_riven_values_entered_after_saving_update_build(analyzer):
@@ -145,3 +145,47 @@ def test_real_capture_detects_riven_slot(analyzer):
     assert analyzer.result_slots(res)["R1_C4"] == RIVEN_MOD
     assert analyzer.has_pending_riven() is True
     assert not any("Atomic Fallout" in m for m in res["detected_mods"])
+
+
+def test_panel_ocr_stats_are_ignored_while_valence_bonus_is_preserved(analyzer):
+    w_meta = analyzer.indexer.fuzzy_match_weapon("Kuva Hek")
+    mods = [dict(analyzer.indexer.mods_index["point blank"])]
+    bogus_panel = {
+        "total_damage": 99999.0,
+        "crit_chance": 0.99,
+        "crit_mult": 15.0,
+        "multishot": 12.0,
+        "fire_rate": 25.0,
+        "status_chance": 0.95,
+    }
+    clean = analyzer.calculate_comprehensive_metrics(w_meta, left_stats={}, mod_objs=mods)
+    with_bogus = analyzer.calculate_comprehensive_metrics(w_meta, left_stats=bogus_panel, mod_objs=mods)
+    for key in ("final_dmg", "final_cc", "final_cd", "final_ms", "final_fr", "burst_dps", "sustained_dps"):
+        assert with_bogus[key] == pytest.approx(clean[key])
+
+    with_valence = analyzer.calculate_comprehensive_metrics(w_meta, left_stats={**bogus_panel, "valence_heat": 0.6}, mod_objs=mods)
+    assert with_valence["final_dmg"] == pytest.approx(clean["final_dmg"] * 1.6)
+
+
+def test_formatters_show_db_basis_and_optional_status_dps(analyzer):
+    w_meta = analyzer.indexer.fuzzy_match_weapon("Corinth Prime")
+    mods = [dict(analyzer.indexer.mods_index["hunter munitions"])]
+    base_metrics = analyzer.calculate_comprehensive_metrics(w_meta, left_stats={}, mod_objs=mods)
+    no_status = {k: v for k, v in base_metrics.items() if k not in ("status_dps", "direct_burst_dps")}
+
+    briefing = analyzer.format_ordis_briefing(w_meta, ["헌터 뮤니션즈 (Hunter Munitions)"], no_status)
+    breakdown = ScreenModAnalyzer.format_calculation_breakdown(None, w_meta, mods, no_status)
+    card = analyzer.build_diagnostic_card(w_meta, ["헌터 뮤니션즈 (Hunter Munitions)"], no_status)
+    assert "총계를 읽지 못해" not in briefing
+    assert "총계를 읽지 못해" not in card["detail_html"]
+    assert "DB 원본" in briefing and "DB 원본" in breakdown
+    assert "상태이상 DoT" not in briefing
+
+    assert base_metrics["status_dps"] > 0
+    with_status = {**base_metrics, "status_dps": 1234.0, "direct_burst_dps": 5000.0, "burst_dps": 6234.0}
+    briefing_dot = analyzer.format_ordis_briefing(w_meta, ["헌터 뮤니션즈 (Hunter Munitions)"], with_status)
+    breakdown_dot = ScreenModAnalyzer.format_calculation_breakdown(None, w_meta, mods, with_status)
+    card_dot = analyzer.build_diagnostic_card(w_meta, ["헌터 뮤니션즈 (Hunter Munitions)"], with_status)
+    assert "상태이상 DoT DPS" in briefing_dot and "1,234" in briefing_dot
+    assert "상태이상 DoT 1,234 DPS" in breakdown_dot
+    assert "1,234" in card_dot["summary_html"]

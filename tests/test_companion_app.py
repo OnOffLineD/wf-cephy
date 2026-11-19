@@ -310,3 +310,141 @@ def test_main_companion_defers_llm_start():
 def test_name_translator_uses_codex_korean(panel):
     assert panel.tracker.name_translator("Braton") == "브래튼"
     assert panel.tracker.name_translator("없는무기") == "없는무기"
+
+
+def test_todo_confirm_bubble_adds_the_task(qapp):
+    added = []
+    bubble = ChatBubble("오디스", "숙제로 등록할까요?", is_user=False,
+                        action_todo={"todo": "나이트웨이브"}, on_add_todo=added.append)
+    button = next(b for b in bubble.findChildren(QPushButton) if "나이트웨이브" in b.text())
+    button.click()
+    assert added == ["나이트웨이브"]
+    assert not button.isEnabled()
+
+
+# --- Concurrency: thinking bubbles, worker turn-taking, F9 mashing, capture failure, hotkey errors ---
+
+def _thinking_bubbles_in_layout(panel):
+    widgets = [panel.chat_list_layout.itemAt(i).widget() for i in range(panel.chat_list_layout.count())]
+    return [w for w in widgets if isinstance(w, ChatBubble) and isinstance(w.action_todo, dict) and w.action_todo.get("is_thinking")]
+
+
+def test_overlapping_requests_each_clear_their_thinking_bubble(qapp, panel):
+    gates = {"첫째": threading.Event(), "둘째": threading.Event()}
+    replies = []
+
+    def chat(text):
+        gates[text].wait(10)
+        replies.append(text)
+        return {"report": f"{text} 답"}
+
+    panel.orchestrator.chat = chat
+    panel.tracker.process_chat_todo_command = lambda text, **_: None
+    for text in ("첫째", "둘째"):
+        panel.input_edit.setText(text)
+        panel.send_user_message()
+    assert len(_thinking_bubbles_in_layout(panel)) == 2
+    gates["둘째"].set()
+    gates["첫째"].set()
+    drain(qapp, panel, lambda: len(replies) == 2 and not panel._thinking_bubbles)
+    assert panel._thinking_bubbles == {}
+    assert _thinking_bubbles_in_layout(panel) == []
+
+
+def test_thinking_bubble_is_cleared_when_the_worker_fails(qapp, panel):
+    def chat(text):
+        raise RuntimeError("boom")
+
+    panel.orchestrator.chat = chat
+    panel.tracker.process_chat_todo_command = lambda text, **_: None
+    panel.input_edit.setText("안녕")
+    panel.send_user_message()
+    drain(qapp, panel, lambda: not panel._thinking_bubbles)
+    assert _thinking_bubbles_in_layout(panel) == []
+
+
+def test_f9_mashing_runs_one_diagnosis_and_chat_waits_its_turn(qapp, panel, monkeypatch):
+    monkeypatch.setattr(panel, "show", lambda: None)
+    release = threading.Event()
+    calls, order = [], []
+
+    def diagnose(img):
+        calls.append(img)
+        release.wait(10)
+        order.append("diagnosis")
+        return {"message": "분석 완료"}
+
+    def chat(text):
+        order.append("chat")
+        return {"report": "응답"}
+
+    panel.diagnoser.has_pending_riven = lambda: False
+    panel.diagnoser.diagnose_screenshot = diagnose
+    panel.orchestrator.chat = chat
+    panel.tracker.process_chat_todo_command = lambda text, **_: None
+
+    panel.process_screen_image(Image.new("RGB", (10, 10)))
+    drain(qapp, panel, lambda: calls)
+    panel.process_screen_image(Image.new("RGB", (10, 10)))
+    last = panel.chat_list_layout.itemAt(panel.chat_list_layout.count() - 1).widget()
+    assert any("아직 분석" in label.text() for label in last.findChildren(QLabel))
+
+    panel.input_edit.setText("안녕")
+    panel.send_user_message()
+    QThread.msleep(200)
+    assert order == []  # the chat worker waits for the scan that owns the analyzer's pending state
+    release.set()
+    drain(qapp, panel, lambda: len(order) == 2)
+    assert len(calls) == 1
+    assert order == ["diagnosis", "chat"]
+    drain(qapp, panel, lambda: not panel._thinking_bubbles)
+    assert panel._diagnosing is False
+
+
+def test_failed_capture_shows_the_pet_again():
+    from unittest.mock import MagicMock, patch
+
+    app = MagicMock(spec=OrdisCompanionApp)
+    app.pet = MagicMock()
+    app.pet.isVisible.return_value = True
+    app.process_screen_image = MagicMock()
+    with patch("scripts.desktop_companion.QEventLoop"), \
+            patch("scripts.desktop_companion.QApplication") as qa, \
+            patch("scripts.desktop_companion.ImageGrab.grab", side_effect=OSError("no screen")):
+        qa.screenAt.return_value = None
+        qa.primaryScreen.return_value = None
+        OrdisCompanionApp.capture_fullscreen_and_analyze(app)
+    app.pet.hide.assert_called_once()
+    app.pet.show.assert_called_once()
+    app.process_screen_image.assert_not_called()
+    app.show.assert_called()
+    assert "캡처하지 못했습니다" in app.add_chat_bubble.call_args[0][1]
+    assert app._is_capturing is False
+
+
+def test_hotkey_poll_errors_are_logged_once(qapp, panel, monkeypatch, capsys):
+    import ctypes
+
+    def broken(_vk):
+        raise OSError("GetAsyncKeyState denied")
+
+    monkeypatch.setattr(ctypes.windll.user32, "GetAsyncKeyState", broken)
+    for _ in range(3):
+        panel.hotkey_timer.timeout.emit()
+    out = capsys.readouterr()
+    text = out.out + out.err
+    assert text.count("Hotkey polling failed") == 1
+    assert "GetAsyncKeyState denied" in text
+
+
+def test_typed_todo_delete_asks_before_deleting(qapp, panel, tmp_path):
+    from scripts.world_state_tracker import WorldStateTracker
+
+    panel.tracker = WorldStateTracker(data_file=str(tmp_path / "c.json"))
+    panel.input_edit.setText("집정관 삭제")
+    panel.send_user_message()
+    assert "weekly_archon" in [i["id"] for i in panel.tracker.load_checklist()]
+    last = panel.chat_list_layout.itemAt(panel.chat_list_layout.count() - 1).widget()
+    buttons = {b.text(): b for b in last.findChildren(QPushButton)}
+    buttons["🗑️ 삭제"].click()
+    assert "weekly_archon" not in [i["id"] for i in panel.tracker.load_checklist()]

@@ -36,9 +36,10 @@ $$\text{Enemy Damage} = \text{Base Damage} \times \left(1 + (\text{Current Level
 ## 3. 실드 게이팅 메커니즘 (Post-Abyss of Dagath Spec)
 
 ### 3.1. 무적 시간 스케일링
-실드가 소진될 때, 소진 직전의 실드량($S$)에 비례하여 무적 시간이 선형적으로 부여됨:
-$$\text{Invulnerability Duration (s)} = \min\left(2.5, \; 0.33 + \frac{S}{1150} \times (2.5 - 0.33)\right)$$
-- 최소 보장 무적 시간: $0.33$초
+실드가 소진될 때, 직전 실드 게이트 이후 도달한 최대 실드량($S$)에 따라 구간별 비선형 곡선(Update 34)으로 무적 시간이 부여됨:
+$$t(S) = \begin{cases} \frac{S}{180} + \frac{1}{3} & (S < 53) \\ \left(\frac{S}{350}\right)^{0.65} + \frac{1}{3} & (53 \le S \le 1150) \\ 2.5 & (S > 1150) \end{cases}$$
+- 최소 보장 무적 시간: $0.33$초 ($\frac{1}{3}$초)
+- $S = 350$ 시: 약 $1.33$초
 - 최대 무적 시간 ($S \ge 1,150$): $2.5$초
 
 ### 3.2. 카탈라이징 실즈 (Catalyzing Shields) 사이클

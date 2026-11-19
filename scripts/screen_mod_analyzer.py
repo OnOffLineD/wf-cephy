@@ -1,8 +1,3 @@
-try:
-    import torch
-except Exception:
-    pass
-
 import os
 import re
 import html
@@ -10,7 +5,7 @@ import json
 import asyncio
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple, Union
-from PIL import Image, ImageChops, ImageEnhance, ImageOps
+from PIL import Image, ImageChops, ImageOps
 
 try:
     import numpy as np
@@ -18,6 +13,12 @@ try:
     rapid_ocr_engine = RapidOCR()
 except Exception:
     rapid_ocr_engine = None
+
+try:
+    # onnxruntime has to load its DLLs before winocr does: imported after winocr, it crashes the process.
+    import onnxruntime  # noqa: F401
+except ImportError:
+    pass
 
 try:
     import winocr
@@ -56,7 +57,7 @@ class ScreenModAnalyzer:
             r"기초\s*피해"
         ],
         "fire_rate": [r"연사력", r"fire\s*rate", r"공격\s*속도", r"공속", r"attack\s*speed"],
-        "status_chance": [r"상태이상\s*확률", r"status\s*chance", r"상확"],
+        "status_chance": [r"상태\s*이상\s*확률", r"status\s*chance", r"상확"],
         "elemental_damage": [r"화염", r"전기", r"독성", r"냉기", r"heat", r"electricity", r"toxin", r"cold"]
     }
 
@@ -81,16 +82,23 @@ class ScreenModAnalyzer:
         traits_path = Path(__file__).resolve().parent.parent / "data" / "incarnon_traits.json"
         if traits_path.exists():
             try:
-                return json.loads(traits_path.read_text(encoding="utf-8"))
+                raw = json.loads(traits_path.read_text(encoding="utf-8"))
+                if isinstance(raw, dict):
+                    return {str(k).lower(): v for k, v in raw.items() if isinstance(v, str)}
             except Exception:
                 pass
         return {}
 
     def get_incarnon_trait_description(self, weapon_name: str, inc_attack: Optional[Dict[str, Any]] = None) -> str:
-        w_lower = weapon_name.lower()
-        for key, desc in self.incarnon_traits.items():
-            if key in w_lower:
-                return desc
+        from scripts.innate_traits import get_incarnon_data
+        inc_data = get_incarnon_data(weapon_name)
+        if inc_data and inc_data.get("description"):
+            return str(inc_data["description"])
+
+        w_lower = str(weapon_name or "").strip().lower()
+        exact = self.incarnon_traits.get(w_lower) if isinstance(getattr(self, "incarnon_traits", None), dict) else None
+        if isinstance(exact, str) and exact:
+            return exact
 
         if inc_attack and isinstance(inc_attack, dict):
             shot_type = str(inc_attack.get("shot_type", ""))
@@ -205,17 +213,16 @@ class ScreenModAnalyzer:
                 left_stats_ctx = ctx.get("left_stats", {})
                 mod_objs_ctx = ctx.get("mod_objs", [])
                 riven_name_ctx = ctx.get("riven_name", "리벤 모드")
-                base_metrics_ctx = ctx.get("base_metrics", {})
                 riven_stats = parsed.get('stats')
 
+                valence_ctx = self._valence_only(left_stats_ctx)
                 with_riven_metrics = self.calculate_comprehensive_metrics(
                     w_meta_ctx,
-                    left_stats=left_stats_ctx,
+                    left_stats=valence_ctx,
                     mod_objs=mod_objs_ctx,
-                    riven_stats=riven_stats,
-                    riven_in_panel=True
+                    riven_stats=riven_stats
                 )
-                base_metrics_ctx = self._riven_free_metrics(w_meta_ctx, left_stats_ctx, mod_objs_ctx, riven_stats, base_metrics_ctx)
+                base_metrics_ctx = self.calculate_comprehensive_metrics(w_meta_ctx, left_stats=valence_ctx, mod_objs=mod_objs_ctx)
                 report = self.format_riven_comparison_report(
                     w_meta_ctx,
                     riven_name_ctx,
@@ -462,11 +469,12 @@ class ScreenModAnalyzer:
                 kr_name = mod.get("kr_name", mod["name"])
                 formatted_mods.append(f"{kr_name} ({mod['name']})")
 
-            metrics = self.calculate_comprehensive_metrics(w_meta, left_stats=left_stats, mod_objs=unique_mod_entries)
+            valence_stats = self._valence_only(left_stats)
+            metrics = self.calculate_comprehensive_metrics(w_meta, left_stats=valence_stats, mod_objs=unique_mod_entries)
             arcane = self._detect_arcane(img, w_meta.get("category"))
             metrics["arcane"] = arcane
             if w_meta.get("category") != "Warframe":
-                metrics["full_stack"] = self.damage_engine.compute_full_stack(w_meta, left_stats=left_stats, mod_objs=unique_mod_entries, arcane=arcane if arcane and arcane.get("modeled") else None)
+                metrics["full_stack"] = self.damage_engine.compute_full_stack(w_meta, left_stats=valence_stats, mod_objs=unique_mod_entries, arcane=arcane if arcane and arcane.get("modeled") else None)
             briefing = self.format_ordis_briefing(w_meta, formatted_mods, metrics)
             review_msg = self.format_mod_review_briefing(w_meta, formatted_mods, equipped_slot_count=slot_res.get('equipped_slot_count', 0), riven_name=riven_name)
             breakdown_msg = self.format_calculation_breakdown(w_meta, unique_mod_entries, metrics)
@@ -486,18 +494,6 @@ class ScreenModAnalyzer:
                 self._await_riven_values(w_meta, left_stats, unique_mod_entries, riven_name)
                 briefing += self._riven_notice()
                 card_notes += self._riven_notice()
-
-            self.last_diagnosis_result = {
-                'weapon': w_meta['name'],
-                'w_meta': w_meta,
-                'detected_mods': formatted_mods,
-                'mod_objs': unique_mod_entries,
-                'metrics': metrics,
-                'message': briefing,
-                'review_message': review_msg,
-                'calculation_breakdown': breakdown_msg,
-                'equipped_slot_count': slot_res.get('equipped_slot_count', 0)
-            }
 
             result = {
                 "success": True,
@@ -580,16 +576,14 @@ class ScreenModAnalyzer:
         set_bonus(stats, element, fraction)
         self.bonus_elements[w_meta['name']] = (element, fraction)
         self.pending_bonus = None
-        if self.has_pending_riven() and self.pending_riven_context.get('w_meta', {}).get('name') == w_meta['name']:
-            ctx = self.pending_riven_context
-            ctx['base_metrics'] = self.calculate_comprehensive_metrics(w_meta, left_stats=ctx['left_stats'], mod_objs=ctx['mod_objs'], riven_stats=None)
 
         mods = res.get('mod_objs') or []
-        metrics = self.calculate_comprehensive_metrics(w_meta, left_stats=stats, mod_objs=mods)
+        valence_stats = self._valence_only(stats)
+        metrics = self.calculate_comprehensive_metrics(w_meta, left_stats=valence_stats, mod_objs=mods)
         arcane = (res.get('metrics') or {}).get('arcane')
         metrics['arcane'] = arcane
         if w_meta.get('category') != 'Warframe':
-            metrics['full_stack'] = self.damage_engine.compute_full_stack(w_meta, left_stats=stats, mod_objs=mods, arcane=arcane if arcane and arcane.get('modeled') else None)
+            metrics['full_stack'] = self.damage_engine.compute_full_stack(w_meta, left_stats=valence_stats, mod_objs=mods, arcane=arcane if arcane and arcane.get('modeled') else None)
         formatted = res.get('detected_mods') or []
         has_riven = any(m.get('name') == RIVEN_MOD for m in mods)
         note = f"\n\n🧪 **[보너스 속성]** {BONUS_ELEMENTS[element]} {fraction * 100:g}%를 반영했습니다."
@@ -611,7 +605,6 @@ class ScreenModAnalyzer:
             "left_stats": left_stats,
             "mod_objs": mods,
             "riven_name": riven_name,
-            "base_metrics": self.calculate_comprehensive_metrics(w_meta, left_stats=left_stats, mod_objs=mods, riven_stats=None)
         }
 
     @staticmethod
@@ -669,6 +662,13 @@ class ScreenModAnalyzer:
             ])
         if "final_status" in metrics:
             lines.append(f"• 상태이상 확률: {metrics['final_status'] * 100:.1f}%")
+        status_dps = float(metrics.get("status_dps") or 0.0)
+        if status_dps > 0:
+            direct_burst = float(metrics.get("direct_burst_dps") or 0.0)
+            if direct_burst > 0:
+                lines.append(f"• **🔥 상태이상 DoT DPS**: `{status_dps:,.0f}` (직접 타격 폭딜 `{direct_burst:,.0f}` + DoT 기대치 반영)")
+            else:
+                lines.append(f"• **🔥 상태이상 DoT DPS**: `{status_dps:,.0f}`")
         if metrics.get("incompatible_mods"):
             names = ", ".join(str(n) for n in metrics["incompatible_mods"])
             lines.append(f"⚠️ **[호환 불가 모드 감지]**: {names}은(는) 해당 무기 전용 모드가 아니므로 계산에서 제외되었습니다.")
@@ -732,8 +732,7 @@ class ScreenModAnalyzer:
 
         lines.extend(self._format_elements(metrics))
 
-        if not metrics.get("used_panel_total", True):
-            lines.append("\n⚠️ **참고**: 좌측 패널의 총계를 읽지 못해 코덱스 수치와 인식된 모드로 추정한 값입니다. 패널을 스크롤해 총계가 보이게 다시 캡처하면 더 정확합니다.")
+        lines.append("\n📐 **산출 기준**: 인게임 좌측 패널 OCR 수치가 아닌 무기 DB 원본 스탯과 인식된 모드·리벤 공식을 직접 대입해 계산했습니다.")
         lines.append(f"\n💬 **오디스의 한마디**: 오퍼레이터님, 계산을 마쳤습니다! 전장을 찢어발기십시오!")
         return "\n".join(lines)
 
@@ -791,6 +790,12 @@ class ScreenModAnalyzer:
             status = metrics['final_status'] * 100
             summary += (f"<p style='margin-top:2px;'><span style='color:#e2e8f0; font-weight:bold;'>⚡ 총 상태이상 확률: {status:.1f}%</span> "
                         f"<span style='color:#94a3b8; font-size:11px;'>(타격마다 상태이상 {status:.1f}% 확률로 발동, 종류는 위 비중대로 결정)</span></p>")
+        status_dps = float(metrics.get('status_dps') or 0.0)
+        if status_dps > 0:
+            direct_burst = float(metrics.get('direct_burst_dps') or 0.0)
+            detail = f" (직접 타격 {num(direct_burst)} DPS)" if direct_burst > 0 else ""
+            summary += (f"<p style='margin-top:2px;'><span style='color:#f97316; font-weight:bold;'>🔥 상태이상 DoT DPS: {num(status_dps)}</span>"
+                        f"<span style='color:#94a3b8; font-size:11px;'>{detail}</span></p>")
         if metrics.get('incompatible_mods'):
             summary += f"<p style='color:#fbbf24;'>⚠️ 호환 불가 모드 계산 제외: {esc(', '.join(str(n) for n in metrics['incompatible_mods']))}</p>"
 
@@ -839,8 +844,7 @@ class ScreenModAnalyzer:
             section(f"🔥 조건부 버프 풀스택 ({esc(', '.join(fs['assumptions']))})", items)
         if el.get('pairs'):
             section('🧪 속성 합성 (좌상단 → 우하단)', [f"{esc(self.ELEMENT_KR.get(a, a))} + {esc(self.ELEMENT_KR.get(b, b))} → <b>{esc(self.ELEMENT_KR.get(n, n))}</b>" for a, b, n in el['pairs']])
-        if not metrics.get('used_panel_total', True):
-            sections.append("<p style='color:#fbbf24;'>⚠️ 좌측 패널 총계를 읽지 못해 코덱스 수치와 인식된 모드로 추정한 값입니다.</p>")
+        sections.append("<p style='color:#94a3b8; font-size:11px;'>📐 무기 DB 원본 스탯 + 인식된 모드·리벤 공식 직접 계산 (좌측 패널 OCR 수치 미사용)</p>")
         return {'summary_html': summary, 'detail_html': "".join(sections)}
 
     def _attach_card(self, res: Dict[str, Any], w_meta: Dict[str, Any], detected_mods: List[str], metrics: Dict[str, Any], notes: str = "") -> Dict[str, Any]:
@@ -1147,19 +1151,19 @@ class ScreenModAnalyzer:
 
             return stats
 
-    def calculate_comprehensive_metrics(self, w_meta: Dict[str, Any], left_stats: Optional[Dict[str, float]] = None, mod_objs: Optional[List[Dict[str, Any]]] = None, riven_stats: Optional[Dict[str, float]] = None, riven_in_panel: bool = False) -> Dict[str, Any]:
+    @staticmethod
+    def _valence_only(stats: Optional[Dict[str, float]]) -> Dict[str, float]:
+        """Keep only Kuva/Tenet/Coda Valence Bonus keys, discarding OCR panel stats."""
+        if not stats:
+            return {}
+        return {k: v for k, v in stats.items() if str(k).startswith("valence_")}
+
+    def calculate_comprehensive_metrics(self, w_meta: Dict[str, Any], left_stats: Optional[Dict[str, float]] = None, mod_objs: Optional[List[Dict[str, Any]]] = None, riven_stats: Optional[Dict[str, float]] = None) -> Dict[str, Any]:
             from scripts.warframe_damage_engine import WarframeDamageEngine
             if not hasattr(self, 'damage_engine') or not self.damage_engine:
                 self.damage_engine = WarframeDamageEngine()
-            return self.damage_engine.compute_metrics(w_meta, left_stats=left_stats, mod_objs=mod_objs, riven_stats=riven_stats, riven_in_panel=riven_in_panel)
-
-    def _riven_free_metrics(self, w_meta: Dict[str, Any], left_stats: Dict[str, float], mod_objs: List[Dict[str, Any]], riven_stats: Dict[str, float], fallback: Dict[str, Any]) -> Dict[str, Any]:
-            # A riven-equipped screenshot already has the riven in its panel, so the "before" side must take it out.
-            if not left_stats:
-                return fallback
-            from scripts.warframe_damage_engine import WarframeDamageEngine
-            stripped = WarframeDamageEngine().strip_riven_from_panel(left_stats, w_meta, mod_objs, riven_stats)
-            return self.calculate_comprehensive_metrics(w_meta, left_stats=stripped, mod_objs=mod_objs)
+            valence_stats = self._valence_only(left_stats)
+            return self.damage_engine.compute_metrics(w_meta, left_stats=valence_stats, mod_objs=mod_objs, riven_stats=riven_stats)
 
     def has_pending_diagnosis(self) -> bool:
         return hasattr(self, 'pending_screenshot') and self.pending_screenshot is not None
@@ -1280,6 +1284,61 @@ class ScreenModAnalyzer:
                 + "\n".join(self._format_elements(with_riven_metrics))
             )
 
+    # Label-first riven values typed in chat ("치확 150 화염 피해 90"). Element labels come before the
+    # bare 피해 so "화염 피해" is heat, and 피해 after 일격/헤드샷/약점 is left to parse_stats.
+    _RIVEN_CHAT_LABELS = (
+        (r'치명타\s*확률|치확|크확|cc|ㅊㅎ', 'crit_chance'),
+        (r'치명타\s*피해|치피|크피|cd|ㅊㅍ', 'crit_damage'),
+        (r'멀티샷|멀샷|ms|ㅁㅅ', 'multishot'),
+        (r'(?:독성|독|toxin)(?:\s*피해)?', 'toxin'),
+        (r'(?:냉기|얼음|cold)(?:\s*피해)?', 'cold'),
+        (r'(?:화염|불|heat)(?:\s*피해)?', 'heat'),
+        (r'(?:전기|elec(?:tric(?:ity)?)?)(?:\s*피해)?', 'electric'),
+        (r'속성(?:\s*피해)?', 'elemental_damage'),
+        (r'(?:베기|slash)(?:\s*피해)?', 'slash'),
+        (r'(?:충격|impact)(?:\s*피해)?', 'impact'),
+        (r'(?:관통|puncture)(?:\s*피해)?', 'puncture'),
+        (r'기본\s*피해|(?<!일격\s)(?<!일격)(?<!헤드샷\s)(?<!헤드샷)(?<!약점\s)(?<!약점)피해|데미지|대미지|dmg|ㅍㅎ', 'base_damage'),
+        (r'연사력|연사|공격\s*속도|공속|fr|ㄱㅅ', 'fire_rate'),
+        (r'상태\s*이상\s*확률|상확|sc', 'status_chance'),
+        (r'팩션|faction', 'faction_damage'),
+        (r'탄창|mag', 'magazine_capacity'),
+        (r'재장전|reload', 'reload_speed'),
+    )
+    _RIVEN_CHAT_RE = re.compile(
+        r'(?i)(?<![A-Za-z])(?:' + '|'.join(f'(?P<k{i}>{p})' for i, (p, _) in enumerate(_RIVEN_CHAT_LABELS)) + r')'
+        r'\s*[:=+]?\s*(?P<val>[+-]?\d+(?:\.\d+)?)\s*%?'
+    )
+    _RIVEN_ELEMENTS = ('heat', 'cold', 'electric', 'toxin')
+
+    def _parse_riven_text(self, text: str) -> Dict[str, float]:
+        """Riven values from chat text. Each value is set once, never added on top of another reading."""
+        stats: Dict[str, float] = {}
+        typed: Dict[str, float] = {}
+        for line in text.splitlines() or [text]:
+            matches = list(self._RIVEN_CHAT_RE.finditer(line))
+            if not matches:
+                # Value-first lines pasted from a riven card ("+150% 치명타 확률") or labels only
+                # parse_stats knows (마무리 일격 피해). Without a % sign a bare 90 means 90%.
+                for key, val in self.parse_stats(line).get('stats', {}).items():
+                    if key != 'initial_combo' and '%' not in line and abs(val) > 3.0:
+                        val /= 100.0
+                    stats[key] = val
+                continue
+            for m in matches:
+                label = next(name for name, value in m.groupdict().items() if name != 'val' and value is not None)
+                key = self._RIVEN_CHAT_LABELS[int(label[1:])][1]
+                val = float(m.group('val'))
+                typed[key] = val / 100.0 if abs(val) > 3.0 else val
+        stats.update(typed)
+        # The engine sums 'elemental_damage' and combines the per-element keys, so the total is rebuilt
+        # from the named elements plus any generic 속성 value instead of accumulating readings.
+        generic = typed.get('elemental_damage', 0.0)
+        named = {e: stats[e] for e in self._RIVEN_ELEMENTS if e in stats}
+        if named or 'elemental_damage' in typed:
+            stats['elemental_damage'] = sum(named.values()) + generic
+        return stats
+
     def resume_pending_riven(self, user_input: Union[str, Dict[str, float]]) -> Dict[str, Any]:
         if not self.has_pending_riven():
             return {'success': False, 'message': '대기 중인 리벤 모드가 없습니다.'}
@@ -1289,43 +1348,11 @@ class ScreenModAnalyzer:
         if isinstance(user_input, dict):
             riven_stats = dict(user_input)
         elif isinstance(user_input, str):
-            parsed = self.parse_stats(user_input)
-            riven_stats.update(parsed.get('stats', {}))
+            riven_stats = self._parse_riven_text(user_input)
 
-            pat = r'(?i)(치명타\s*확률|치확|크확|cc|ㅊㅎ|치명타\s*피해|치피|크피|cd|ㅊㅍ|멀티샷|멀샷|ms|ㅁㅅ|기본\s*피해|피해|데미지|대미지|dmg|ㅍㅎ|연사력|연사|공격\s*속도|공속|fr|ㄱㅅ|상태이상\s*확률|상확|sc|독|toxin|냉기|얼음|cold|화염|불|heat|전기|elec|속성|베기|slash|팩션|faction|탄창|mag|재장전|reload)\s*[:=+]?\s*([+-]?\d+(?:\.\d+)?)\s*%?'
-            for m in re.finditer(pat, user_input):
-                label = m.group(1).replace(' ', '').lower()
-                val = float(m.group(2))
-                if abs(val) > 3.0:
-                    val = val / 100.0
-
-                if label in ['치명타확률', '치확', '크확', 'cc', 'ㅊㅎ']:
-                    riven_stats['crit_chance'] = val
-                elif label in ['치명타피해', '치피', '크피', 'cd', 'ㅊㅍ']:
-                    riven_stats['crit_damage'] = val
-                elif label in ['멀티샷', '멀샷', 'ms', 'ㅁㅅ']:
-                    riven_stats['multishot'] = val
-                elif label in ['기본피해', '피해', '데미지', '대미지', 'dmg', 'ㅍㅎ']:
-                    riven_stats['base_damage'] = val
-                elif label in ['연사력', '연사', '공격속도', '공속', 'fr', 'ㄱㅅ']:
-                    riven_stats['fire_rate'] = val
-                elif label in ['상태이상확률', '상확', 'sc']:
-                    riven_stats['status_chance'] = val
-                elif label in ['독', 'toxin', '냉기', '얼음', 'cold', '화염', '불', 'heat', '전기', 'elec', '속성']:
-                    riven_stats['elemental_damage'] = riven_stats.get('elemental_damage', 0.0) + val
-                    element = {'독': 'toxin', 'toxin': 'toxin', '냉기': 'cold', '얼음': 'cold', 'cold': 'cold', '화염': 'heat', '불': 'heat', 'heat': 'heat', '전기': 'electric', 'elec': 'electric'}.get(label)
-                    if element:
-                        riven_stats[element] = val
-                elif label in ['베기', 'slash']:
-                    riven_stats['slash'] = val
-                elif label in ['팩션', 'faction']:
-                    riven_stats['faction_damage'] = val
-                elif label in ['탄창', 'mag']:
-                    riven_stats['magazine_capacity'] = val
-                elif label in ['재장전', 'reload']:
-                    riven_stats['reload_speed'] = val
-
-            if not riven_stats:
+            # Bare numbers ("150 120") are the crit chance / crit damage shorthand. Text with labels
+            # we could not read must not be guessed into crit stats ("충격 120 관통 80").
+            if not riven_stats and not re.search(r'[A-Za-z가-힣ㄱ-ㅎ]', user_input):
                 numbers = re.findall(r'[+-]?\d+(?:\.\d+)?', user_input)
                 if len(numbers) >= 2:
                     v0 = float(numbers[0]) / (100.0 if abs(float(numbers[0])) > 3.0 else 1.0)
@@ -1341,31 +1368,19 @@ class ScreenModAnalyzer:
 
         ctx = self.pending_riven_context
         w_meta_ctx = ctx['w_meta']
-        left_stats_ctx = ctx.get('left_stats', {})
+        valence_ctx = self._valence_only(ctx.get('left_stats'))
         mod_objs_ctx = ctx.get('mod_objs', [])
         riven_name_ctx = ctx.get('riven_name', '리벤 모드')
-        base_metrics_ctx = ctx.get('base_metrics', {})
 
-        with_riven_metrics = self.calculate_comprehensive_metrics(w_meta_ctx, left_stats=left_stats_ctx, mod_objs=mod_objs_ctx, riven_stats=riven_stats, riven_in_panel=True)
-        base_metrics_ctx = self._riven_free_metrics(w_meta_ctx, left_stats_ctx, mod_objs_ctx, riven_stats, base_metrics_ctx)
+        with_riven_metrics = self.calculate_comprehensive_metrics(w_meta_ctx, left_stats=valence_ctx, mod_objs=mod_objs_ctx, riven_stats=riven_stats)
+        base_metrics_ctx = self.calculate_comprehensive_metrics(w_meta_ctx, left_stats=valence_ctx, mod_objs=mod_objs_ctx)
         report = self.format_riven_comparison_report(w_meta_ctx, riven_name_ctx, riven_stats, base_metrics_ctx, with_riven_metrics)
         breakdown_msg = self.format_calculation_breakdown(w_meta_ctx, mod_objs_ctx, with_riven_metrics, riven_stats=riven_stats)
-
-        self.last_diagnosis_result = {
-            'weapon': w_meta_ctx['name'],
-            'w_meta': w_meta_ctx,
-            'mod_objs': mod_objs_ctx,
-            'metrics': with_riven_metrics,
-            'message': report,
-            'calculation_breakdown': breakdown_msg
-        }
 
         self.clear_pending_riven()
         saved = self.build_store.get_build(w_meta_ctx['name'])
         if saved:
             saved['riven'] = riven_stats
-            if saved.get('panel_has_riven'):
-                saved['panel_riven'] = riven_stats
             self.build_store.save_build(saved)
         else:
             self.entered_rivens[w_meta_ctx['name']] = riven_stats
@@ -1487,17 +1502,27 @@ class ScreenModAnalyzer:
         return res
 
     def format_calculation_breakdown(self, w_meta: Dict[str, Any], mod_objs: List[Dict[str, Any]], metrics: Dict[str, Any], riven_stats: Optional[Dict[str, float]] = None) -> str:
+        import math
+        from scripts.damage_formulas import average_crit_mult, hm_crit_avg
         ON_KILL_LABELS = {'damage': '피해', 'crit_chance': '치명타 확률', 'crit_damage': '치명타 피해', 'multishot': '멀티샷',
-                          'status': '상태이상 확률', 'status_chance': '상태이상 확률', 'status_type_direct': '상태이상 종류당 피해'}
+                          'status': '상태이상 확률', 'status_chance': '상태이상 확률', 'status_type_direct': '상태이상 종류당 피해',
+                          'attack_speed': '공격 속도', 'fire_rate': '연사력'}
         w_name = w_meta.get('name', '')
         w_kr = w_meta.get('kr_name', '')
         w_disp = f'{w_name} ({w_kr})' if w_kr else w_name
         base_dmg = float(w_meta.get('total_damage', 18.0))
         base_cc = float(w_meta.get('crit_chance', 0.1))
+        base_cc = base_cc / 100.0 if base_cc > 1.0 else base_cc
         base_cd = float(w_meta.get('crit_mult', 1.5))
         base_fr = float(w_meta.get('fire_rate', 1.0))
         base_sc = float(w_meta.get('status_chance') or w_meta.get('status') or w_meta.get('procChance') or 0.0)
         base_sc = base_sc / 100.0 if base_sc > 1.0 else base_sc
+
+        engine = getattr(self, 'damage_engine', None)
+        if engine is None:
+            from scripts.warframe_damage_engine import WarframeDamageEngine
+            engine = WarframeDamageEngine()
+        prepared_mods = engine._prepare_mods(w_meta, list(mod_objs or [])) if mod_objs else []
 
         mod_dmg = 0.0
         mod_ms = 0.0
@@ -1507,16 +1532,19 @@ class ScreenModAnalyzer:
         mod_fr = 0.0
         mod_details = []
 
-        for mod in mod_objs:
-            if mod.get('name') == 'Riven Mod':
+        def _fmt_pct(label: str, val: float) -> str:
+            return f"{label} {val * 100:+.1f}%" if val != 0 else ""
+
+        for mod in prepared_mods:
+            if mod.get('name') in ('Riven Mod', 'Innate Trait'):
                 continue
             mod_stats = [
-                f"피해 +{mod.get('damage', 0.0)*100:.1f}%" if mod.get('damage', 0.0) != 0 else "",
-                f"멀티샷 +{mod.get('multishot', 0.0)*100:.1f}%" if mod.get('multishot', 0.0) != 0 else "",
-                f"원소 피해 +{mod.get('elemental_damage', 0.0)*100:.1f}%" if mod.get('elemental_damage', 0.0) != 0 else "",
-                f"치명타 확률 +{mod.get('crit_chance', 0.0)*100:.1f}%" if mod.get('crit_chance', 0.0) != 0 else "",
-                f"치명타 피해 +{mod.get('crit_damage', 0.0)*100:.1f}%" if mod.get('crit_damage', 0.0) != 0 else "",
-                f"연사력 +{mod.get('fire_rate', 0.0)*100:.1f}%" if mod.get('fire_rate', 0.0) != 0 else ""
+                _fmt_pct("피해", float(mod.get('damage', 0.0) or 0.0)),
+                _fmt_pct("멀티샷", float(mod.get('multishot', 0.0) or 0.0)),
+                _fmt_pct("원소 피해", float(mod.get('elemental_damage', 0.0) or 0.0)),
+                _fmt_pct("치명타 확률", float(mod.get('crit_chance', 0.0) or 0.0)),
+                _fmt_pct("치명타 피해", float(mod.get('crit_damage', 0.0) or 0.0)),
+                _fmt_pct("연사력", float(mod.get('fire_rate', 0.0) or 0.0)),
             ]
             # Conditional effects stay visible instead of collapsing into [유틸리티/효과].
             glad = 'Gladiator' in str(mod.get('modSet') or '') or mod.get('set') == 'Gladiator' or 'gladiator' in f"{mod.get('name', '')}".lower() or '글래디에이터' in str(mod.get('kr_name') or '')
@@ -1527,9 +1555,9 @@ class ScreenModAnalyzer:
                 "글래디에이터 세트: 세트 모드당 연속기 배수마다 치명타 확률 +10%" if glad else "",
                 f"위핑 운즈: 연속기 배수당 상태이상 확률 +{float(mod.get('combo_status') or 0)*100:.0f}% (12x 시 +{float(mod.get('combo_status') or 0)*1100:.0f}%)" if mod.get('combo_status') else "",
                 f"컨디션 오버로드: 적의 상태이상 종류당 피해 +{float(mod.get('status_type_damage') or 0)*100:.0f}%" if mod.get('status_type_damage') else "",
-                f"상태이상 확률 +{sc*100:.1f}%" if sc else "",
-                f"상태이상 피해 +{float(mod.get('status_damage') or 0)*100:.1f}%" if mod.get('status_damage') else "",
-                *(f"처치 시 {ON_KILL_LABELS.get(e.get('stat'), e.get('stat'))} +{float(e.get('value') or 0)*100:.0f}% (최대 {e.get('stacks', 1)}스택)" for e in mod.get('on_kill') or []),
+                _fmt_pct("상태이상 확률", sc),
+                _fmt_pct("상태이상 피해", float(mod.get('status_damage') or 0.0)),
+                *(f"처치 시 {ON_KILL_LABELS.get(e.get('stat'), e.get('stat'))} {float(e.get('value') or 0)*100:+.0f}% (최대 {e.get('stacks', 1)}스택)" for e in mod.get('on_kill') or []),
             ]
             mod_stats = [s for s in mod_stats if s]
             if mod_stats:
@@ -1544,57 +1572,67 @@ class ScreenModAnalyzer:
             disp_name = f"{kr_n} ({en_n})" if kr_n and kr_n != en_n else en_n
             mod_details.append(f"  - {disp_name}: {mod_stats_str}")
 
-            mod_dmg += mod.get('damage', 0.0)
-            mod_ms += mod.get('multishot', 0.0)
-            mod_elem += mod.get('elemental_damage', 0.0)
-            mod_cc += mod.get('crit_chance', 0.0)
-            mod_cd += mod.get('crit_damage', 0.0)
-            mod_fr += mod.get('fire_rate', 0.0)
+            mod_dmg += float(mod.get('damage', 0.0) or 0.0)
+            mod_ms += float(mod.get('multishot', 0.0) or 0.0)
+            mod_elem += float(mod.get('elemental_damage', 0.0) or 0.0)
+            mod_cc += float(mod.get('crit_chance', 0.0) or 0.0)
+            mod_cd += float(mod.get('crit_damage', 0.0) or 0.0)
+            mod_fr += float(mod.get('fire_rate', 0.0) or 0.0)
 
         if riven_stats:
+            rv_dmg = float(riven_stats.get('damage', 0.0) or riven_stats.get('base_damage', 0.0) or 0.0)
             r_stats = [
-                f"피해 +{(riven_stats.get('damage', 0.0) or riven_stats.get('base_damage', 0.0))*100:.1f}%" if (riven_stats.get('damage', 0.0) or riven_stats.get('base_damage', 0.0)) != 0 else "",
-                f"멀티샷 +{riven_stats.get('multishot', 0.0)*100:.1f}%" if riven_stats.get('multishot', 0.0) != 0 else "",
-                f"원소 피해 +{riven_stats.get('elemental_damage', 0.0)*100:.1f}%" if riven_stats.get('elemental_damage', 0.0) != 0 else "",
-                f"치명타 확률 +{riven_stats.get('crit_chance', 0.0)*100:.1f}%" if riven_stats.get('crit_chance', 0.0) != 0 else "",
-                f"치명타 피해 +{riven_stats.get('crit_damage', 0.0)*100:.1f}%" if riven_stats.get('crit_damage', 0.0) != 0 else "",
-                f"연사력 +{riven_stats.get('fire_rate', 0.0)*100:.1f}%" if riven_stats.get('fire_rate', 0.0) != 0 else ""
+                _fmt_pct("피해", rv_dmg),
+                _fmt_pct("멀티샷", float(riven_stats.get('multishot', 0.0) or 0.0)),
+                _fmt_pct("원소 피해", float(riven_stats.get('elemental_damage', 0.0) or 0.0)),
+                _fmt_pct("치명타 확률", float(riven_stats.get('crit_chance', 0.0) or 0.0)),
+                _fmt_pct("치명타 피해", float(riven_stats.get('crit_damage', 0.0) or 0.0)),
+                _fmt_pct("연사력", float(riven_stats.get('fire_rate', 0.0) or 0.0)),
             ]
             r_stats = [s for s in r_stats if s]
             riven_stats_str = ', '.join(r_stats) if r_stats else '[옵션 미입력]'
             mod_details.append(f"  - 🔮 리벤 모드 (Riven Mod): {riven_stats_str}")
 
-            mod_dmg += riven_stats.get('damage', 0.0) or riven_stats.get('base_damage', 0.0)
-            mod_ms += riven_stats.get('multishot', 0.0)
-            mod_elem += riven_stats.get('elemental_damage', 0.0)
-            mod_cc += riven_stats.get('crit_chance', 0.0)
-            mod_cd += riven_stats.get('crit_damage', 0.0)
-            mod_fr += riven_stats.get('fire_rate', 0.0)
+            mod_dmg += rv_dmg
+            mod_ms += float(riven_stats.get('multishot', 0.0) or 0.0)
+            mod_elem += float(riven_stats.get('elemental_damage', 0.0) or 0.0)
+            mod_cc += float(riven_stats.get('crit_chance', 0.0) or 0.0)
+            mod_cd += float(riven_stats.get('crit_damage', 0.0) or 0.0)
+            mod_fr += float(riven_stats.get('fire_rate', 0.0) or 0.0)
 
-        final_dmg = metrics.get('final_dmg', 0)
-        final_cc = metrics.get('final_cc', 0)
-        final_cd = metrics.get('final_cd', 0)
-        final_fr = metrics.get('final_fr', 0)
-        min_hit = metrics.get('min_hit', 0)
-        max_crit = metrics.get('max_crit_hit', 0)
-        exp_hit = metrics.get('expected_hit', 0)
-        b_dps = metrics.get('burst_dps', 0)
-        s_dps = metrics.get('sustained_dps', 0)
-        fs_dps = metrics.get('full_stack', {}).get('burst_dps', 0)
-        inc_dps = metrics.get('incarnon', {}).get('burst_dps', 0)
+        final_dmg = float(metrics.get('final_dmg', 0) or 0.0)
+        final_cc = float(metrics.get('final_cc', 0) or 0.0)
+        final_cd = float(metrics.get('final_cd', 0) or 0.0)
+        final_fr = float(metrics.get('final_fr', 0) or 0.0)
+        efr = float(metrics.get('effective_fire_rate') or final_fr or 0.0)
+        min_hit = float(metrics.get('min_hit', 0) or 0.0)
+        max_crit = float(metrics.get('max_crit_hit', 0) or 0.0)
+        exp_hit = float(metrics.get('expected_hit', 0) or 0.0)
+        b_dps = float(metrics.get('burst_dps', 0) or 0.0)
+        s_dps = float(metrics.get('sustained_dps', 0) or 0.0)
+        fs_dps = float((metrics.get('full_stack') or {}).get('burst_dps') or 0.0)
+        inc_dps = float((metrics.get('incarnon') or {}).get('burst_dps') or 0.0)
+        status_dps = float(metrics.get('status_dps') or 0.0)
+        direct_burst = float(metrics.get('direct_burst_dps') or 0.0)
+        vig_chance = float(metrics.get('vigilante_chance') or 0.0)
+        active_fac = float(metrics.get('active_faction_bonus') or 0.0)
+        fac_mult = max(0.0, 1.0 + active_fac)
 
-        crit_avg_mult = 1.0 + final_cc * (final_cd - 1.0)
-        bleed_tick = 0.35 * base_dmg * (1.0 + mod_dmg) * (1.0 + mod_ms) * crit_avg_mult
+        crit_avg_mult = average_crit_mult(final_cc, final_cd, vigilante_chance=vig_chance)
+        min_tier = int(final_cc + 1e-6) if final_cc > 0 else 0
+        max_tier = max(1, math.ceil(final_cc - 1e-6)) if final_cc > 0 else 0
+        min_tier_mult = 1.0 + min_tier * max(0.0, final_cd - 1.0)
+        max_tier_mult = 1.0 + max_tier * max(0.0, final_cd - 1.0)
 
         base_ms = float(w_meta.get('base_multishot', 1.0) or w_meta.get('multishot', 1.0) or 1.0)
-        final_ms = metrics.get('final_ms', 1.0)
-        per_pellet = metrics.get('per_pellet_dmg', min_hit)
+        final_ms = float(metrics.get('final_ms', 1.0) or 1.0)
+        per_pellet = float(metrics.get('per_pellet_dmg', min_hit) or 0.0)
         ms_min = metrics.get('ms_min_pellets', 1)
         ms_max = metrics.get('ms_max_pellets', 1)
-        ms_extra = metrics.get('ms_extra_pct', 0.0)
-        max_non_crit = metrics.get('max_non_crit', min_hit)
+        ms_extra = float(metrics.get('ms_extra_pct', 0.0) or 0.0)
+        max_non_crit = float(metrics.get('max_non_crit', min_hit) or 0.0)
         avg_non_crit = final_dmg
-        is_melee = w_meta.get('category') == 'Melee'
+        is_melee = str(w_meta.get('category') or '').strip().lower() == 'melee'
 
         tot_parts = []
         if mod_dmg != 0: tot_parts.append(f"피해 {mod_dmg*100:+.1f}%")
@@ -1605,8 +1643,34 @@ class ScreenModAnalyzer:
         if mod_fr != 0: tot_parts.append(f"연사/공속 {mod_fr*100:+.1f}%")
         tot_summary = " | ".join(tot_parts) if tot_parts else "보너스 없음 (순정)"
 
+        step2 = (
+            (f"  ② 확정 치명타 최저점 ({min_tier}티어 ×{min_tier_mult:.2f}배) = {min_hit:,.1f};"
+             if min_tier >= 1 else f"  ② 비크리 1타(최저점) = {min_hit:,.1f};")
+            if is_melee else (
+                f"  ② 순수 발사체당 피해 = {per_pellet:,.1f} (최저 {ms_min}발 · {min_tier}티어 치명타 시 {min_hit:,.1f}, 최대 {ms_max}발 비크리 {max_non_crit:,.1f}, 평균 총계 {avg_non_crit:,.1f});"
+                if min_tier >= 1 else
+                f"  ② 순수 발사체당 피해 = {per_pellet:,.1f} (비크리 최저 {ms_min}발 적중 시 {min_hit:,.1f}, 최대 {ms_max}발 적중 시 {max_non_crit:,.1f}, 평균 총계 {avg_non_crit:,.1f});"
+            )
+        )
+        fac_suffix = f" × 진영 {fac_mult:.2f}배" if abs(active_fac) > 1e-6 else ""
+        tier_tag = f" ({max_tier}티어)" if max_tier >= 2 else ""
+        step3 = (
+            f"  ③ 치명타 최고점{tier_tag} = 기본 타격({max_non_crit:,.1f}) × {max_tier_mult:.2f}배{fac_suffix} = {max_crit:,.1f};"
+            if is_melee else
+            f"  ③ 치명타 최고점{tier_tag} = 최대 {ms_max}발 적중({max_non_crit:,.1f}) × {max_tier_mult:.2f}배{fac_suffix} = {max_crit:,.1f};"
+        )
+        step4 = f"  ④ 기대 단발 = {avg_non_crit:,.1f} × [1 + {final_cc:.2f} × ({final_cd:.2f} - 1)]{fac_suffix} = {exp_hit:,.1f};"
+        step5 = (
+            f"  ⑤ 순간 폭딜 = 직접 타격 {direct_burst:,.0f} DPS + 상태이상 DoT {status_dps:,.0f} DPS = {b_dps:,.0f} DPS, 지속 DPS = {s_dps:,.0f} DPS;"
+            if status_dps > 0 and direct_burst > 0
+            else (
+                f"  ⑤ 순간 폭딜 = {exp_hit:,.1f} × {efr:.2f} (상태이상 DoT {status_dps:,.0f} DPS 반영) = {b_dps:,.0f} DPS, 지속 DPS = {s_dps:,.0f} DPS;"
+                if status_dps > 0
+                else f"  ⑤ 순간 폭딜 = {exp_hit:,.1f} × {efr:.2f} = {b_dps:,.0f} DPS, 지속 DPS = {b_dps:,.0f} × {(s_dps / b_dps) if b_dps else 1.0:.2f} = {s_dps:,.0f} DPS;"
+            )
+        )
         breakdown = [
-            f"1. 무기 코덱스 기본 스탯 (DB 원본)",
+            f"1. 무기 코덱스 기본 스탯 (DB 원본 · 패널 OCR 미사용)",
             f"  - 기본 피해: {base_dmg:.1f}",
             f"  - 기본 멀티샷(발사체): {base_ms:.1f}발" if not is_melee else f"  - 사거리: {w_meta.get('range', 2.5):.1f}m",
             f"  - 치명타 확률: {base_cc*100:.1f}%",
@@ -1618,19 +1682,36 @@ class ScreenModAnalyzer:
             *mod_details,
             f"  ↳ 🎯 [총합 적용치]: {tot_summary}",
             "",
-            f"3. 단계별 데미지 산출 공식 및 대입 흐름",
+            f"3. 단계별 데미지 산출 공식 및 대입 흐름 (DB + 모드 공식 직결)",
             f"  ① 최종 멀티샷 = {base_ms:.1f}발 × (1+멀티샷 모드 {mod_ms*100:+.1f}%) = {final_ms:.1f}발 (최소 {ms_min}발 확정 / {ms_extra:.0f}% 확률로 {ms_max}발 발사);" if not is_melee else f"  ① 근접 타격 판정 = {min_hit:,.1f};",
-            f"  ② 순수 발사체당 피해 = {per_pellet:,.1f} (비크리 최저 {ms_min}발 적중 시 {min_hit:,.1f}, 최대 {ms_max}발 적중 시 {max_non_crit:,.1f}, 평균 총계 {avg_non_crit:,.1f});" if not is_melee else f"  ② 비크리 1타(최저점) = {min_hit:,.1f};",
-            f"  ③ 치명타 최고점 = 최대 {ms_max}발 적중({max_non_crit:,.1f}) × {final_cd:.2f}배 = {max_crit:,.1f};",
-            f"  ④ 기대 단발 = {avg_non_crit:,.1f} × [1 + {final_cc:.2f} × ({final_cd:.2f} - 1)] = {exp_hit:,.1f};",
-            f"  ⑤ 순간 폭딜 = {exp_hit:,.1f} × {final_fr:.2f} = {b_dps:,.0f} DPS, 지속 DPS = {b_dps:,.0f} × {(s_dps / b_dps) if b_dps else 1.0:.2f} = {s_dps:,.0f} DPS;"
+            step2,
+            step3,
+            step4,
+            step5,
         ]
 
         if metrics.get('hunter_munitions'):
-            breakdown.append(f"  ⑥ 베기 상태이상 틱딜(헌터 뮤니션즈 트루 데미지) = 0.35 × 발사체 피해({per_pellet:.1f}) × 치명타평균배율({crit_avg_mult:.2f}) = 틱당 약 {metrics['hunter_munitions'].get('bleed_tick', 0):,.1f};")
+            hm_tick = float(metrics['hunter_munitions'].get('bleed_tick', 0) or 0.0)
+            hm_crit = hm_crit_avg(final_cc, final_cd, vigilante_chance=vig_chance)
+            sd_sum = sum(float(m.get('status_damage') or 0.0) for m in prepared_mods if m.get('name') != 'Riven Mod') + float((riven_stats or {}).get('status_damage') or 0.0)
+            eff_dmg_bonus = float(metrics['effective_mod_dmg']) if isinstance(metrics.get('effective_mod_dmg'), (int, float)) else mod_dmg
+            denom_factors = 0.35 * hm_crit * (fac_mult ** 2) * (1.0 + sd_sum)
+            modded_base_disp = (hm_tick / denom_factors) if (hm_tick > 0 and denom_factors > 0) else (base_dmg * max(0.0, 1.0 + eff_dmg_bonus))
+            hm_parts = ["0.35", f"모딩 기본피해({modded_base_disp:,.1f})", f"치명타배율({hm_crit:.2f})"]
+            if abs(active_fac) > 1e-6:
+                hm_parts.append(f"진영²({fac_mult ** 2:.2f})")
+            if abs(sd_sum) > 1e-6:
+                hm_parts.append(f"상태피해({1.0 + sd_sum:.2f})")
+            breakdown.append(f"  ⑥ 베기 상태이상 틱딜(헌터 뮤니션즈 트루 데미지) = {' × '.join(hm_parts)} = 틱당 약 {hm_tick:,.1f};")
 
-        if inc_dps > 0 or fs_dps > b_dps:
-            breakdown.append(f"  ⑦ 인카논 변신 폼 및 풀스택(아케인+갈바나이즈드) 폭딜 = {fs_dps:,.0f} DPS, 인카논 폭딜 = {inc_dps:,.0f} DPS.")
+        has_incarnon = inc_dps > 0 and bool(metrics.get('incarnon') or w_meta.get('incarnon_attack') or inc_dps > 0)
+        has_full_stack = fs_dps > b_dps
+        if has_incarnon and has_full_stack:
+            breakdown.append(f"  ⑦ 풀스택(아케인+갈바나이즈드) 폭딜 = {fs_dps:,.0f} DPS, 인카논 변신 폼 폭딜 = {inc_dps:,.0f} DPS.")
+        elif has_incarnon:
+            breakdown.append(f"  ⑦ 인카논 변신 폼 폭딜 = {inc_dps:,.0f} DPS.")
+        elif has_full_stack:
+            breakdown.append(f"  ⑦ 풀스택(아케인+갈바나이즈드) 폭딜 = {fs_dps:,.0f} DPS.")
 
         return "\n".join(breakdown)
 
@@ -1943,19 +2024,31 @@ class ScreenModAnalyzer:
             if not el.get('order_known', True):
                 lines.append('⚠️ 일부 모드의 슬롯 위치를 확인하지 못해 합성 순서가 다를 수 있습니다.')
 
-            suffix = {'panel': ' (패널 실측)', 'panel_partial': ' (패널 일부 + 계산값)'}.get(el.get('source'), ' (계산값)')
-            if el.get('first_attack_only') and el.get('source') == 'computed':
+            suffix = ' (계산값)'
+            if el.get('first_attack_only'):
                 suffix += ' - 첫 공격 모드 기준'
             lines.append(f"\n📐 **타입별 피해{suffix}**:")
             for t, d in sorted(el['types'].items(), key=lambda item: item[1], reverse=True):
                 lines.append(f"• {kr.get(t, t)}: `{d:,.1f}` ({el['shares'].get(t, 0) * 100:.0f}%)")
 
-            burst = metrics.get('burst_dps', 0)
+            direct_burst = float(
+                metrics.get('direct_burst_dps')
+                if metrics.get('direct_burst_dps') is not None
+                else (metrics.get('burst_dps', 0) or 0.0)
+            )
+            active_fac = float(metrics.get('active_faction_bonus') or 0.0)
+            unfactored_direct = direct_burst / max(0.01, 1.0 + active_fac)
+            fac_status = metrics.get('faction_status_dps') or {}
             fm = el.get('faction_multipliers') or {}
             if fm:
                 lines.append('\n🎯 **진영별 순간 폭딜 (방어력 제외)**:')
-                for f, m in sorted(fm.items(), key=lambda item: item[1], reverse=True):
-                    lines.append(f"• {faction_kr.get(f, f)}: `{burst * m:,.0f}` (×{m:.2f})")
+                rows = [
+                    (f, m, unfactored_direct * m + float(fac_status.get(f, 0.0)))
+                    for f, m in fm.items()
+                ]
+                rows.sort(key=lambda item: (item[2], item[1]), reverse=True)
+                for f, m, total_dps in rows:
+                    lines.append(f"• {faction_kr.get(f, f)}: `{total_dps:,.0f}` (×{m:.2f})")
 
             return lines
 
@@ -1999,7 +2092,14 @@ class ScreenModAnalyzer:
         prefix = category.lower()
         candidates = {}
         for entry in self.indexer.mods_index.values():
-            if entry.get('is_arcane') and entry.get('kr_name') and str(entry.get('name', '')).lower().startswith(prefix):
+            if not (entry.get('is_arcane') and entry.get('kr_name')):
+                continue
+            a_type = str(entry.get('type') or '').strip().lower()
+            a_compat = str(entry.get('compatName') or '').strip().lower()
+            if a_type or a_compat:
+                if a_type == prefix or a_compat == prefix or (prefix == 'secondary' and a_compat == 'pistol'):
+                    candidates[entry['kr_name']] = entry['name']
+            elif str(entry.get('name', '')).lower().startswith(prefix):
                 candidates[entry['kr_name']] = entry['name']
 
         best_score = 0
@@ -2053,14 +2153,11 @@ class ScreenModAnalyzer:
             'panel': res.get('stats') or {},
             # A scanned panel already contains an equipped riven, even before its values are known.
             'panel_has_riven': RIVEN_MOD in slots.values(),
-            'panel_riven': None,
-            'panel_removed': [],
             'riven': None,
         }
         entered = self.entered_rivens.pop(w_meta['name'], None)
         if entered and build['panel_has_riven']:
             build['riven'] = entered
-            build['panel_riven'] = entered
         self.build_store.save_build(build)
         return build
 
@@ -2075,37 +2172,22 @@ class ScreenModAnalyzer:
             mods.append(dict(self.indexer.mods_index.get(name.lower()) or {'name': name}))
         return mods
 
-    def _panel_without_changes(self, build: Dict[str, Any], w_meta: Dict[str, Any], mods: List[Dict[str, Any]], riven_in_panel: Optional[Dict[str, float]]) -> Dict[str, float]:
-        """The scanned panel with mods removed since the scan, and the riven it contained, taken out."""
-        left = dict(build.get('panel') or {})
-        if not left:
-            return left
-        self.calculate_comprehensive_metrics(w_meta)
-        others = [m for m in mods if m.get('name') != RIVEN_MOD]
-        for name in build.get('panel_removed', []):
-            left = self.damage_engine.strip_riven_from_panel(left, w_meta, others, self.indexer.mods_index.get(name.lower()) or {})
-        if riven_in_panel:
-            left = self.damage_engine.strip_riven_from_panel(left, w_meta, others, riven_in_panel)
-        return left
-
-    def _evaluate_build(self, w_meta: Dict[str, Any], left: Dict[str, float], mods: List[Dict[str, Any]], build: Optional[Dict[str, Any]], riven: Optional[Dict[str, float]], riven_in_panel: bool = False) -> Dict[str, Any]:
-        metrics = self.calculate_comprehensive_metrics(w_meta, left_stats=left, mod_objs=mods, riven_stats=riven, riven_in_panel=riven_in_panel)
+    def _evaluate_build(self, w_meta: Dict[str, Any], left: Dict[str, float], mods: List[Dict[str, Any]], build: Optional[Dict[str, Any]], riven: Optional[Dict[str, float]]) -> Dict[str, Any]:
+        valence = self._valence_only(left)
+        metrics = self.calculate_comprehensive_metrics(w_meta, left_stats=valence, mod_objs=mods, riven_stats=riven)
         arcane = self._arcane_info((build or {}).get('arcane'))
-        # With the riven already in the panel, adding it to the full-stack base would count it twice.
         metrics['full_stack'] = self.damage_engine.compute_full_stack(
-            w_meta, left_stats=left, mod_objs=mods,
+            w_meta, left_stats=valence, mod_objs=mods,
             arcane=arcane if arcane and arcane.get('modeled') else None,
-            riven_stats=None if riven_in_panel else riven
+            riven_stats=riven
         )
         return metrics
 
     def evaluate_saved_build(self, build: Dict[str, Any]) -> Dict[str, Any]:
         w_meta = self.indexer.weapons_index.get(build['weapon'].lower()) or {'name': build['weapon']}
         mods = self._resolve_build_mods(build)
-        # An equipped riven with unknown values can only be read as part of the panel.
-        if build.get('panel_has_riven') and not build.get('panel_riven'):
-            return self._evaluate_build(w_meta, self._panel_without_changes(build, w_meta, mods, None), mods, build, None)
-        left = self._panel_without_changes(build, w_meta, mods, build.get('panel_riven'))
+        # Only the Valence Bonus is kept from the saved panel; build metrics derive from DB + mods.
+        left = self._valence_only(build.get('panel'))
         return self._evaluate_build(w_meta, left, mods, build, build.get('riven'))
 
     def apply_slot_edits(self, res: Dict[str, Any], edits: Dict[str, str]) -> Dict[str, Any]:
@@ -2128,10 +2210,11 @@ class ScreenModAnalyzer:
             self.clear_pending_riven()
             self.entered_rivens.pop(w_meta['name'], None)
 
-        metrics = self.calculate_comprehensive_metrics(w_meta, left_stats=res.get('stats'), mod_objs=mods)
+        valence_stats = self._valence_only(res.get('stats'))
+        metrics = self.calculate_comprehensive_metrics(w_meta, left_stats=valence_stats, mod_objs=mods)
         arcane = self._arcane_info(edits.get('arcane')) if 'arcane' in edits else metrics.get('arcane') or (res.get('metrics') or {}).get('arcane')
         metrics['arcane'] = arcane
-        metrics['full_stack'] = self.damage_engine.compute_full_stack(w_meta, left_stats=res.get('stats'), mod_objs=mods, arcane=arcane if arcane and arcane.get('modeled') else None)
+        metrics['full_stack'] = self.damage_engine.compute_full_stack(w_meta, left_stats=valence_stats, mod_objs=mods, arcane=arcane if arcane and arcane.get('modeled') else None)
         formatted = [f"{m.get('kr_name', m['name'])} ({m['name']})" for m in mods]
         self._attach_card(res, w_meta, formatted, metrics, self._riven_notice() if has_riven else "")
         self._attach_review_card(res, w_meta, mods, formatted, len(formatted), '리벤 모드' if has_riven else None)
@@ -2158,13 +2241,34 @@ class ScreenModAnalyzer:
         return sorted(choices)
 
     def arcane_choices(self, w_meta: Dict[str, Any]) -> List[Any]:
-        prefix = (w_meta.get('category') or '').lower()
+        category = (w_meta.get('category') or '').strip().lower()
+        w_type = (w_meta.get('type') or '').strip().lower()
+        if w_type == 'assault rifle':
+            w_type = 'rifle'
         seen, choices = set(), []
         for mod in self.indexer.mods_index.values():
+            if not mod.get('is_arcane'):
+                continue
             name = mod.get('name', '')
-            if mod.get('is_arcane') and name.lower().startswith(prefix) and name not in seen:
-                seen.add(name)
-                choices.append((mod.get('kr_name') or name, name))
+            if not name or name in seen:
+                continue
+            a_type = str(mod.get('type') or '').strip().lower()
+            a_compat = str(mod.get('compatName') or '').strip().lower()
+            if a_type or a_compat:
+                cat_match = (a_type == category) or (a_compat == category) or (category == 'secondary' and a_compat == 'pistol')
+                if not cat_match:
+                    continue
+                if w_type and a_compat in ('bow', 'shotgun', 'sniper', 'rifle'):
+                    if a_compat == 'rifle':
+                        if w_type not in ('rifle', 'bow', 'sniper'):
+                            continue
+                    elif a_compat != w_type:
+                        continue
+            else:
+                if not category or not name.lower().startswith(category):
+                    continue
+            seen.add(name)
+            choices.append((mod.get('kr_name') or name, name))
         return sorted(choices)
 
     def format_saved_build(self, build: Dict[str, Any]) -> str:
@@ -2234,11 +2338,9 @@ class ScreenModAnalyzer:
         riven_slot = None
         if working:
             working['slots'] = dict(working.get('slots', {}))
-            working['panel_removed'] = list(working.get('panel_removed', []))
             riven_slot = next((s for s, n in working['slots'].items() if n == RIVEN_MOD), None)
             if riven_slot is None:
                 if removed_slot:
-                    working['panel_removed'].append(working['slots'][removed_slot])
                     riven_slot = removed_slot
                 else:
                     riven_slot = next((s for s in GRID_SLOTS if s not in working['slots']), None)
@@ -2252,11 +2354,7 @@ class ScreenModAnalyzer:
                     }
                 working['slots'][riven_slot] = RIVEN_MOD
             mods = self._resolve_build_mods(working)
-            # The left card is the roll currently equipped, so it is what the scanned panel contains.
-            riven_in_panel = working.get('panel_riven') or (old_card['stats'] if working.get('panel_has_riven') else None)
-            left = self._panel_without_changes(working, w_meta, mods, riven_in_panel)
-            if not left:
-                notes.append("저장 빌드에 패널 수치가 없어 코덱스와 모드로 계산했습니다.")
+            left = self._valence_only(working.get('panel'))
         else:
             mods = [{'name': RIVEN_MOD, 'slot_index': 1}]
             left = {}
@@ -2299,7 +2397,6 @@ class ScreenModAnalyzer:
             f"• 순간 DPS: `{rows[1][1]:,.0f}` ➔ `{rows[1][2]:,.0f}`",
         ]
         unapplied = [f"{u['label']} {u['value'] * 100:+g}%" for u in old_card.get('unapplied', []) + new_card.get('unapplied', [])]
-        unapplied += [f"{STAT_DISPLAY['status_chance']} {c['stats']['status_chance'] * 100:+g}%" for c in (old_card, new_card) if 'status_chance' in c['stats']]
         if unapplied:
             res['unapplied'] = unapplied
             lines.append(f"ℹ️ DPS에 반영되지 않는 옵션: {', '.join(unapplied)}")
@@ -2314,10 +2411,6 @@ class ScreenModAnalyzer:
         build = self.build_store.get_build(res['w_meta']['name'])
         if not build:
             return f"**[세팔론 오디스]** {weapon} 저장 빌드가 없어 반영하지 못했습니다. 모딩 화면을 먼저 스캔해 주십시오."
-        if res.get('removed_slot'):
-            build.setdefault('panel_removed', []).append(build['slots'][res['removed_slot']])
-        if build.get('panel_has_riven') and not build.get('panel_riven'):
-            build['panel_riven'] = res['old_card']['stats']
         build['slots'][res['riven_slot']] = RIVEN_MOD
         build['riven'] = res['new_card']['stats']
         self.build_store.save_build(build)
@@ -2384,7 +2477,3 @@ class ScreenModAnalyzer:
             rows_v2 = extract_rows(res_v2)
 
             return rows_v1 + rows_v2
-
-# Compatibility Aliases
-RivenOCRAnalyzer = ScreenModAnalyzer
-ScreenModDiagnoser = ScreenModAnalyzer

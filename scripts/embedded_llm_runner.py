@@ -24,6 +24,8 @@ LLAMA_BIN_URL = f'https://github.com/ggml-org/llama.cpp/releases/download/{LLAMA
 LLAMA_RELEASE_API = 'https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=5'
 # Measured 31~114s from a synced Google Drive folder.
 STARTUP_TIMEOUT_SECONDS = 300
+# How long stop_server waits for a start that holds the lock (a download notices the stop within one chunk).
+STOP_LOCK_TIMEOUT_SECONDS = 5
 JOB_OBJECT_EXTENDED_LIMIT_INFORMATION = 9
 JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x2000
 BELOW_NORMAL_PRIORITY_CLASS = 0x00004000
@@ -104,6 +106,10 @@ def close_job(job: Optional[int]) -> None:
         _kernel32().CloseHandle(job)
 
 
+class StopRequested(OSError):
+    """stop_server was called while a download was running."""
+
+
 class EmbeddedLLMRunner:
     def __init__(self, model_path='models/google_gemma-4-E2B-it-Q4_K_M.gguf', port=18080, host='127.0.0.1', n_gpu_layers=99, context_size=4096):
         self.model_path = model_path if os.path.isabs(model_path) else get_path(model_path)
@@ -118,6 +124,8 @@ class EmbeddedLLMRunner:
         self.last_error = ""
         self._log_file = None
         self._start_lock = threading.Lock()
+        # Set by stop_server: a start that is still downloading or loading gives up instead of launching later.
+        self._stop_requested = threading.Event()
         self._is_starting = False
         self.state = "idle"  # idle | starting | ready | failed
         atexit.register(self.stop_server)
@@ -125,6 +133,10 @@ class EmbeddedLLMRunner:
     def is_starting(self) -> bool:
         """True while start_server is downloading/launching/waiting for the model to load."""
         return self._is_starting
+
+    def _raise_if_stopped(self):
+        if self._stop_requested.is_set():
+            raise StopRequested("대화 엔진이 꺼져 다운로드를 멈췄습니다")
 
     def _launch(self) -> bool:
         os.makedirs(os.path.dirname(self.log_path), exist_ok=True)
@@ -159,6 +171,7 @@ class EmbeddedLLMRunner:
         if self.is_healthy():
             self.state = "ready"
             return True
+        self._stop_requested.clear()
         self._is_starting = True
         self.state = "starting"
         ok = False
@@ -170,18 +183,36 @@ class EmbeddedLLMRunner:
                     # Binaries are installed by start_companion.bat or the settings toggle, never silently here.
                     if not self.ensure_binaries_exist(download=False) or not self.ensure_model_exists():
                         return False
-                    if not self._launch():
+                    # Switched off while the model was downloading: don't launch it anyway.
+                    if self._stop_requested.is_set() or not self._launch():
                         return False
             ok = self.wait_for_ready(timeout=timeout) if wait_ready else True
+            if not ok and self.process is not None:
+                # A server that never answered would hold gigabytes of RAM and the port for nothing.
+                self._terminate_process()
             return ok
         finally:
             self._is_starting = False
-            if not ok:
+            if self._stop_requested.is_set():
+                self.state = "idle"
+            elif not ok:
                 self.state = "failed"
             elif wait_ready:
                 self.state = "ready"
 
     def stop_server(self):
+        self._stop_requested.set()
+        # A start holding the lock is downloading; the flag makes it stop at the next chunk, so the wait is short.
+        # The wait is bounded anyway: this also runs at exit, and a stalled socket must not hang the app.
+        locked = self._start_lock.acquire(timeout=STOP_LOCK_TIMEOUT_SECONDS)
+        try:
+            self._terminate_process()
+        finally:
+            if locked:
+                self._start_lock.release()
+        self.state = "idle"
+
+    def _terminate_process(self):
         # Only this app's own process: other llama-server instances on the machine are not ours to kill.
         process, self.process = self.process, None
         if process is not None and process.poll() is None:
@@ -193,7 +224,6 @@ class EmbeddedLLMRunner:
         job, self.job_object = self.job_object, None
         close_job(job)
         self._close_log()
-        self.state = "idle"
 
     def _close_log(self):
         log_file, self._log_file = self._log_file, None
@@ -213,6 +243,8 @@ class EmbeddedLLMRunner:
     def wait_for_ready(self, timeout=10) -> bool:
         start_t = time.time()
         while time.time() - start_t < timeout:
+            if self._stop_requested.is_set():
+                return False
             if self.is_healthy():
                 return True
             if self.process is not None and self.process.poll() is not None:
@@ -224,9 +256,16 @@ class EmbeddedLLMRunner:
         return False
 
     def ensure_model_exists(self, progress_callback=None, show_progress=False) -> bool:
-        if os.path.exists(self.model_path) and os.path.getsize(self.model_path) > MIN_MODEL_BYTES:
+        # Only the bundled Gemma file is downloaded; a model the user picked is never replaced by it.
+        is_bundled = os.path.basename(self.model_path) == os.path.basename(MODEL_URL)
+        min_bytes = MIN_MODEL_BYTES if is_bundled else 0
+        if os.path.exists(self.model_path) and os.path.getsize(self.model_path) > min_bytes:
             if show_progress: print("[OK] Model already exists.")
             return True
+        if not is_bundled:
+            self.last_error = f"LLM 모델 파일을 찾을 수 없습니다: {self.model_path}"
+            if show_progress: print(f"[ERROR] {self.last_error}")
+            return False
 
         os.makedirs(os.path.dirname(self.model_path) or 'models', exist_ok=True)
         tmp_path = self.model_path + '.download.tmp'
@@ -238,6 +277,7 @@ class EmbeddedLLMRunner:
             downloaded = 0
             with open(tmp_path, 'wb') as f:
                 for chunk in response.iter_content(chunk_size=1024 * 1024):
+                    self._raise_if_stopped()
                     if chunk:
                         f.write(chunk)
                         downloaded += len(chunk)
@@ -285,6 +325,8 @@ class EmbeddedLLMRunner:
         return LLAMA_BIN_URL
 
     def download_binaries(self, progress_callback=None, show_progress=False) -> bool:
+        # Called on its own by the settings toggle right after a stop_server; this is a new request.
+        self._stop_requested.clear()
         bin_dir = os.path.dirname(self.bin_path)
         os.makedirs(bin_dir, exist_ok=True)
         tmp_path = os.path.join(bin_dir, 'llama-bin.zip.download.tmp')
@@ -295,6 +337,7 @@ class EmbeddedLLMRunner:
             downloaded = 0
             with open(tmp_path, 'wb') as f:
                 for chunk in response.iter_content(chunk_size=1024 * 1024):
+                    self._raise_if_stopped()
                     if chunk:
                         f.write(chunk)
                         downloaded += len(chunk)

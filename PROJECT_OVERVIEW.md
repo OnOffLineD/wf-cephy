@@ -11,10 +11,10 @@
    - DPS, 치명타, 속성 합성, 방어력 계산은 파이썬 엔진이 맡고, LLM은 오디스 페르소나의 잡담과 위키 기반 공략 해설만 담당합니다.
 2. **3단계 채팅 라우팅**
    - **잡담**: 인사, 피로 호소 등에는 오디스 말투로 짧게 답합니다. 숙제 의도를 감지하면 등록 버튼을 띄우고, `완료`·`삭제`·`추가` 명령을 처리합니다.
-   - **공략**: 보스, 속성, 퀘스트 질문은 `rules/wiki_docs/`를 검색해 풀어서 답하고 근거 문서를 표시합니다. 드롭 위치는 `drops_all.json`에서 바로 답합니다. 자료에 없으면 없다고 말하고, 그 질문을 로컬 로그(`logs/guide-misses.jsonl`)에 남깁니다.
+   - **공략**: 보스, 속성, 퀘스트 질문은 `rules/wiki_docs/`를 검색해 풀어서 답하고 근거 문서를 표시합니다. 드롭 위치는 `drops_all.json`에서 바로 답합니다. 자료에 없으면 없다고 말합니다.
    - **스크린샷 진단**: `F9`, `Alt+Q`, `PrtSc`, `Ctrl+V`로 받은 모딩 화면에서 무기, 패널 수치, 장착 모드를 읽어 리포트합니다.
 3. **값이 불확실하면 추측하지 않습니다**
-   - 라벨이 확인된 패널 값만 쓰고, 없으면 코덱스와 모드로 계산하며 그 사실을 리포트에 표시합니다.
+   - 데미지는 코덱스 기본값과 인식한 모드로 계산합니다. 화면 패널에서는 쿠바·테넷·코다 무기의 보너스 속성(Valence)만 가져옵니다.
 
 ---
 
@@ -24,7 +24,7 @@
 | :--- | :--- | :--- |
 | **GUI** | `PyQt6` | 다크 테마 채팅창, 플로팅 펫, 탭 UI(채팅·숙제·현황) |
 | **LLM** | `llama.cpp` (`bin/llama-server.exe`) | `models/google_gemma-4-E2B-it-Q4_K_M.gguf`, 포트 18080. Job Object로 앱 강제 종료 시에도 서버 종료 |
-| **슬롯 탐지** | `ultralytics` YOLOv8n | `models/slot_detector.pt`. 모드·빈 슬롯, 무기 헤더, 아케인, 리벤 슬롯 탐지 |
+| **슬롯 탐지** | `onnxruntime` YOLOv8n | `models/slot_detector.onnx`. 모드·빈 슬롯, 무기 헤더, 아케인, 리벤 슬롯 탐지 |
 | **OCR** | `winocr`, `Pillow` | Windows OCR. 슬롯과 패널을 여러 전처리로 읽어 결합 |
 | **퍼지 매칭** | `rapidfuzz`, 자모 분해 | 한글 자모 단위 비교로 OCR 오타 복원 |
 | **위키 검색** | 글자 조각(2~3자) BM25 | `rules/wiki_docs/` 재귀 인덱싱. 띄어쓰기·조사에 강하고 은어는 `data/guide_aliases.json`으로 연결. 벡터 DB는 쓰지 않습니다 |
@@ -40,7 +40,7 @@ WarframeOptimizer/
 ├── start_companion.bat           # 데스크톱 컴패니언 실행
 ├── main_companion.py             # 앱 진입점 (펫 + 채팅 패널 + LLM)
 ├── bin/                          # llama-server.exe와 DLL (git 제외)
-├── models/                       # GGUF 모델, slot_detector.pt (GGUF는 git 제외)
+├── models/                       # GGUF 모델, slot_detector.onnx (GGUF는 git 제외)
 ├── python_embed/                 # 임베디드 Python (현재 PyQt6 등 패키지 미설치)
 ├── data/
 │   ├── raw_wfcd/                 # WFCD 원본 (주무기, 보조무기, 근접, 워프레임, 모드, 한국어)
@@ -59,8 +59,6 @@ WarframeOptimizer/
 └── tests/                        # 자동 테스트, fixtures/ocr_ground_truth.json 정답 데이터
 ```
 
-`start.bat`, `scripts/app_server.py`, `scripts/optimizer_engine.py`, `web/`은 이전 웹 옵티마이저의 잔재로, 데스크톱 컴패니언은 사용하지 않습니다.
-
 ---
 
 ## 4. 핵심 모듈
@@ -75,7 +73,7 @@ WarframeOptimizer/
 * **`scripts/embedded_llm_runner.py`** `EmbeddedLLMRunner`
   * `start_server()`: 이미 응답하는 서버는 재사용하고, 없으면 모델을 받아 실행합니다. 실패 사유는 `last_error`, 서버 로그는 `data/logs/llama-server.log`에 남습니다.
   * `stop_server()`: 이 앱이 띄운 프로세스만 종료합니다.
-  * `bin/llama-server.exe`는 자동으로 받지 않습니다. `scripts/setup_portable_runtime.py`가 설치된 Ollama에서 복사합니다.
+  * `bin/llama-server.exe`는 자동으로 받지 않습니다. `python scripts/embedded_llm_runner.py --download-bin`으로 받습니다.
 * **`scripts/path_config.py`**: `get_path()`는 프로젝트 기준 경로, `get_user_data_path()`는 사용자 데이터 경로입니다. 테스트는 `WF_USER_DATA_DIR`로 후자를 임시 폴더로 돌립니다.
 
 ### 4.2. 스크린샷 진단
@@ -94,7 +92,7 @@ WarframeOptimizer/
 * **`scripts/build_store.py`** `BuildStore`: 무기당 빌드 1개를 `data/user_builds.json`에 저장합니다(git 제외). 슬롯 위치, 아케인, 스캔 당시 패널 값, 리벤 옵션이 들어갑니다.
 * **저장 흐름**: 모딩 화면 스캔 → 인식 검토 → 필요하면 슬롯 수정 창(`scripts/build_edit_dialog.py`) → `인식 일치` 버튼을 누르면 저장. 무기를 특정하지 못한 스캔은 저장하지 않습니다.
 * **`scripts/riven_reroll_reader.py`**: 리롤 화면 판독. F9 캡처에서 `소지품/모드` 제목과 옵션 줄로 자동 판별하고, **왼쪽 카드를 이전, 오른쪽 카드를 새 옵션**으로 읽습니다. 값은 화면 그대로 씁니다.
-* **`ScreenModAnalyzer.compare_riven_rolls()`**: 저장된 패널에서 이전 리벤을 빼고 두 옵션을 각각 더해 계산하며, **지속 DPS**로 판정합니다. 표시 항목은 지속·순간 DPS, 기대 단발, 최고점, 최저점, 풀스택 추정입니다.
+* **`ScreenModAnalyzer.compare_riven_rolls()`**: 저장된 빌드의 모드(코덱스 기본값 + 모드)에 두 옵션을 각각 넣어 계산하며, **지속 DPS**로 판정합니다. 표시 항목은 지속·순간 DPS, 기대 단발, 최고점, 최저점, 풀스택 추정입니다.
   * 빌드가 없으면 모드 없이 계산하고 안내합니다.
   * 빌드에 리벤이 없으면 빈 슬롯에 넣고, 꽉 찼으면 뺄 모드를 고르게 합니다.
   * 상태 이상 확률, 확대율처럼 DPS 수식에 없는 옵션은 "반영되지 않는 옵션"으로 따로 표시합니다.
@@ -105,11 +103,9 @@ WarframeOptimizer/
 * **`scripts/damage_formulas.py`**: 위키 공식 모음. 적 방어력, 치명타, 약점, 아스널 총계, 실효 연사력, 출혈 틱, 슬롯 순서 속성 합성, 진영 배율.
 * **`scripts/warframe_damage_engine.py`** `WarframeDamageEngine`
   * `compute_metrics()`: 지속·순간 DPS, 최고점, 최저점, 멀티샷 구조, 타입별 피해.
-  * `compute_elements()`: 슬롯 순서 합성과 진영별 배율. 패널 속성 줄을 우선합니다.
+  * `compute_elements()`: 슬롯 순서 합성과 진영별 배율.
   * `compute_full_stack()`: 아케인과 처치 스택, 연속기를 최대로 가정한 추정치.
-  * `strip_riven_from_panel()`: 패널에서 리벤을 빼서 장착 전후를 비교합니다.
-* **`scripts/damage_simulator.py`**: TTK와 리벤 A/B 비교. 상태이상 DoT는 TTK에 포함되지 않습니다.
-* **`scripts/survival_evaluator.py`**, **`scripts/synergy_planner.py`**: EHP와 레벨캡 시너지 계산.
+  * 입력은 코덱스 기본값, 모드, 리벤, 보너스 속성(`valence_*`)입니다. 화면 패널의 총 피해·치명타 값은 쓰지 않습니다.
 
 ### 4.4. 채팅
 * **`scripts/llm_orchestrator.py`** `LLMOrchestrator`: 대기 중인 진단 처리 → 의도 분류(키워드 게이트 + `INTENT_GRAMMAR` 1-Token GBNF 분류) → 도메인별 도구 필터링 및 동적 GBNF 문법 조립(`select_domain_tools()`, `build_gbnf_tool_grammar()`, `resolve_domain_tool()`) → 드롭 표, 공략 또는 잡담. 서버가 없으면 위키 원문이나 준비된 대사로 답합니다. 자료에 없는 숫자가 든 답변 줄은 지웁니다.

@@ -15,6 +15,7 @@ INNATE_MOD = 'Innate Trait'
 # Kuva, Tenet and Coda weapons carry a Valence Bonus of one of these types, capped at 60%.
 # The player can change it (Valence Fusion), so the arsenal panel or the player is the only source.
 ADVERSARY_PREFIXES = ('kuva ', 'tenet ', 'coda ')
+_ADVERSARY_RE = re.compile(r'\b(?:kuva|tenet|coda)\b', re.I)
 BONUS_ELEMENTS = {
     'impact': '충격', 'heat': '화염', 'cold': '냉기', 'electric': '전기',
     'toxin': '독성', 'magnetic': '자성', 'radiation': '방사능',
@@ -32,6 +33,8 @@ BONUS_ANSWER = re.compile(
 )
 
 _traits: Optional[Dict[str, Dict[str, Any]]] = None
+_incarnon_raw: Optional[Dict[str, Any]] = None
+_incarnon_by_variant: Optional[Dict[str, Tuple[str, Dict[str, Any]]]] = None
 
 
 def load_traits() -> Dict[str, Dict[str, Any]]:
@@ -43,6 +46,70 @@ def load_traits() -> Dict[str, Dict[str, Any]]:
         except (OSError, ValueError):
             _traits = {}
     return _traits
+
+
+def load_incarnon_traits() -> Dict[str, Any]:
+    """Load data/incarnon_traits.json and build exact variant->family lookup."""
+    global _incarnon_raw, _incarnon_by_variant
+    if _incarnon_raw is None:
+        try:
+            with open(get_path('data', 'incarnon_traits.json'), encoding='utf-8') as f:
+                data = json.load(f)
+            _incarnon_raw = data if isinstance(data, dict) else {}
+        except (OSError, ValueError):
+            _incarnon_raw = {}
+        by_variant: Dict[str, Tuple[str, Dict[str, Any]]] = {}
+        evolutions = _incarnon_raw.get('_evolutions') or {}
+        if isinstance(evolutions, dict):
+            for family, spec in evolutions.items():
+                if not isinstance(spec, dict):
+                    continue
+                fam_l = str(family).strip().lower()
+                variants = spec.get('variants') or [fam_l]
+                for variant in variants:
+                    v_key = str(variant).strip().lower()
+                    if v_key:
+                        by_variant[v_key] = (fam_l, spec)
+        _incarnon_by_variant = by_variant
+    return _incarnon_raw
+
+
+def get_incarnon_data(weapon_name: str) -> Optional[Dict[str, Any]]:
+    """Return structured Incarnon metadata & default evolutions via exact family/variant matching.
+
+    Avoids substring collisions (e.g. 'Aklex' must not match 'Lex', 'Afuris' must not match 'Furis').
+    """
+    key = str(weapon_name or '').strip().lower()
+    if not key:
+        return None
+    raw = load_incarnon_traits()
+    found = (_incarnon_by_variant or {}).get(key)
+    if not found:
+        return None
+    family, spec = found
+    evos: Dict[str, Any] = {
+        'flat_base_damage': 0.0,
+        'flat_crit_chance': 0.0,
+        'flat_status': 0.0,
+        'crit_mult': 0.0,
+        'multishot': 0.0,
+        'reload_speed': 0.0,
+    }
+    evos.update(spec.get('default_evolutions') or {})
+    overrides = (spec.get('variant_overrides') or {}).get(key)
+    if isinstance(overrides, dict):
+        evos.update(overrides)
+    desc = spec.get('description') or raw.get(family, '')
+    if not isinstance(desc, str):
+        desc = ''
+    return {
+        'family': family,
+        'description': desc,
+        'is_beam': bool(spec.get('is_beam', False)),
+        'is_melee': bool(spec.get('is_melee', False)),
+        'is_original': bool(spec.get('is_original', False)),
+        'default_evolutions': evos,
+    }
 
 
 def trait_for(w_meta: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -88,7 +155,12 @@ def selected_wheel(trait: Dict[str, Any], totals: Dict[str, float]) -> Optional[
 
 
 def is_adversary(w_meta: Dict[str, Any]) -> bool:
-    return str(w_meta.get('name', '')).lower().startswith(ADVERSARY_PREFIXES)
+    name = str(w_meta.get('name', '') or '').strip()
+    if _ADVERSARY_RE.search(name):
+        return True
+    if name.lower() == 'paracesis':
+        return False
+    return int(w_meta.get('max_level_cap') or w_meta.get('maxLevelCap') or 0) == 40
 
 
 def bonus_in(stats: Optional[Dict[str, float]]) -> Optional[Tuple[str, float]]:

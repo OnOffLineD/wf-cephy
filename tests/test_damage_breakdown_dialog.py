@@ -133,3 +133,71 @@ def test_uncaught_error_is_logged_and_reported_instead_of_closing(qapp, tmp_path
     bubble = panel.chat_list_layout.itemAt(panel.chat_list_layout.count() - 1).widget()
     assert any("오류" in label.text() for label in bubble.findChildren(QLabel))
     panel.close()
+
+
+def test_arcane_choices_and_incarnon_description_exact_matching():
+    analyzer = ScreenModAnalyzer()
+
+    # Non-prefixed arcanes appear for their proper weapon categories & sub-types.
+    sec_arcanes = {en for _, en in analyzer.arcane_choices(analyzer.indexer.fuzzy_match_weapon("Kuva Nukor"))}
+    assert "Cascadia Flare" in sec_arcanes
+    assert "Secondary Merciless" in sec_arcanes
+    assert "Longbow Sharpshot" not in sec_arcanes
+
+    bow_arcanes = {en for _, en in analyzer.arcane_choices(analyzer.indexer.fuzzy_match_weapon("Nataruk"))}
+    assert "Longbow Sharpshot" in bow_arcanes
+    assert "Primary Merciless" in bow_arcanes
+    assert "Shotgun Vendetta" not in bow_arcanes
+
+    shotgun_arcanes = {en for _, en in analyzer.arcane_choices(analyzer.indexer.fuzzy_match_weapon("Corinth Prime"))}
+    assert "Shotgun Vendetta" in shotgun_arcanes
+    assert "Longbow Sharpshot" not in shotgun_arcanes
+
+    # Incarnon description uses exact family matching (no lex -> Aklex or furis -> Afuris false positives).
+    lex_desc = analyzer.get_incarnon_trait_description("Lex Prime")
+    aklex_desc = analyzer.get_incarnon_trait_description("Aklex Prime")
+    assert lex_desc != aklex_desc
+    assert "인카논 고유 변신 화력" in aklex_desc
+
+
+def test_format_calculation_breakdown_lhs_equals_rhs_and_elements_faction_parity():
+    from scripts.warframe_damage_engine import WarframeDamageEngine
+    analyzer = ScreenModAnalyzer()
+    eng = WarframeDamageEngine()
+
+    # 1. CC > 100%: prints Tier-2 crit multiplier (not raw final_cd), no "비크리 1타(최저점)" on guaranteed crit, no "+-".
+    reaper = analyzer.indexer.fuzzy_match_weapon("Reaper Prime")
+    reaper_mods = [dict(analyzer.indexer.mods_index["sacrificial steel"]), dict(analyzer.indexer.mods_index["organ shatter"])]
+    r_metrics = eng.compute_metrics(reaper, mod_objs=reaper_mods)
+    r_text = analyzer.format_calculation_breakdown(reaper, reaper_mods, r_metrics)
+    assert r_metrics["final_cc"] > 1.0
+    expected_tier2 = 1.0 + 2 * (r_metrics["final_cd"] - 1.0)
+    assert f"× {expected_tier2:.2f}배 = {r_metrics['max_crit_hit']:,.1f}" in r_text
+    assert "비크리 1타(최저점)" not in r_text
+    assert "확정 치명타 최저점" in r_text
+
+    # 2. Negative fire rate has no "+-" double sign; bleed tick prints modded_base (not elemental per_pellet) and LHS == RHS.
+    braton = analyzer.indexer.fuzzy_match_weapon("Braton Prime")
+    b_mods = [
+        dict(analyzer.indexer.mods_index["serration"]),
+        dict(analyzer.indexer.mods_index["critical delay"]),
+        dict(analyzer.indexer.mods_index["vital sense"]),
+        dict(analyzer.indexer.mods_index["stormbringer"]),
+        dict(analyzer.indexer.mods_index["hunter munitions"]),
+    ]
+    b_metrics = eng.compute_metrics(braton, mod_objs=b_mods)
+    b_text = analyzer.format_calculation_breakdown(braton, b_mods, b_metrics)
+    assert "+-" not in b_text
+    assert "연사력 -20.0%" in b_text
+    modded_base = braton["total_damage"] * (1.0 + 1.65)
+    assert f"모딩 기본피해({modded_base:,.1f})" in b_text
+    assert f"틱당 약 {b_metrics['hunter_munitions']['bleed_tick']:,.1f}" in b_text
+
+    # 3. _format_elements computes unfactored_direct * fm + faction_status_dps[f] without losing Bane^2 on DoT.
+    bane_mods = b_mods + [dict(analyzer.indexer.mods_index["primed bane of grineer"])]
+    bane_metrics = eng.compute_metrics(braton, mod_objs=bane_mods, target_faction="grineer")
+    el_lines = "\n".join(analyzer._format_elements(bane_metrics))
+    fm_g = bane_metrics["elements"]["faction_multipliers"]["grineer"]
+    unfactored_direct = bane_metrics["direct_burst_dps"] / (1.0 + bane_metrics["active_faction_bonus"])
+    expected_grineer = unfactored_direct * fm_g + bane_metrics["faction_status_dps"]["grineer"]
+    assert f"`{expected_grineer:,.0f}`" in el_lines

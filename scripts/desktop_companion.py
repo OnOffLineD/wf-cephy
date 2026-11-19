@@ -1,7 +1,3 @@
-try:
-    import torch
-except Exception:
-    pass
 import sys
 import os
 import re
@@ -17,30 +13,27 @@ if ROOT_DIR not in sys.path:
 
 from scripts.path_config import get_path, get_user_data_path
 from scripts.update_game_data import GameDataUpdater
+from scripts.app_updater import AppUpdater, AppUpdateDialog, relaunch_application
 
 try:
     from PyQt6.QtCore import (
-        Qt, QPoint, QRect, QRectF, QTimer, pyqtSignal, QEvent, QEventLoop,
+        Qt, QPoint, QRect, QRectF, QSize, QTimer, pyqtSignal, QEvent, QEventLoop,
         QPropertyAnimation, QEasingCurve, QParallelAnimationGroup
     )
-    from PyQt6.QtGui import QPixmap, QIcon, QPainter, QPen, QColor, QFont, QKeySequence, QCursor
+    from PyQt6.QtGui import QIcon, QPixmap, QPainter, QPen, QColor, QKeySequence, QCursor
     from PyQt6.QtWidgets import (
-        QApplication, QWidget, QLabel, QVBoxLayout, QHBoxLayout,
-        QLineEdit, QPushButton, QTextEdit, QScrollArea, QFrame,
-        QCheckBox, QMenu, QSplitter, QStackedWidget, QDialog, QInputDialog, QGridLayout,
-        QComboBox, QMessageBox
+        QApplication, QWidget, QLabel, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton, QScrollArea, QFrame,
+        QCheckBox, QMenu, QStackedWidget, QDialog, QInputDialog, QGridLayout, QComboBox, QMessageBox
     )
 except ImportError:
     from PySide6.QtCore import (
-        Qt, QPoint, QRect, QRectF, QTimer, Signal as pyqtSignal, QEvent, QEventLoop,
+        Qt, QPoint, QRect, QRectF, QSize, QTimer, Signal as pyqtSignal, QEvent, QEventLoop,
         QPropertyAnimation, QEasingCurve, QParallelAnimationGroup
     )
-    from PySide6.QtGui import QPixmap, QIcon, QPainter, QPen, QColor, QFont, QKeySequence, QCursor
+    from PySide6.QtGui import QIcon, QPixmap, QPainter, QPen, QColor, QKeySequence, QCursor
     from PySide6.QtWidgets import (
-        QApplication, QWidget, QLabel, QVBoxLayout, QHBoxLayout,
-        QLineEdit, QPushButton, QTextEdit, QScrollArea, QFrame,
-        QCheckBox, QMenu, QSplitter, QStackedWidget, QDialog, QInputDialog, QGridLayout,
-        QComboBox, QMessageBox
+        QApplication, QWidget, QLabel, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton, QScrollArea, QFrame,
+        QCheckBox, QMenu, QStackedWidget, QDialog, QInputDialog, QGridLayout, QComboBox, QMessageBox
     )
 
 from scripts.llm_orchestrator import LLMOrchestrator
@@ -260,6 +253,8 @@ class ChatBubble(QWidget):
         self.text = text
         self.is_user = is_user
         self.action_todo = action_todo
+        # The to-do text the add button registers, kept apart so action_todo can stay a dict.
+        self._todo_task = action_todo if isinstance(action_todo, str) else None
         self.on_add_todo = on_add_todo
         self.init_ui()
 
@@ -362,7 +357,7 @@ class ChatBubble(QWidget):
                     bubble_col.addWidget(btn_bd)
                 if self.action_todo.get('todo') and self.on_add_todo:
                     todo_val = self.action_todo['todo']
-                    self.action_todo = todo_val
+                    self._todo_task = todo_val
                     btn_todo = QPushButton(f'📌 {todo_val} 숙제에 바로 추가')
                     btn_todo.setStyleSheet('QPushButton { background: #0088cc; color: white; padding: 6px 12px; border-radius: 6px; font-weight: bold; font-size: 11px; margin-top: 4px; } QPushButton:hover { background: #00aaff; }')
                     btn_todo.clicked.connect(lambda: self._handle_add(btn_todo))
@@ -444,8 +439,8 @@ class ChatBubble(QWidget):
         bubble_col.addWidget(box)
 
     def _handle_add(self, btn):
-        if self.on_add_todo and self.action_todo:
-            self.on_add_todo(self.action_todo)
+        if self.on_add_todo and self._todo_task:
+            self.on_add_todo(self._todo_task)
             btn.setText("✅ 숙제 등록 완료!")
             btn.setEnabled(False)
             btn.setStyleSheet("background: #2b3a4a; color: #8899aa; padding: 6px 12px; border-radius: 6px; font-size: 11px;")
@@ -468,9 +463,19 @@ class OrdisCompanionApp(QWidget):
     world_events_done_signal = pyqtSignal()
     pet_update_signal = pyqtSignal(str, int, object, object, int)
     checklist_changed_signal = pyqtSignal()
+    thinking_done_signal = pyqtSignal(int)
 
     def __init__(self):
         super().__init__()
+        # Guards the small cross-thread fields (_pending_mod_review, _diagnosing).
+        self._state_lock = threading.Lock()
+        # Chat and screenshot workers both read and change the analyzer's pending_* state, so they take turns.
+        self._diagnoser_lock = threading.Lock()
+        self._pending_mod_review = None
+        self._diagnosing = False
+        # One "thinking" bubble per request, so overlapping requests each remove their own.
+        self._thinking_bubbles = {}
+        self._thinking_seq = 0
         self.orchestrator = LLMOrchestrator()
         pm = self.orchestrator.persona_manager
         apply_llm_cli_flags(pm, sys.argv)
@@ -492,6 +497,7 @@ class OrdisCompanionApp(QWidget):
         self.checklist_changed_signal.connect(self.refresh_checklist_ui)
         self.world_events_signal.connect(self.lbl_events.setText)
         self.pet_update_signal.connect(self._apply_pet_update)
+        self.thinking_done_signal.connect(self._finish_thinking)
         self.setup_global_hotkeys()
 
     def _translate_game_name(self, name: str) -> str:
@@ -509,6 +515,81 @@ class OrdisCompanionApp(QWidget):
                 print(f"[WARN] Game data check failed: {e}")
 
         threading.Thread(target=check, daemon=True).start()
+
+    def check_app_update_in_background(self, updater=None):
+        """Non-blocking startup check for newer GitHub main commits; never blocks startup or fails offline."""
+        def check():
+            app_updater = updater or AppUpdater()
+            try:
+                info = app_updater.check()
+                if info.get("ok") and info.get("update_available"):
+                    short_remote = (info.get("remote_sha") or "")[:7]
+                    title = info.get("commit_title") or ""
+                    summary = f" (`{short_remote}` {title})" if short_remote else ""
+                    action = {
+                        "buttons": [
+                            (
+                                "앱 업데이트 확인 및 적용",
+                                lambda chk=info: self.open_app_update_dialog(initial_check=chk),
+                                False,
+                            )
+                        ]
+                    }
+                    self.chat_reply_signal.emit(
+                        "세팔론 오디스",
+                        f"오퍼레이터님, WF-Companion 새 업데이트가 있습니다{summary}. 아래 버튼이나 설정에서 업데이트를 확인하고 적용할 수 있습니다.",
+                        False,
+                        action,
+                    )
+            except Exception as e:
+                print(f"[WARN] App update check failed: {e}")
+
+        threading.Thread(target=check, daemon=True).start()
+
+    def _restart_companion_app(self):
+        relaunch_application(
+            before_exit=self.llm_runner.stop_server,
+            exit_func=QApplication.quit,
+        )
+
+    def open_app_update_dialog(self, initial_check=None, parent=None, updater=None):
+        dlg = AppUpdateDialog(
+            updater=updater or AppUpdater(),
+            initial_check=initial_check,
+            on_restart=self._restart_companion_app,
+            parent=parent or self,
+        )
+        dlg.exec()
+        return dlg
+
+    def _attach_settings_update_button(self, dlg):
+        """Attach an '앱 업데이트 확인' button to the Settings dialog footer without altering its tabs."""
+        if not isinstance(dlg, QDialog) or not hasattr(dlg, "main_card") or not hasattr(dlg, "btn_cancel"):
+            return None
+        card_layout = dlg.main_card.layout()
+        if card_layout is None or card_layout.count() == 0:
+            return None
+        btn_box = card_layout.itemAt(card_layout.count() - 1).layout()
+        if btn_box is None:
+            return None
+        btn_update = QPushButton(" 앱 업데이트 확인", dlg)
+        btn_update.setObjectName("btnSettingsAppUpdate")
+        btn_update.setFixedHeight(38)
+        btn_update.setCursor(Qt.CursorShape.PointingHandCursor)
+        refresh_pix = load_icon_pixmap("refresh")
+        if refresh_pix and not refresh_pix.isNull():
+            btn_update.setIcon(QIcon(refresh_pix))
+            btn_update.setIconSize(QSize(18, 18))
+        btn_update.setStyleSheet(
+            "QPushButton { background: rgba(0, 229, 255, 0.08); color: #00e5ff; "
+            "border: 1px solid rgba(0, 229, 255, 0.45); border-radius: 8px; "
+            "font-size: 12px; font-weight: bold; padding: 0 12px; }"
+            "QPushButton:hover { background: rgba(0, 229, 255, 0.18); color: #ffffff; border: 1px solid #00e5ff; }"
+        )
+        btn_update.clicked.connect(lambda: self.open_app_update_dialog(parent=dlg))
+        btn_box.insertWidget(0, btn_update)
+        dlg.btn_app_update = btn_update
+        return btn_update
 
     def start_llm_in_background(self, download_binaries=False):
         if not self.orchestrator.persona_manager.get_llm_enabled():
@@ -839,17 +920,6 @@ class OrdisCompanionApp(QWidget):
             self.refresh_world_events()
 
     def add_chat_bubble(self, sender: str, text: str, is_user: bool = False, action_todo=None):
-            is_thinking = isinstance(action_todo, dict) and bool(action_todo.get('is_thinking'))
-        
-            if not is_user and not is_thinking:
-                prev_tb = getattr(self, '_thinking_bubble', None)
-                if prev_tb is not None:
-                    if hasattr(prev_tb, '_think_timer'):
-                        prev_tb._think_timer.stop()
-                    self.chat_list_layout.removeWidget(prev_tb)
-                    prev_tb.deleteLater()
-                    self._thinking_bubble = None
-        
             bubble = ChatBubble(
                 sender=sender,
                 text=text,
@@ -858,13 +928,37 @@ class OrdisCompanionApp(QWidget):
                 on_add_todo=self.on_smart_add_todo
             )
             self.chat_list_layout.addWidget(bubble)
-        
-            if is_thinking:
-                self._thinking_bubble = bubble
-        
+
             QTimer.singleShot(50, lambda: self.scroll_area.verticalScrollBar().setValue(
                 self.scroll_area.verticalScrollBar().maximum()
             ))
+            return bubble
+
+    def _start_thinking(self, text: str) -> int:
+        """Shows an animated "thinking" bubble and returns the token its worker hands back when done."""
+        self._thinking_seq += 1
+        token = self._thinking_seq
+        self._thinking_bubbles[token] = self.add_chat_bubble('세팔론 오디스', text, is_user=False, action_todo={'is_thinking': True})
+        return token
+
+    def _finish_thinking(self, token: int):
+        bubble = self._thinking_bubbles.pop(token, None)
+        if bubble is None:
+            return
+        timer = getattr(bubble, '_think_timer', None)
+        if timer is not None:
+            timer.stop()
+        self.chat_list_layout.removeWidget(bubble)
+        bubble.deleteLater()
+
+    def _set_pending_review(self, res):
+        with self._state_lock:
+            self._pending_mod_review = res
+
+    def _take_pending_review(self):
+        with self._state_lock:
+            res, self._pending_mod_review = self._pending_mod_review, None
+        return res
 
     def send_user_message(self):
         text = self.input_edit.text().strip()
@@ -876,6 +970,9 @@ class OrdisCompanionApp(QWidget):
 
         if text in ('/설정', '/settings', '/환경설정', '/config', '/성격', '/페르소나', '/persona', '설정', '환경설정', '성격 설정', '페르소나 설정'):
             self.open_settings_dialog()
+            return
+        if text in ('/업데이트', '/앱 업데이트', '/앱업데이트', '/update', '업데이트 확인', '앱 업데이트'):
+            self.open_app_update_dialog()
             return
 
         # Process chat todo command
@@ -890,13 +987,16 @@ class OrdisCompanionApp(QWidget):
         else:
             cmd_res = self.tracker.process_chat_todo_command(text)
         if cmd_res is not None:
-            self.refresh_checklist_ui()
-            self.add_chat_bubble('세팔론 오디스', cmd_res['message'], is_user=False)
+            action = None
+            if cmd_res.get('action') == 'DELETE_CONFIRM':
+                action = self._todo_confirm_action({'tool': 'delete_todo', 'item_id': cmd_res['item_id'], 'task': cmd_res['task']})
+            else:
+                self.refresh_checklist_ui()
+            self.add_chat_bubble('세팔론 오디스', cmd_res['message'], is_user=False, action_todo=action)
             return
 
         # Handle pending mod review confirmation
-        pending_review = getattr(self, '_pending_mod_review', None)
-        self._pending_mod_review = None
+        pending_review = self._take_pending_review()
         if pending_review is not None and text in ('계산', '맞아', 'ㅇㅇ', '확인', '네', '응', '진행'):
             self.on_confirm_mod_review(pending_review)
             return
@@ -909,13 +1009,14 @@ class OrdisCompanionApp(QWidget):
             self.pet.set_mood('thinking')
 
         # Show animated thinking bubble
-        self.add_chat_bubble('세팔론 오디스', '💭 세팔론 오디스가 생각 중입니다', is_user=False, action_todo={'is_thinking': True})
+        token = self._start_thinking('💭 세팔론 오디스가 생각 중입니다')
         QApplication.processEvents()
 
         # Get response from LLMOrchestrator in a background thread
         def get_response():
             try:
-                res = self.orchestrator.chat(text)
+                with self._diagnoser_lock:
+                    res = self.orchestrator.chat(text)
                 reply_text = res.get("report", "응답을 생성하지 못했습니다.")
                 mood = res.get("mood", "idle")
                 intensity = res.get("intensity", 1)
@@ -928,7 +1029,7 @@ class OrdisCompanionApp(QWidget):
                 action_obj = detected_todo
                 if res.get('type') == 'DIAGNOSIS_CLARIFIED' and res.get('data', {}).get('w_meta'):
                     # The weapon name came from chat, so this scan can now be reviewed and saved.
-                    self._pending_mod_review = res['data']
+                    self._set_pending_review(res['data'])
                     self.chat_reply_signal.emit("세팔론 오디스", res['data'].get('review_message', reply_text), False, self._review_action(res['data']))
                     return
                 if res.get('type') == 'TODO_DONE':
@@ -939,13 +1040,15 @@ class OrdisCompanionApp(QWidget):
                 if res.get('type') == 'BUILD_DELETE_CONFIRM':
                     action_obj = {'buttons': [('🗑️ 삭제', lambda w=res['weapon']: self._delete_build(w), True)]}
                 if res.get('type') == 'RIVEN_CLARIFIED':
-                    self._pending_mod_review = None
+                    self._set_pending_review(None)
                     bd = res.get('data', {}).get('calculation_breakdown')
                     if bd:
                         action_obj = {'calculation_breakdown': bd, 'on_show_breakdown': self.on_show_calculation_breakdown, 'breakdown_data': res.get('data', {})}
                 self.chat_reply_signal.emit("세팔론 오디스", reply_text, False, action_obj)
             except Exception as e:
                 self.chat_reply_signal.emit("세팔론 오디스", f"글리치 발생: {e}", False, None)
+            finally:
+                self.thinking_done_signal.emit(token)
 
         threading.Thread(target=get_response, daemon=True).start()
 
@@ -978,39 +1081,63 @@ class OrdisCompanionApp(QWidget):
         else:
             self.add_chat_bubble("세팔론 오디스", "오퍼레이터님, 클립보드에 복사된 이미지가 없습니다! Win+Shift+S로 캡처한 뒤 다시 눌러주십시오.", is_user=False)
 
+    def _diagnosis_busy_notice(self) -> bool:
+        """True (and says so in chat) while an earlier screenshot is still being analysed."""
+        if not getattr(self, '_diagnosing', False):
+            return False
+        self.add_chat_bubble("세팔론 오디스", "오퍼레이터님, 앞선 스크린샷을 아직 분석하고 있습니다. 결과가 나온 뒤 다시 캡처해 주십시오.", is_user=False)
+        return True
+
     def process_screen_image(self, img):
+            # A second F9 while the first scan still runs would race it over the analyzer's pending state.
+            with self._state_lock:
+                busy = self._diagnosing
+                self._diagnosing = True
+            if busy:
+                self.show()
+                self._diagnosis_busy_notice()
+                return
             self.show()
             self.add_chat_bubble("오퍼레이터", "📷 [모딩 스크린샷 전송 완료]", is_user=True)
-            self.add_chat_bubble("세팔론 오디스", "💭 오디스가 스크린샷의 무기명과 모드 슬롯을 광학 분석 중입니다", is_user=False, action_todo={'is_thinking': True})
+            token = self._start_thinking("💭 오디스가 스크린샷의 무기명과 모드 슬롯을 광학 분석 중입니다")
             QApplication.processEvents()
 
             def diagnose_in_background():
                 try:
-                    # Second F9 while a riven is pending: read the opened riven card and finish the report.
-                    if self.diagnoser.has_pending_riven():
-                        riven_stats = self.diagnoser.extract_riven_stats_from_screen(img)
-                        if riven_stats:
-                            res = self.diagnoser.resume_pending_riven(riven_stats)
-                            bd = res.get('calculation_breakdown')
-                            act = {'calculation_breakdown': bd, 'on_show_breakdown': self.on_show_calculation_breakdown, 'breakdown_data': res} if bd else None
-                            self.chat_reply_signal.emit("세팔론 오디스", res.get('message', '분석 완료'), False, act)
-                            return
-                    res = self.diagnoser.diagnose_screenshot(img)
-                    if res.get('is_riven_compare'):
-                        self.chat_reply_signal.emit("세팔론 오디스", res['message'], False, self._riven_compare_action(res))
-                    elif res.get('is_riven_report'):
-                        bd = res.get('calculation_breakdown')
-                        act = {'calculation_breakdown': bd, 'on_show_breakdown': self.on_show_calculation_breakdown, 'breakdown_data': res} if bd else None
-                        self.chat_reply_signal.emit("세팔론 오디스", res.get('message', '분석 완료'), False, act)
-                    elif res.get('review_message'):
-                        self._pending_mod_review = res
-                        self.chat_reply_signal.emit('세팔론 오디스', res['review_message'], False, self._review_action(res))
-                    else:
-                        self.chat_reply_signal.emit("세팔론 오디스", res.get('message', '분석 완료'), False, self._result_action(res))
+                    with self._diagnoser_lock:
+                        self._diagnose_image(img)
                 except Exception as e:
                     self.chat_reply_signal.emit("세팔론 오디스", f"오류 발생: {str(e)}", False, None)
+                finally:
+                    with self._state_lock:
+                        self._diagnosing = False
+                    self.thinking_done_signal.emit(token)
 
             threading.Thread(target=diagnose_in_background, daemon=True).start()
+
+    def _diagnose_image(self, img):
+        """Runs on the worker thread with _diagnoser_lock held; results reach the UI only through signals."""
+        # Second F9 while a riven is pending: read the opened riven card and finish the report.
+        if self.diagnoser.has_pending_riven():
+            riven_stats = self.diagnoser.extract_riven_stats_from_screen(img)
+            if riven_stats:
+                res = self.diagnoser.resume_pending_riven(riven_stats)
+                bd = res.get('calculation_breakdown')
+                act = {'calculation_breakdown': bd, 'on_show_breakdown': self.on_show_calculation_breakdown, 'breakdown_data': res} if bd else None
+                self.chat_reply_signal.emit("세팔론 오디스", res.get('message', '분석 완료'), False, act)
+                return
+        res = self.diagnoser.diagnose_screenshot(img)
+        if res.get('is_riven_compare'):
+            self.chat_reply_signal.emit("세팔론 오디스", res['message'], False, self._riven_compare_action(res))
+        elif res.get('is_riven_report'):
+            bd = res.get('calculation_breakdown')
+            act = {'calculation_breakdown': bd, 'on_show_breakdown': self.on_show_calculation_breakdown, 'breakdown_data': res} if bd else None
+            self.chat_reply_signal.emit("세팔론 오디스", res.get('message', '분석 완료'), False, act)
+        elif res.get('review_message'):
+            self._set_pending_review(res)
+            self.chat_reply_signal.emit('세팔론 오디스', res['review_message'], False, self._review_action(res))
+        else:
+            self.chat_reply_signal.emit("세팔론 오디스", res.get('message', '분석 완료'), False, self._result_action(res))
 
     def _review_action(self, res):
         action = {
@@ -1045,7 +1172,7 @@ class OrdisCompanionApp(QWidget):
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
         self.diagnoser.apply_slot_edits(res, dialog.get_edits())
-        self._pending_mod_review = res
+        self._set_pending_review(res)
         self.add_chat_bubble('세팔론 오디스', res['review_message'], is_user=False, action_todo=self._review_action(res))
 
     def _riven_compare_action(self, res):
@@ -1168,9 +1295,6 @@ class OrdisCompanionApp(QWidget):
             return
         edits = dialog.get_edits()
         slots = {s: (RIVEN_MOD if is_riven_name(n) else n) for s, n in edits.items() if s != 'arcane' and n}
-        # Mods taken off since the scan still sit in the panel numbers, so they are stripped at evaluation.
-        removed = [n for n in build.get('slots', {}).values() if n != RIVEN_MOD and n not in slots.values()]
-        build['panel_removed'] = build.get('panel_removed', []) + removed
         build['slots'] = slots
         build['arcane'] = edits.get('arcane') or None
         self.diagnoser.build_store.save_build(build)
@@ -1204,6 +1328,15 @@ class OrdisCompanionApp(QWidget):
         if res.get('has_pending_riven') or self.diagnoser.has_pending_riven():
             action.update({'has_pending_riven': True, 'on_open_riven_dialog': self.open_riven_quick_dialog})
         return action or None
+
+    def _log_hotkey_error(self, error: Exception):
+        # The poll runs every 100 ms, so the same failure is logged once, not ten times a second.
+        message = f"{type(error).__name__}: {error}"
+        if message == getattr(self, '_last_hotkey_error', None):
+            return
+        self._last_hotkey_error = message
+        print(f"[WARN] Hotkey polling failed: {message}")
+        traceback.print_exception(type(error), error, error.__traceback__)
 
     def setup_global_hotkeys(self):
             import ctypes
@@ -1252,8 +1385,8 @@ class OrdisCompanionApp(QWidget):
                         QTimer.singleShot(400, self.analyze_clipboard)
                     elif not prt_down:
                         self._prt_down = False
-                except Exception:
-                    pass
+                except Exception as e:
+                    self._log_hotkey_error(e)
 
             self.hotkey_timer = QTimer(self)
             self.hotkey_timer.timeout.connect(check_hotkeys)
@@ -1319,11 +1452,11 @@ class OrdisCompanionApp(QWidget):
 
     def _set_bonus_element(self, res, element: str, fraction: float):
         self.diagnoser.apply_bonus_element(res, element, fraction)
-        self._pending_mod_review = res
+        self._set_pending_review(res)
         self.add_chat_bubble('세팔론 오디스', res['review_message'], is_user=False, action_todo=self._review_action(res))
 
     def on_confirm_mod_review(self, res):
-            self._pending_mod_review = None
+            self._set_pending_review(None)
             # The result is out now; a later "화염 60" is chat, not an answer to this scan.
             self.diagnoser.clear_pending_bonus()
             saved_note = self._save_build_message(res)
@@ -1347,14 +1480,20 @@ class OrdisCompanionApp(QWidget):
     def capture_fullscreen_and_analyze(self):
         if getattr(self, '_is_capturing', False):
             return
+        # F9 mashing: the earlier scan still runs, so don't hide everything for a capture that would be refused.
+        if getattr(self, '_diagnosing', False):
+            self._diagnosis_busy_notice()
+            return
         self._is_capturing = True
 
+        pet = getattr(self, 'pet', None)
+        pet_was_visible = False
+        img = None
         try:
             self.hide()
-            pet_was_visible = False
-            if hasattr(self, 'pet') and self.pet and self.pet.isVisible():
+            if pet and pet.isVisible():
                 pet_was_visible = True
-                self.pet.hide()
+                pet.hide()
 
             # Keep message loop pumping while Windows DWM completes window hiding & redraw
             loop = QEventLoop()
@@ -1363,7 +1502,6 @@ class OrdisCompanionApp(QWidget):
 
             # Native Qt monitor capture (respects active monitor and DPI)
             screen = QApplication.screenAt(QCursor.pos()) or QApplication.primaryScreen()
-            img = None
             if screen:
                 pixmap = screen.grabWindow(0)
                 if pixmap and not pixmap.isNull():
@@ -1380,17 +1518,23 @@ class OrdisCompanionApp(QWidget):
                     img.save('last_fullscreen_capture.png')
                 except Exception:
                     pass
-
-            if pet_was_visible and hasattr(self, 'pet') and self.pet:
-                self.pet.show()
-
-            if img:
-                self.show()
-                self.raise_()
-                self.activateWindow()
-                self.process_screen_image(img)
+        except Exception as e:
+            img = None
+            print(f"[WARN] Screen capture failed: {e}")
+            traceback.print_exc()
         finally:
+            # A failed capture must not leave Ordis hidden.
+            if pet_was_visible and pet:
+                pet.show()
             self._is_capturing = False
+
+        self.show()
+        self.raise_()
+        self.activateWindow()
+        if img:
+            self.process_screen_image(img)
+        else:
+            self.add_chat_bubble("세팔론 오디스", "오퍼레이터님, 화면을 캡처하지 못했습니다. 잠시 후 다시 시도하시거나 Win+Shift+S로 캡처한 뒤 붙여 넣어 주십시오.", is_user=False)
 
     def eventFilter(self, obj, event):
         if obj == getattr(self, 'input_edit', None) and event.type() == QEvent.Type.KeyPress and event.matches(QKeySequence.StandardKey.Paste):
@@ -1545,7 +1689,8 @@ class OrdisCompanionApp(QWidget):
         old_motion = pm.get_motion_enabled()
         old_llm = pm.get_llm_enabled()
 
-        dlg =OrdisPersonaDialog(pm, parent=self)
+        dlg = OrdisPersonaDialog(pm, parent=self)
+        self._attach_settings_update_button(dlg)
         if dlg.exec() == QDialog.DialogCode.Accepted:
             persona = pm.get_active_persona()
             new_model = pm.get_model_path()
@@ -1615,5 +1760,6 @@ if __name__ == "__main__":
     app.aboutToQuit.connect(panel.llm_runner.stop_server)
     panel.start_llm_in_background()
     panel.check_game_data_in_background()
+    panel.check_app_update_in_background()
     panel.show()
     sys.exit(app.exec())

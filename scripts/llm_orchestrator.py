@@ -1,4 +1,3 @@
-import time
 import json
 import re
 import requests
@@ -9,7 +8,7 @@ import random
 from scripts.build_store import BuildStore
 from scripts.drop_lookup import DROP_QUESTION, DropIndex
 from scripts.guide_retriever import GuideRetriever
-from scripts.path_config import get_path, get_user_data_path
+from scripts.path_config import get_path
 from scripts.short_term_memory import ShortTermMemory
 from scripts.persona_manager import PersonaManager
 from scripts.emotion_parser import EmotionParser
@@ -31,9 +30,12 @@ CHAT_MOOD_GRAMMAR = (
 )
 # Always about Ordis or the app itself.
 SMALLTALK_ABOUT_ORDIS = (
-    '작동중', '작동 중', '살아있', '켜져', '상태 어때', '오디스 상태', '너 살아', '너 작동', '시스템 상태', '함선 상태', '특이사항', '함선',
-    '자장가', '옥타비아', '인덱싱', '대화', '말투', '똑같', '변주', '인식률', '자연스럽', '챗봇'
+    '작동중', '작동 중', '살아있', '켜져', '상태 어때', '오디스 상태', '너 살아', '너 작동', '시스템 상태', '함선 상태',
+    '자장가', '인덱싱', '말투', '변주', '인식률', '자연스럽', '챗봇'
 )
+# About Ordis only when nothing else names a game topic: "코퍼스 함선 미션 어떻게 깨?" is a guide question.
+SMALLTALK_ABOUT_ORDIS_WEAK = ('함선', '대화', '똑같', '특이사항', '옥타비아')
+STATUS_KEYWORDS = ('작동중', '작동 중', '살아있', '켜져', '상태 어때', '오디스 상태', '너 살아', '너 작동', '시스템 상태', '함선 상태', '특이사항')
 # Casual only when the message has no game topic: "누구 잡아야 샤드 나와?" is a question.
 SMALLTALK_CASUAL = ('안녕', '반가', '피곤', '배고', '밥', '식사', '고마', '감사', '수고', '심심', '졸려', '누구', '빵')
 
@@ -42,6 +44,8 @@ BUILD_LIST = re.compile(r'(저장|스캔)(한|된|해\s*둔)?\s*(무기|빌드)|
 BUILD_DELETE = re.compile(r'(빌드|저장).*(삭제|지워|지우)')
 BUILD_OWNED = re.compile(r'(뭐|뭘|무슨\s*모드)\s*(꼈|끼웠|꽂|달았)|장착(한|된|했|중)|끼고\s*있|꼈(어|지|나|더라)|내\s*빌드|저장된\s*빌드')
 BUILD_MODS = re.compile(r'(모드|리벤|아케인|빌드|세팅)\s*(뭐|뭘|알려|보여|옵션)')
+# "소마 세팅 뭐가 좋아?" asks for advice, not for what the user saved.
+BUILD_ADVICE = re.compile(r'좋아|좋은|좋을|괜찮|최고|베스트|메타|국룰|쓸만|쓸 만|써야|껴야|끼워야')
 BUILD_DAMAGE = re.compile(r'(dps|화력|데미지|대미지|딜)\s*(이|은|는)?\s*(얼마|몇|나와|알려|뭐|어때)|얼마나\s*나와', re.I)
 BUILD_PRONOUN = re.compile(r'그\s*무기|그거|방금|아까|마지막')
 BUILD_LEAD_DEFAULT = "오퍼레이터님, 저장된 기록을 찾아왔습니다."
@@ -92,6 +96,11 @@ GUIDE_KEYWORDS = (
 )
 TODO_MARKERS = ('돌아야', '해야', '가야', '잡아야', '깨야', '파밍해야', '사야', '돌거야', '갈거야', '할거야', '돌자', '가자', '잡을래', '잡으러', '가볼까', '시작할게', '출발', '달릴거', '숙제', '클리어', '완료', '다 했', '다했', '끝냈',
                 '할 일', '할일', '추가', '등록', '체크리스트', '목록에', '일정에', '적어줘', '넣어줘')
+# Markers that only a checklist message uses. The rest ("클리어", "추가", "해야") also turn up in game talk,
+# so next to a game keyword they no longer decide TODO: "카스케이드 섬멸 클리어 조건 정리" is a guide topic.
+TODO_STRONG_MARKERS = ('숙제', '할 일', '할일', '체크리스트', '목록에', '일정에', '돌거야', '갈거야', '할거야', '돌자', '가자',
+                       '잡을래', '잡으러', '가볼까', '시작할게', '달릴거', '해야겠', '돌아야겠', '가야겠', '깨야겠', '잡아야겠',
+                       '해야지', '돌아야지', '깨야지', '다 했', '다했', '끝냈', '완료했', '클리어했', '다 돌았', '돌았어', '깼어')
 # A direct order to add ("추가해줘", "등록해") is carried out at once; "~해야겠다" still gets a confirm button.
 TODO_EXPLICIT_ADD = re.compile(r'(추가|등록|넣어|적어)\s*(해|줘|하자|주세요)')
 
@@ -112,6 +121,11 @@ INTENT_PROMPT = (
     '"오늘 날씨 진짜 덥다" -> SMALLTALK\n'
     '"오디스 너 오늘 귀엽네" -> SMALLTALK'
 )
+# A reply to "어떤 무기인가요?" is a name with a particle or two, so a long message is something else.
+WEAPON_ANSWER_MAX_CHARS = 25
+WEAPON_ANSWER_MAX_WORDS = 4
+NOT_A_WEAPON_ANSWER = ('작동', '살아', '상태', '켜져', '도와', '공략', '약점', '보스', '출격')
+
 # Words that point back at the last topic; the latest keywords from memory fill them in.
 TOOL_PRONOUNS = ('거기서', '그거', '그 무기', '거긴', '그 미션', '그 보스', '거기는', '이거', '방금', '아까')
 
@@ -184,6 +198,11 @@ class LLMOrchestrator:
         active = self.persona_manager.get_active_persona()
         return active.get("prompt", "") if isinstance(active, dict) else (active or "")
 
+    def llm_loading(self) -> bool:
+        """True while the runner is still downloading or loading the model."""
+        is_starting = getattr(self.runner, "is_starting", None) if self.runner else None
+        return callable(is_starting) and is_starting() is True
+
     def _call_llm(
         self,
         system_prompt: str,
@@ -195,22 +214,13 @@ class LLMOrchestrator:
         if isinstance(system_prompt, dict):
             system_prompt = system_prompt.get("prompt") or str(system_prompt)
 
-        # While a multi-GB model is still loading, answer at once instead of blocking the caller.
-        is_starting = getattr(self.runner, "is_starting", None) if self.runner else None
-        if callable(is_starting) and is_starting() is True:
-            return LLM_LOADING_MESSAGE
-
-        # Wait up to 5 seconds for health if self.runner is starting
-        if self.runner and hasattr(self.runner, "is_healthy"):
-            if not self.runner.is_healthy():
-                if hasattr(self.runner, "wait_for_ready"):
-                    self.runner.wait_for_ready(timeout=5)
-                else:
-                    start_t = time.time()
-                    while time.time() - start_t < 5.0:
-                        if self.runner.is_healthy():
-                            break
-                        time.sleep(0.5)
+        # No answer at once while the model loads, is switched off or has no binary: waiting here only
+        # delays the offline fallback, and callers tell "loading" apart through llm_loading().
+        if self.llm_loading():
+            return None
+        is_healthy = getattr(self.runner, "is_healthy", None) if self.runner else None
+        if callable(is_healthy) and not is_healthy():
+            return None
 
         # 1. Try local portable llama-server (ONLY - no Ollama)
         try:
@@ -242,8 +252,7 @@ class LLMOrchestrator:
                 return math_reply
 
             # 1. Status check keywords
-            status_keywords = ['작동중', '작동 중', '살아있', '켜져', '상태 어때', '오디스 상태', '너 살아', '너 작동', '시스템 상태', '함선 상태', '특이사항', '함선']
-            if any(k in user_text for k in status_keywords):
+            if any(k in user_text for k in STATUS_KEYWORDS):
                 return '[MOOD:tactical] 오퍼레이터님! 세팔론 오디스의 전송 회로 및 서포트 서브루틴이 모두 정상 가동 중입니다! 무엇을 도와드릴까요? (함선 무결성: 100%)'
 
             # 2. Plan/mission intent keywords
@@ -267,6 +276,8 @@ class LLMOrchestrator:
             response = self._call_llm(system_prompt, user_prompt, temperature=0.6)
             if response:
                 return response
+            if self.llm_loading():
+                return LLM_LOADING_MESSAGE
 
             # 5. Fallback witty Ordis quotes
             witty_responses = [
@@ -305,7 +316,9 @@ class LLMOrchestrator:
     def _without_invented_numbers(answer: str, context: str, query: str) -> str:
         """Drops lines quoting numbers the sources never gave; a wrong figure looks just as plausible as a right one."""
         known = set(re.findall(r'\d+(?:\.\d+)?', context + query))
-        kept = [line for line in answer.splitlines() if set(re.findall(r'\d+(?:\.\d+)?', line)) <= known]
+        # The grammar-forced [MOOD:x:N] header carries an intensity digit, not a fact from the sources.
+        kept = [line for line in answer.splitlines()
+                if set(re.findall(r'\d+(?:\.\d+)?', re.sub(r'\[MOOD:[^\]]*\]', '', line))) <= known]
         return "\n".join(kept).strip()
 
     @staticmethod
@@ -389,10 +402,6 @@ class LLMOrchestrator:
         self.drop_index = DropIndex()
         return f"{format_report(report)}\n• 스크린샷 진단에는 앱을 다시 시작하면 반영됩니다."
 
-    def _log_unanswered(self, query: str):
-        """Unanswered questions are no longer recorded anywhere."""
-        return None
-
     def _drop_reply(self, query: str, doc_hits: list) -> Optional[Dict[str, Any]]:
         body = self.drop_index.answer_relic(query)
         if not body:
@@ -457,14 +466,13 @@ class LLMOrchestrator:
                         self.diagnoser.clear_pending_riven()
                     return {'type': 'SMALLTALK', 'report': '알겠습니다, 오퍼레이터님. 이전 스크린샷 진단 대기 상태를 취소했습니다. 다른 도움이 필요하시면 언제든 말씀해 주십시오!'}
             
-                status_or_guide = ['작동', '살아', '상태', '켜져', '안녕', '피곤', '배고', '출격', '공략', '약점', '보스', '누구', '도와']
-                if any(w in user_query for w in status_or_guide) or user_query.strip().endswith('?'):
-                    self.diagnoser.clear_pending_diagnosis()
-                else:
+                # Anything that doesn't read as a weapon name goes through normal routing, and the scan keeps waiting.
+                if self._looks_like_weapon_answer(user_query):
                     diag_res = self.diagnoser.resume_pending_diagnosis(user_query)
                     if diag_res.get('success'):
                         return {'type': 'DIAGNOSIS_CLARIFIED', 'report': diag_res['message'], 'data': diag_res}
-                    elif diag_res.get('invalid_weapon'):
+                    # A short game topic ("아콘 샤드") that names no weapon is a question, not a failed answer.
+                    elif diag_res.get('invalid_weapon') and not self._mentions_game(user_query.strip().lower()):
                         return {'type': 'CLARIFICATION_FAILED', 'report': diag_res['message']}
 
             # 4. Handle reload command
@@ -517,8 +525,8 @@ class LLMOrchestrator:
             # 6. Parse emotion tags and store clean text in memory
             parsed = self.emotion_parser.parse(report)
             clean_text = parsed.get('clean_text', report)
-            # An unanswered question is not remembered either.
-            if report != NO_DATA_REPLY:
+            # An unanswered question is not remembered either, and neither is the "still loading" notice.
+            if report not in (NO_DATA_REPLY, LLM_LOADING_MESSAGE):
                 self.memory.add_turn(user_query, clean_text)
 
             return {
@@ -579,6 +587,21 @@ class LLMOrchestrator:
         kws = self.memory.get_recent_keywords()
         return ' '.join(kws[:2]) if kws else None
 
+    @staticmethod
+    def _looks_like_weapon_answer(query: str) -> bool:
+        """A short bare reply ("이거 토리드인데") to "어떤 무기인가요?", not a question, greeting or plan."""
+        text = query.strip()
+        q = text.lower()
+        if not text or len(text) > WEAPON_ANSWER_MAX_CHARS or '?' in text:
+            return False
+        if not 1 <= len(re.findall(r'[가-힣a-z0-9]+', q)) <= WEAPON_ANSWER_MAX_WORDS:
+            return False
+        other_intent = (QUESTION_WORDS + SMALLTALK_ABOUT_ORDIS + SMALLTALK_ABOUT_ORDIS_WEAK + SMALLTALK_CASUAL
+                        + TODO_MARKERS + NOT_A_WEAPON_ANSWER)
+        if any(k in q for k in other_intent) or re.search(r'(^|\s)하이($|[\s!~.,])', q):
+            return False
+        return simple_math_reply(q) is None
+
     def _weapon_in_query(self, query: str) -> Optional[Dict[str, Any]]:
         tokens = re.findall(r'[가-힣a-zA-Z0-9]+', query)
         tokens = [re.sub(r'(에|의|은|는|이|가|을|를|로|도|랑|엔)$', '', t) or t for t in tokens]
@@ -624,7 +647,7 @@ class LLMOrchestrator:
 
         is_delete = bool(BUILD_DELETE.search(query))
         is_owned = bool(BUILD_OWNED.search(query))
-        is_mods = bool(BUILD_MODS.search(query))
+        is_mods = bool(BUILD_MODS.search(query)) and not BUILD_ADVICE.search(query)
         is_damage = bool(BUILD_DAMAGE.search(query))
         if not (is_delete or is_owned or is_mods or is_damage):
             return None
@@ -680,14 +703,20 @@ class LLMOrchestrator:
         if any(k in q_lower for k in SMALLTALK_ABOUT_ORDIS):
             return 'SMALLTALK'
 
+        has_guide_kw = any(kw in q_lower for kw in GUIDE_KEYWORDS)
+        names_drop_item = self._names_drop_item(q_lower)
+        game_topic = has_guide_kw or names_drop_item
+        if not game_topic and any(k in q_lower for k in SMALLTALK_ABOUT_ORDIS_WEAK):
+            return 'SMALLTALK'
+
         is_question = any(q in q_lower for q in QUESTION_WORDS)
         if any(m in q_lower for m in TODO_MARKERS) and not is_question:
-            return 'TODO'
+            # Next to a game topic only a checklist-only marker or a direct add order makes it a TODO.
+            if not game_topic or TODO_EXPLICIT_ADD.search(q_lower) or any(m in q_lower for m in TODO_STRONG_MARKERS):
+                return 'TODO'
 
-        has_guide_kw = any(kw in q_lower for kw in GUIDE_KEYWORDS)
         # Search only returns chunks that cover the question, so any score means the docs answer it.
         has_answer = rag_top_score > 0
-        names_drop_item = self._names_drop_item(q_lower)
 
         # "37에 2배수는?" is arithmetic, not a guide question with missing docs.
         if not (has_guide_kw or names_drop_item or has_answer) and simple_math_reply(q_lower):

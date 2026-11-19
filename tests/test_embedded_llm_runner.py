@@ -6,7 +6,10 @@ from unittest.mock import MagicMock, patch
 import pytest
 import requests
 
-from scripts.embedded_llm_runner import EmbeddedLLMRunner, assign_kill_on_close_job, close_job, main as runner_main
+from scripts.embedded_llm_runner import MODEL_URL, EmbeddedLLMRunner, assign_kill_on_close_job, close_job, main as runner_main
+
+# Only the bundled model file is ever downloaded, so download tests use its file name.
+BUNDLED_MODEL = MODEL_URL.rsplit('/', 1)[-1]
 
 
 def spawn_sleeper():
@@ -143,13 +146,15 @@ def test_orchestrator_answers_immediately_while_model_loads():
     with patch("scripts.llm_orchestrator.requests.post") as post:
         reply = orch._call_llm("system", "안녕")
     assert time.time() - started < 1
-    assert reply == LLM_LOADING_MESSAGE and "적재" in reply
+    # No model text: the guide falls back to its source and smalltalk shows the notice itself.
+    assert reply is None and orch.llm_loading() is True
+    assert "적재" in LLM_LOADING_MESSAGE
     orch.runner.wait_for_ready.assert_not_called()
     post.assert_not_called()
 
 
 def test_failed_download_leaves_no_partial_file(tmp_path):
-    runner = EmbeddedLLMRunner(model_path=str(tmp_path / "m.gguf"))
+    runner = EmbeddedLLMRunner(model_path=str(tmp_path / BUNDLED_MODEL))
     with patch("scripts.embedded_llm_runner.requests.get", side_effect=requests.ConnectionError()):
         assert runner.ensure_model_exists() is False
     assert list(tmp_path.iterdir()) == []
@@ -177,3 +182,122 @@ def test_download_flag_prints_progress_with_read_timeout_then_skips(tmp_path, ca
 
 def test_download_flag_exits_one_on_failure(tmp_path):
     assert _run_download(tmp_path, side_effect=requests.ReadTimeout())[0] == 1
+
+
+def test_user_model_is_never_replaced_by_the_bundled_download(tmp_path):
+    small = tmp_path / "qwen-0.5b.gguf"
+    small.write_bytes(b"gguf")
+    with patch("scripts.embedded_llm_runner.requests.get") as get:
+        assert EmbeddedLLMRunner(model_path=str(small)).ensure_model_exists() is True
+        missing = EmbeddedLLMRunner(model_path=str(tmp_path / "typo.gguf"))
+        assert missing.ensure_model_exists() is False
+    get.assert_not_called()
+    assert small.read_bytes() == b"gguf"
+    assert "typo.gguf" in missing.last_error
+
+
+def _starting_runner(tmp_path):
+    runner = EmbeddedLLMRunner(model_path=str(tmp_path / BUNDLED_MODEL))
+    runner.is_healthy = MagicMock(return_value=False)
+    runner.ensure_binaries_exist = MagicMock(return_value=True)
+    return runner
+
+
+def test_stop_during_model_download_cancels_the_start(tmp_path):
+    import threading
+
+    runner = _starting_runner(tmp_path)
+    runner._launch = MagicMock(return_value=True)
+    stop_done = threading.Event()
+
+    def stopper():
+        runner.stop_server()
+        stop_done.set()
+
+    def chunks():
+        yield b"a" * 10
+        threading.Thread(target=stopper, daemon=True).start()
+        # stop_server raises the flag before it waits for the lock this download holds.
+        for _ in range(200):
+            if runner._stop_requested.is_set():
+                break
+            time.sleep(0.01)
+        yield b"b" * 10
+        yield b"c" * 10
+
+    response = MagicMock(headers={"content-length": "30"})
+    response.iter_content.return_value = chunks()
+    started = time.time()
+    with patch("scripts.embedded_llm_runner.requests.get", return_value=response):
+        assert runner.start_server(wait_ready=True, timeout=30) is False
+    assert stop_done.wait(timeout=5)
+    assert time.time() - started < 4
+    runner._launch.assert_not_called()
+    assert list(tmp_path.iterdir()) == []
+    assert runner.state == "idle" and runner.is_starting() is False
+
+
+def test_start_after_a_stop_is_not_cancelled(tmp_path):
+    runner = _starting_runner(tmp_path)
+    runner.ensure_model_exists = MagicMock(return_value=True)
+    runner._launch = MagicMock(return_value=True)
+    runner.wait_for_ready = MagicMock(return_value=True)
+    runner.stop_server()
+    assert runner.start_server(wait_ready=True) is True
+    runner._launch.assert_called_once()
+
+
+def test_timed_out_start_terminates_the_server(tmp_path):
+    runner = _starting_runner(tmp_path)
+    runner.ensure_model_exists = MagicMock(return_value=True)
+    launched = []
+
+    def launch():
+        runner.process = spawn_sleeper()
+        launched.append(runner.process)
+        return True
+
+    runner._launch = launch
+    runner.wait_for_ready = MagicMock(return_value=False)
+    try:
+        assert runner.start_server(wait_ready=True, timeout=1) is False
+        launched[0].wait(timeout=10)
+        assert launched[0].poll() is not None
+        assert runner.process is None and runner.state == "failed"
+    finally:
+        if launched and launched[0].poll() is None:
+            launched[0].kill()
+
+
+def test_stop_ends_a_wait_for_ready_early(tmp_path):
+    import threading
+
+    runner = _starting_runner(tmp_path)
+    runner.process = spawn_sleeper()
+    result = []
+    waiter = threading.Thread(target=lambda: result.append(runner.wait_for_ready(timeout=30)))
+    started = time.time()
+    waiter.start()
+    time.sleep(0.3)
+    runner.stop_server()
+    waiter.join(timeout=10)
+    assert result == [False]
+    assert time.time() - started < 5
+
+
+def test_binary_download_after_a_stop_still_runs(tmp_path):
+    import io
+    import zipfile
+
+    runner = EmbeddedLLMRunner()
+    runner.bin_path = str(tmp_path / "bin" / "llama-server.exe")
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as archive:
+        archive.writestr("build/llama-server.exe", b"exe")
+    response = MagicMock(headers={"content-length": str(len(buf.getvalue()))})
+    response.iter_content.return_value = [buf.getvalue()]
+    runner.stop_server()
+    with patch.object(runner, "_resolve_bin_url", return_value="http://example.invalid/x.zip"), \
+            patch("scripts.embedded_llm_runner.requests.get", return_value=response):
+        assert runner.download_binaries() is True
+    assert (tmp_path / "bin" / "llama-server.exe").read_bytes() == b"exe"

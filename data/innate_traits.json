@@ -14,7 +14,95 @@
   "coda bubonico": {
     "kr_name": "코다 부보니코",
     "source": "https://wiki.warframe.com/w/Coda_Bubonico",
-    "notes": ["주 사격 연사 속도는 30%에서 시작해 7발째에 최대가 됩니다. DPS는 최대 연사 기준입니다."],
-    "notes_note": "Information only: the listed fire rate is the ramped-up maximum, so no stat is changed."
+    "notes": ["주 사격 연사 속도는 30%에서 시작해 7발째에 최대가 됩니다. DPS는 최대 연사 기준입니다."]
+  },
+  "kuva nukor": {
+    "kr_name": "쿠바 뉴코어",
+    "source": "https://wiki.warframe.com/w/Kuva_Nukor",
+    "hidden_status_types": 1,
+    "chain_targets": 2,
+    "notes": ["고유 마이크로웨이브 상태이상(+1종, 건CO/CO 카운트 포함)과 최대 2체 연쇄 빔 특성을 가집니다."]
+  },
+  "cedo": {
+    "kr_name": "세도",
+    "source": "https://wiki.warframe.com/w/Cedo",
+    "innate_gunco_per_status": 0.60,
+    "is_multiplicative_gunco": false,
+    "notes": ["고유 패시브: 대상에게 걸린 상태이상 종류당 기본 피해 +60% (보조 사격 글레이브로 4종 원소 프라이밍 가능)."]
+  },
+  "cedo prime": {
+    "kr_name": "세도 프라임",
+    "source": "https://wiki.warframe.com/w/Cedo_Prime",
+    "innate_gunco_per_status": 0.60,
+    "is_multiplicative_gunco": false,
+    "notes": ["고유 패시브: 대상에게 걸린 상태이상 종류당 기본 피해 +60% (보조 사격 글레이브로 4종 원소 프라이밍 가능)."]
+  },
+  "dual toxocyst": {
+    "kr_name": "듀얼 톡소시스트",
+    "source": "https://wiki.warframe.com/w/Dual_Toxocyst",
+    "notes": ["헤드샷 시 프렌지 발동(3초): 연사력 +150%, 독성 피해 +100%, 탄약 소모 없음, 반동 대폭 감소."]
+  },
+  "knell": {
+    "kr_name": "넬",
+    "source": "https://wiki.warframe.com/w/Knell",
+    "notes": ["헤드샷 시 데스 넬 발동: 치명타 배수 +1.5x, 상태이상 확률 +20%, 탄약 무소모 (최대 3중첩)."]
+  },
+  "knell prime": {
+    "kr_name": "넬 프라임",
+    "source": "https://wiki.warframe.com/w/Knell_Prime",
+    "notes": ["헤드샷 시 데스 넬 발동: 치명타 배수 +1.5x, 상태이상 확률 +20%, 탄약 무소모 (최대 3중첩)."]
+  },
+  "glaive prime": {
+    "kr_name": "글레이브 프라임",
+    "source": "https://wiki.warframe.com/w/Glaive_Prime",
+    "forced_heavy_proc": "slash",
+    "notes": ["차지 투척 중 강공격 폭파(Heavy Recall Explosion) 시 범위 내 적에게 100% 확정 베기(출혈) 상태이상을 부여합니다."]
+  },
+  "xoris": {
+    "kr_name": "조리스",
+    "source": "https://wiki.warframe.com/w/Xoris",
+    "forced_heavy_proc": "electric",
+    "notes": ["차지 투척 중 강공격 폭파 시 100% 확정 전기 상태이상을 부여하며, 근접 연속기 지속시간이 무한입니다."]
+  },
+  "cerata": {
+    "kr_name": "세라타",
+    "source": "https://wiki.warframe.com/w/Cerata",
+    "forced_heavy_proc": "toxin",
+    "notes": ["차지 투척 중 강공격 폭파 시 100% 확정 독성 상태이상을 부여합니다 (코퍼스 실드 우회 특화)."]
+  },
+  "sporothrix": {
+    "kr_name": "스포로트릭스",
+    "source": "https://wiki.warframe.com/w/Sporothrix",
+    "is_multiplicative_gunco": true,
+    "notes": ["착탄 후 지연 폭발 가시(베기·바이러스 AoE)를 생성하며, 직접 타격에 건CO가 곱연산으로 적용됩니다."]
+  },
+  "coda sporothrix": {
+    "kr_name": "코다 스포로트릭스",
+    "source": "https://wiki.warframe.com/w/Coda_Sporothrix",
+    "is_multiplicative_gunco": true,
+    "notes": ["착탄 후 지연 폭발 가시(베기·바이러스 AoE)를 생성하며, 직접 타격에 건CO가 곱연산으로 적용됩니다."]
+  },
+  "ocucor": {
+    "kr_name": "오큐코어",
+    "source": "https://wiki.warframe.com/w/Ocucor",
+    "chain_targets": 4,
+    "notes": ["처치 시 최대 4개의 자동 조준 에너지 촉수 생성 (센티언트 서지 장착 시 촉수당 치확·상확 +60% 및 탄창 20% 회복)."]
+  },
+  "nataruk": {
+    "kr_name": "나타루크",
+    "source": "https://wiki.warframe.com/w/Nataruk",
+    "is_multiplicative_gunco": true,
+    "notes": ["퍼펙트 샷(60% 치확·2.4x 치피) 기준 무한 탄약 및 무한 시체 관통, 건CO 곱연산 적용."]
+  },
+  "tenet arca plasmor": {
+    "kr_name": "테넷 아르카 플라즈모어",
+    "source": "https://wiki.warframe.com/w/Tenet_Arca_Plasmor",
+    "is_multiplicative_gunco": true,
+    "notes": ["무한 적 관통·벽면 1회 도탄·근거리 확정 충격 상태이상 및 건CO 곱연산 적용."]
+  },
+  "dual coda torxica": {
+    "kr_name": "듀얼 코다 톡시카",
+    "source": "https://wiki.warframe.com/w/Dual_Coda_Torxica",
+    "notes": ["처치 시 주변 적에게 냉기 포자를 전파하며 포자 감염 대상에게 추가 피해를 가합니다."]
   }
 }

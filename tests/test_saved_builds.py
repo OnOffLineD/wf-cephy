@@ -109,10 +109,12 @@ def test_slot_edit_can_set_arcane(analyzer):
 def test_compare_without_build_uses_codex_and_says_so(analyzer):
     w = analyzer.indexer.fuzzy_match_weapon("Nataruk")
     res = analyzer.compare_riven_rolls(w, card(base_damage=2.517), card(heat=0.852, elemental_damage=0.852, multishot=0.82))
-    # 900 * 3.517 versus 900 * 1.852 * 1.82, the same crit on both.
+    # 900 * 3.517 versus 900 * 1.852 * 1.82 on direct hit, while Heat DoT pushes the elemental roll ahead.
     assert res["before"]["final_dmg"] == pytest.approx(900 * 3.517)
     assert res["after"]["final_dmg"] == pytest.approx(900 * 1.852 * 1.82)
-    assert "이전 옵션" in res["verdict"]
+    assert res["after"]["status_dps"] > 0
+    assert res["after"]["sustained_dps"] > res["before"]["sustained_dps"]
+    assert "새 옵션" in res["verdict"]
     assert any("스캔" in n for n in res["notes"])
     assert res["has_build"] is False
 
@@ -122,12 +124,13 @@ def test_compare_with_equipped_riven_treats_left_card_as_in_panel(analyzer):
     analyzer.save_scanned_build(res)
     w = analyzer.indexer.fuzzy_match_weapon("Vulkar")
     out = analyzer.compare_riven_rolls(w, card(base_damage=1.0), card(crit_chance=1.0))
-    # Before must reproduce the panel exactly: the old roll is already in it.
-    assert out["before"]["final_dmg"] == pytest.approx(1000.0)
-    assert out["before"]["final_cc"] == pytest.approx(0.5)
-    # After swaps the damage roll out (additive with Serration) and the crit roll in.
-    assert out["after"]["final_dmg"] == pytest.approx(1000.0 * 2.65 / 3.65)
-    assert out["after"]["final_cc"] == pytest.approx(0.5 + w["crit_chance"])
+    # Computed strictly from DB stats + Serration (+1.65) + active riven, ignoring OCR panel numbers.
+    assert out["before"]["final_dmg"] == pytest.approx(w["total_damage"] * 3.65)
+    assert out["before"]["final_cc"] == pytest.approx(w["crit_chance"])
+    # After swaps the damage roll out (+265% -> +165%) and the crit roll in.
+    assert out["after"]["final_dmg"] == pytest.approx(w["total_damage"] * 2.65)
+    assert out["after"]["final_cc"] == pytest.approx(w["crit_chance"] * 2.0)
+    assert not any("패널 수치가 없어" in n for n in out["notes"])
 
 
 def test_compare_verdict_uses_sustained_dps_with_magazine_roll(analyzer):
@@ -168,13 +171,12 @@ def test_adopt_new_roll_updates_build_and_next_compare_starts_from_it(analyzer):
     assert "갱신" in analyzer.adopt_new_riven(out)
     build = analyzer.build_store.get_build("Vulkar")
     assert build["riven"] == {"base_damage": 2.0}
-    assert build["panel_riven"] == {"base_damage": 1.0}
 
-    # The saved build now evaluates with the new roll: 1000 at +265% additive becomes +365%.
-    assert analyzer.evaluate_saved_build(build)["final_dmg"] == pytest.approx(1000.0 * 4.65 / 3.65)
+    # The saved build now evaluates from DB + Serration (+165%) + new roll (+200%) = +365%.
+    assert analyzer.evaluate_saved_build(build)["final_dmg"] == pytest.approx(w["total_damage"] * 4.65)
     again = analyzer.compare_riven_rolls(w, card(base_damage=2.0), card(base_damage=1.0))
-    assert again["before"]["final_dmg"] == pytest.approx(1000.0 * 4.65 / 3.65)
-    assert again["after"]["final_dmg"] == pytest.approx(1000.0)
+    assert again["before"]["final_dmg"] == pytest.approx(w["total_damage"] * 4.65)
+    assert again["after"]["final_dmg"] == pytest.approx(w["total_damage"] * 3.65)
 
 
 def test_adopt_without_build_explains(analyzer):
@@ -185,9 +187,11 @@ def test_adopt_without_build_explains(analyzer):
 
 
 def test_unknown_riven_build_reads_panel_as_is(analyzer):
+    w = analyzer.indexer.fuzzy_match_weapon("Vulkar")
     analyzer.save_scanned_build(scan_result(analyzer, "Vulkar", {"R1_C1": RIVEN_MOD}, {"total_damage": 777.0}))
     build = analyzer.build_store.get_build("Vulkar")
-    assert analyzer.evaluate_saved_build(build)["final_dmg"] == pytest.approx(777.0)
+    # Even when panel OCR says 777.0, unknown riven falls back to DB weapon base stats.
+    assert analyzer.evaluate_saved_build(build)["final_dmg"] == pytest.approx(w["total_damage"])
     assert "아직 모름" in analyzer.format_saved_build(build)
 
 
@@ -209,6 +213,98 @@ def test_real_reroll_screen_end_to_end(analyzer):
     res = analyzer.diagnose_screenshot(Image.open(SAMPLE))
     assert res["is_riven_compare"] is True
     assert res["weapon"] == "Nataruk"
-    assert "이전 옵션" in res["verdict"]
+    assert "새 옵션" in res["verdict"]
     assert any("확대율" in u for u in res["unapplied"])
-    assert any("상태 이상" in u for u in res["unapplied"])
+    assert not any("상태 이상" in u for u in res["unapplied"])
+
+
+def test_indexer_separates_normal_and_incarnon_attacks(analyzer):
+    burston = analyzer.indexer.fuzzy_match_weapon("Burston Prime")
+    assert "radial_attack" not in burston
+    assert burston["incarnon_attack"]["name"] == "Incarnon Form"
+    assert burston["incarnon_aoe"]["name"] == "Incarnon Form Radial Attack"
+
+    torid = analyzer.indexer.fuzzy_match_weapon("Torid")
+    assert torid["radial_attack"]["name"] == "Poison Cloud"
+    assert torid["incarnon_attack"]["name"] == "Incarnon Form"
+    assert "incarnon_aoe" not in torid
+
+    corinth = analyzer.indexer.fuzzy_match_weapon("Corinth Prime")
+    assert corinth["radial_attack"]["name"] == "Air Burst Explosion"
+
+
+def test_breakdown_omits_incarnon_on_non_incarnon_weapons_and_separates_fullstack(analyzer):
+    motovore = analyzer.indexer.fuzzy_match_weapon("Coda Motovore")
+    melee_mods = [dict(analyzer.indexer.mods_index["pressure point"])]
+    metrics = analyzer.calculate_comprehensive_metrics(motovore, left_stats={}, mod_objs=melee_mods)
+    arcane = analyzer._arcane_info("Melee Exposure")
+    metrics["full_stack"] = analyzer.damage_engine.compute_full_stack(motovore, left_stats={}, mod_objs=melee_mods, arcane=arcane)
+    breakdown = analyzer.format_calculation_breakdown(motovore, melee_mods, metrics)
+    assert metrics["full_stack"]["burst_dps"] > metrics["burst_dps"]
+    assert "인카논" not in breakdown
+    assert "풀스택" in breakdown
+
+    burston = analyzer.indexer.fuzzy_match_weapon("Burston Prime")
+    rifle_mods = [dict(analyzer.indexer.mods_index["serration"])]
+    inc_metrics = analyzer.calculate_comprehensive_metrics(burston, left_stats={}, mod_objs=rifle_mods)
+    inc_metrics["full_stack"] = analyzer.damage_engine.compute_full_stack(burston, left_stats={}, mod_objs=rifle_mods, arcane=analyzer._arcane_info("Primary Merciless"))
+    inc_breakdown = analyzer.format_calculation_breakdown(burston, rifle_mods, inc_metrics)
+    assert "radial" not in inc_metrics
+    assert "인카논 변신 폼 폭딜" in inc_breakdown
+    assert "풀스택" in inc_breakdown
+
+
+def test_evaluate_saved_build_ignores_bogus_panel_and_keeps_valence(analyzer):
+    mods = {"R1_C1": "Point Blank"}
+    analyzer.save_scanned_build(scan_result(analyzer, "Kuva Hek", mods, {"total_damage": 99999.0, "crit_chance": 0.99, "valence_heat": 0.6}))
+    with_bogus = analyzer.evaluate_saved_build(analyzer.build_store.get_build("Kuva Hek"))
+
+    analyzer.save_scanned_build(scan_result(analyzer, "Kuva Hek", mods, {"valence_heat": 0.6}))
+    with_valence_only = analyzer.evaluate_saved_build(analyzer.build_store.get_build("Kuva Hek"))
+
+    analyzer.save_scanned_build(scan_result(analyzer, "Kuva Hek", mods, {}))
+    no_valence = analyzer.evaluate_saved_build(analyzer.build_store.get_build("Kuva Hek"))
+
+    assert with_bogus["final_dmg"] == pytest.approx(with_valence_only["final_dmg"])
+    assert with_bogus["final_cc"] == pytest.approx(with_valence_only["final_cc"])
+    assert with_valence_only["final_dmg"] == pytest.approx(no_valence["final_dmg"] * 1.6)
+
+
+def test_concurrent_atomic_writes_do_not_collide(tmp_path):
+    import json
+    import os
+    import threading
+
+    from scripts.path_config import write_json_atomic
+
+    path = str(tmp_path / "shared.json")
+    errors = []
+
+    def save(n):
+        try:
+            for i in range(20):
+                write_json_atomic(path, {"writer": n, "i": i, "pad": "x" * 2000})
+        except Exception as e:  # a shared ".tmp" name made writers clobber or lose each other's file
+            errors.append(e)
+
+    threads = [threading.Thread(target=save, args=(n,)) for n in range(6)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert errors == []
+    with open(path, encoding="utf-8") as f:
+        assert json.load(f)["i"] == 19
+    assert os.listdir(tmp_path) == ["shared.json"]
+
+
+def test_failed_atomic_write_leaves_no_temp_file(tmp_path):
+    import os
+
+    import pytest
+
+    from scripts.path_config import write_json_atomic
+
+    with pytest.raises(TypeError):
+        write_json_atomic(str(tmp_path / "x.json"), {"bad": object()})
+    assert os.listdir(tmp_path) == []
