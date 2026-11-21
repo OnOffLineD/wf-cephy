@@ -1,5 +1,6 @@
 import os
 import sys
+import threading
 from typing import Optional
 
 try:
@@ -8,7 +9,7 @@ try:
         QVBoxLayout, QHBoxLayout, QLabel, QFrame, QApplication,
         QTabWidget, QWidget, QLineEdit, QFileDialog, QSpinBox, QComboBox, QCheckBox
     )
-    from PyQt6.QtCore import Qt, QSize, QRectF, QVariantAnimation, QEasingCurve
+    from PyQt6.QtCore import Qt, QSize, QRectF, QVariantAnimation, QEasingCurve, pyqtSignal
     from PyQt6.QtGui import QIcon, QPainter, QPen
 except ImportError:
     from PySide6.QtWidgets import (
@@ -16,10 +17,11 @@ except ImportError:
         QVBoxLayout, QHBoxLayout, QLabel, QFrame, QApplication,
         QTabWidget, QWidget, QLineEdit, QFileDialog, QSpinBox, QComboBox, QCheckBox
     )
-    from PySide6.QtCore import Qt, QSize, QRectF, QVariantAnimation, QEasingCurve
+    from PySide6.QtCore import Qt, QSize, QRectF, QVariantAnimation, QEasingCurve, Signal as pyqtSignal
     from PySide6.QtGui import QIcon, QPainter, QPen
 
 from scripts.persona_manager import PersonaManager, DEFAULT_PRESETS
+from scripts.llm_providers import LOCAL_PROVIDER, PROVIDERS, ApiKeyStore, LLMClient
 from scripts.hud_widgets import load_icon_pixmap, HUD_CYAN
 from scripts.path_config import get_path
 from scripts.frameless_dialog import FramelessDialog
@@ -148,18 +150,62 @@ class MorphingPresetFrame(_MorphingButtonFrame):
         layout.setContentsMargins(3, 3, 3, 3)
         layout.setSpacing(2)
 
+ACCENT_BUTTON_STYLE = """
+    QPushButton {
+        background: rgba(0, 229, 255, 0.08);
+        color: #00e5ff;
+        border: 1px solid rgba(0, 229, 255, 0.45);
+        border-radius: 6px;
+        padding: 6px 14px;
+        font-size: 11px;
+        font-weight: bold;
+    }
+    QPushButton:hover {
+        background: rgba(0, 229, 255, 0.18);
+        color: #ffffff;
+        border: 1px solid #00e5ff;
+    }
+    QPushButton:pressed {
+        background: rgba(0, 229, 255, 0.28);
+    }
+    QPushButton:disabled {
+        color: #475569;
+        border: 1px solid #334155;
+    }
+"""
+
+REMOTE_DESCRIPTION_CLOUD = ("질문과 대화 내용이 {label} 서버로 전송되며 사용량만큼 요금이 부과될 수 있습니다. "
+                            "키는 Windows 계정으로 암호화해 이 PC에만 저장합니다.")
+REMOTE_DESCRIPTIONS = {
+    "ollama": "외부(또는 이 PC)에서 실행 중인 Ollama 서버의 주소와 API 키를 입력합니다. "
+              "키는 Bearer 헤더로 보내며 이 PC에만 암호화해 저장합니다. 인증 없는 서버면 키는 비워 두십시오.",
+    "openai_compat": "OpenAI 호환 주소를 입력합니다. 예: https://openrouter.ai/api/v1, https://api.groq.com/openai/v1, "
+                     "http://localhost:1234/v1 (LM Studio). 키는 이 PC에만 암호화해 저장합니다.",
+}
+
+
 class OrdisPersonaDialog(FramelessDialog):
     """WF-Companion Settings & Cephalon Ordis Persona Customization Dialog.
     Frameless, draggable, and themed for Warframe dark HUD aesthetics.
     """
-    def __init__(self, persona_manager: Optional[PersonaManager] = None, parent=None):
+    # (ok, message, installed Ollama models or None), from the connection-test thread.
+    connection_tested = pyqtSignal(bool, str, object)
+
+    def __init__(self, persona_manager: Optional[PersonaManager] = None, parent=None,
+                 api_keys: Optional[ApiKeyStore] = None):
         super().__init__(parent)
         self.persona_manager = persona_manager or PersonaManager()
+        self.api_keys = api_keys or ApiKeyStore()
+        # Unsaved address/model/key per hosted provider, so flipping the engine combo loses no typing.
+        self._remote_drafts = {}
+        self._shown_provider = None
         self.init_ui()
+        self.connection_tested.connect(self._on_connection_tested)
 
     def init_ui(self):
         self.setWindowTitle("워프레임 컴패니언 설정 (Settings)")
-        self.setFixedSize(540, 680)
+        # 720 tall: the engine tab's sections need ~520px; at 680 the inputs were squeezed. Still fits a 768px screen.
+        self.setFixedSize(540, 720)
 
         self.setStyleSheet("""
             QDialog {
@@ -368,7 +414,7 @@ class OrdisPersonaDialog(FramelessDialog):
         self.tab_widget.addTab(persona_tab, self._tab_icon("persona"), "성격 및 페르소나")
 
         # -------------------------------------------------------------
-        # TAB 2: 로컬 모델 & LLM 엔진 설정
+        # TAB 2: AI 엔진(로컬 llama.cpp / Ollama / 외부 API) & 모델 설정
         # -------------------------------------------------------------
         model_tab = QWidget()
         mt_layout = QVBoxLayout(model_tab)
@@ -376,20 +422,37 @@ class OrdisPersonaDialog(FramelessDialog):
         mt_layout.setSpacing(12)
 
         # Master switch: OFF frees the VRAM; diagnosis and damage math keep working without the LLM.
-        self.cb_llm_enabled = QCheckBox("로컬 LLM (오디스 AI 대화 엔진) 활성화")
+        # The engine choice shares its row, so the local-only layout keeps its old height.
+        engine_row = QHBoxLayout()
+        self.cb_llm_enabled = QCheckBox("AI 대화 엔진 활성화")
         self.cb_llm_enabled.setChecked(self.persona_manager.get_llm_enabled())
         self.cb_llm_enabled.setStyleSheet("color: #e2e8f0; font-size: 12px; font-weight: bold;")
-        mt_layout.addWidget(self.cb_llm_enabled)
+        engine_lbl = QLabel("엔진:")
+        engine_lbl.setStyleSheet("color: #cbd5e1; font-size: 11px;")
+        self.provider_combo = QComboBox()
+        for provider_id, meta in PROVIDERS.items():
+            self.provider_combo.addItem(meta["label"], provider_id)
+        self.provider_combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        self.provider_combo.setMinimumContentsLength(14)
+        self.provider_combo.view().setMinimumWidth(330)
+        engine_row.addWidget(self.cb_llm_enabled)
+        engine_row.addStretch()
+        engine_row.addWidget(engine_lbl)
+        engine_row.addWidget(self.provider_combo, 1)
+        mt_layout.addLayout(engine_row)
 
-        # Section 1: GGUF Model Path Selection
+        # Section 1: GGUF Model Path Selection (bundled engine only)
+        self.local_model_box = self._section_box()
+        lm_layout = self.local_model_box.layout()
+        mt_layout.addWidget(self.local_model_box)
         self.sec1_header, self.sec1_icon, self.sec1_title = self._make_section_header(
             "model", "로컬 GGUF 모델 파일 지정")
-        mt_layout.addWidget(self.sec1_header)
+        lm_layout.addWidget(self.sec1_header)
 
         sec1_desc = QLabel("원하는 llama.cpp 호환 `.gguf` 모델 파일을 지정하면 오디스 대화 엔진에 즉시 적용됩니다.")
         sec1_desc.setStyleSheet("color: #94a3b8; font-size: 11px;")
         sec1_desc.setWordWrap(True)
-        mt_layout.addWidget(sec1_desc)
+        lm_layout.addWidget(sec1_desc)
 
         # Preset / detected models combo
         combo_box = QHBoxLayout()
@@ -400,7 +463,7 @@ class OrdisPersonaDialog(FramelessDialog):
         self.model_combo.currentIndexChanged.connect(self._on_model_combo_selected)
         combo_box.addWidget(combo_lbl)
         combo_box.addWidget(self.model_combo)
-        mt_layout.addLayout(combo_box)
+        lm_layout.addLayout(combo_box)
 
         # Path input line + Browse button
         path_box = QHBoxLayout()
@@ -435,17 +498,25 @@ class OrdisPersonaDialog(FramelessDialog):
         self.btn_browse.clicked.connect(self.browse_model_file)
         path_box.addWidget(self.model_path_edit)
         path_box.addWidget(self.btn_browse)
-        mt_layout.addLayout(path_box)
+        lm_layout.addLayout(path_box)
 
-        # Section 2: Context Length (n_ctx)
+        # Section 1b: Ollama / hosted API connection (replaces section 1 and 3 when chosen)
+        self.remote_box = self._section_box()
+        self._build_remote_section(self.remote_box.layout())
+        mt_layout.addWidget(self.remote_box)
+
+        # Section 2: Context Length (n_ctx) - the bundled engine and Ollama (num_ctx) use it
+        self.context_box = self._section_box()
+        ctx_layout = self.context_box.layout()
+        mt_layout.addWidget(self.context_box)
         self.sec2_header, self.sec2_icon, self.sec2_title = self._make_section_header(
             "context", "컨텍스트 길이 (Context Size / Token Window)", top_margin=10)
-        mt_layout.addWidget(self.sec2_header)
+        ctx_layout.addWidget(self.sec2_header)
 
         sec2_desc = QLabel("대화 기억 및 공략 문맥 길이를 조절합니다. (4096 = 기본 권장, 8192/16384 = 대용량 컨텍스트)")
         sec2_desc.setStyleSheet("color: #94a3b8; font-size: 11px;")
         sec2_desc.setWordWrap(True)
-        mt_layout.addWidget(sec2_desc)
+        ctx_layout.addWidget(sec2_desc)
 
         ctx_box = QHBoxLayout()
         self.context_size_spin = QSpinBox()
@@ -482,12 +553,15 @@ class OrdisPersonaDialog(FramelessDialog):
 
         ctx_box.addWidget(self.context_size_spin)
         ctx_box.addWidget(self.preset_bar)
-        mt_layout.addLayout(ctx_box)
+        ctx_layout.addLayout(ctx_box)
 
-        # Section 3: GPU Offload Layers
+        # Section 3: GPU Offload Layers (bundled engine only)
+        self.gpu_box = self._section_box()
+        gpu_layout = self.gpu_box.layout()
+        mt_layout.addWidget(self.gpu_box)
         self.sec3_header, self.sec3_icon, self.sec3_title = self._make_section_header(
             "gpu", "GPU 가속 레이어 수 (n_gpu_layers)", top_margin=10)
-        mt_layout.addWidget(self.sec3_header)
+        gpu_layout.addWidget(self.sec3_header)
 
         gpu_box = QHBoxLayout()
         self.gpu_layers_spin = QSpinBox()
@@ -499,7 +573,7 @@ class OrdisPersonaDialog(FramelessDialog):
         gpu_box.addWidget(self.gpu_layers_spin)
         gpu_box.addWidget(gpu_hint)
         gpu_box.addStretch()
-        mt_layout.addLayout(gpu_box)
+        gpu_layout.addLayout(gpu_box)
 
         # Section 4: In-game input-driven pet motion (opt-in/out, zero-trace when OFF)
         self.cb_motion = QCheckBox("워프레임 인게임 입력 연동 펫 반응 모션 활성화 (WASD / Space / E / 마우스)")
@@ -513,11 +587,17 @@ class OrdisPersonaDialog(FramelessDialog):
         mt_layout.addWidget(motion_hint)
 
         mt_layout.addStretch()
-        self.tab_widget.addTab(model_tab, self._tab_icon("model"), "로컬 모델 & 엔진")
+        self.tab_widget.addTab(model_tab, self._tab_icon("model"), "AI 엔진 & 모델")
+
+        # Show the sections of the saved engine; the combo signal is connected after, so this load is silent.
+        saved_provider = self.persona_manager.get_llm_provider()
+        self.provider_combo.setCurrentIndex(max(0, self.provider_combo.findData(saved_provider)))
+        self._show_provider(saved_provider)
+        self.provider_combo.currentIndexChanged.connect(self._on_provider_changed)
 
         # Two-way sync: morphing bar <-> QTabWidget (indices/icons/texts stay owned by tab_widget)
         self.morphing_tab_bar.add_tab("성격 및 페르소나", icon_name="persona")
-        self.morphing_tab_bar.add_tab("로컬 모델 & 엔진", icon_name="model")
+        self.morphing_tab_bar.add_tab("AI 엔진 & 모델", icon_name="model")
         self.morphing_tab_bar.tab_changed.connect(self.tab_widget.setCurrentIndex)
         self.tab_widget.currentChanged.connect(self._on_tab_widget_changed)
         self.morphing_tab_bar.switch_tab(self.tab_widget.currentIndex())
@@ -625,6 +705,157 @@ class OrdisPersonaDialog(FramelessDialog):
         h_layout.addStretch()
         return header, icon_lbl, title_lbl
 
+    @staticmethod
+    def _section_box() -> QWidget:
+        """A margin-free container, so a whole section can be shown or hidden with the engine choice."""
+        box = QWidget()
+        layout = QVBoxLayout(box)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(12)
+        return box
+
+    def _build_remote_section(self, layout):
+        self.sec_remote_header, self.sec_remote_icon, self.sec_remote_title = self._make_section_header(
+            "status", "외부 AI 엔진 연결 (Ollama / API)")
+        layout.addWidget(self.sec_remote_header)
+
+        self.lbl_remote_desc = QLabel()
+        self.lbl_remote_desc.setStyleSheet("color: #94a3b8; font-size: 11px;")
+        self.lbl_remote_desc.setWordWrap(True)
+        layout.addWidget(self.lbl_remote_desc)
+
+        self.base_url_edit = QLineEdit()
+        self.remote_model_combo = QComboBox()
+        self.remote_model_combo.setEditable(True)
+        self.remote_model_combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        self.api_key_edit = QLineEdit()
+        self.api_key_edit.setEchoMode(QLineEdit.EchoMode.Password)
+        for text, widget in (("API 주소", self.base_url_edit), ("모델", self.remote_model_combo), ("API 키", self.api_key_edit)):
+            row = QHBoxLayout()
+            lbl = QLabel(f"{text}:")
+            lbl.setFixedWidth(62)
+            lbl.setStyleSheet("color: #cbd5e1; font-size: 11px;")
+            row.addWidget(lbl)
+            row.addWidget(widget, 1)
+            layout.addLayout(row)
+
+        test_row = QHBoxLayout()
+        self.btn_test_connection = QPushButton(" 연결 테스트")
+        refresh_pix = load_icon_pixmap("refresh")
+        if refresh_pix and not refresh_pix.isNull():
+            self.btn_test_connection.setIcon(QIcon(refresh_pix))
+            self.btn_test_connection.setIconSize(QSize(16, 16))
+        self.btn_test_connection.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_test_connection.setStyleSheet(ACCENT_BUTTON_STYLE)
+        self.btn_test_connection.clicked.connect(self.test_connection)
+        self.lbl_connection_status = QLabel("")
+        self.lbl_connection_status.setWordWrap(True)
+        self.lbl_connection_status.setStyleSheet("color: #94a3b8; font-size: 11px;")
+        test_row.addWidget(self.btn_test_connection, alignment=Qt.AlignmentFlag.AlignTop)
+        test_row.addWidget(self.lbl_connection_status, 1)
+        layout.addLayout(test_row)
+
+    def _on_provider_changed(self, idx):
+        self._stash_remote_fields()
+        self._show_provider(self.provider_combo.itemData(idx))
+
+    def _show_provider(self, provider):
+        is_local = provider == LOCAL_PROVIDER
+        self.local_model_box.setVisible(is_local)
+        self.gpu_box.setVisible(is_local)
+        self.remote_box.setVisible(not is_local)
+        # Ollama takes the context size per request (num_ctx); hosted APIs size it themselves.
+        self.context_box.setVisible(is_local or PROVIDERS[provider]["protocol"] == "ollama")
+        self._shown_provider = provider
+        self._set_connection_status("", None)
+        if not is_local:
+            self._load_remote_fields(provider)
+
+    def _load_remote_fields(self, provider):
+        meta = PROVIDERS[provider]
+        pm = self.persona_manager
+        draft = self._remote_drafts.get(provider) or {
+            "base_url": pm.get_llm_base_url(provider),
+            "model": pm.get_llm_model(provider),
+            "key": self.api_keys.saved(provider),
+        }
+        self.base_url_edit.setText(draft["base_url"])
+        self.base_url_edit.setPlaceholderText(meta["base_url"] or "https://.../v1")
+
+        self.remote_model_combo.clear()
+        self.remote_model_combo.addItems(list(meta["models"]))
+        self.remote_model_combo.setCurrentText(draft["model"])
+        self.remote_model_combo.lineEdit().setPlaceholderText("모델 이름 (예: provider/model-name)")
+
+        env = self.api_keys.env_name(provider)
+        self.api_key_edit.setText(draft["key"])
+        if env:
+            placeholder = f"비워 두면 환경 변수 {env} 사용"
+        elif meta["needs_key"]:
+            placeholder = "API 키 입력"
+        elif meta["protocol"] == "ollama":
+            placeholder = "서버에 인증이 걸려 있으면 입력 (Bearer)"
+        else:
+            placeholder = "필요한 경우에만 입력"
+        self.api_key_edit.setPlaceholderText(placeholder)
+        self.lbl_remote_desc.setText(REMOTE_DESCRIPTIONS.get(provider) or REMOTE_DESCRIPTION_CLOUD.format(label=meta["label"]))
+
+    def _stash_remote_fields(self):
+        provider = self._shown_provider
+        if provider and provider != LOCAL_PROVIDER:
+            self._remote_drafts[provider] = {
+                "base_url": self.base_url_edit.text().strip(),
+                "model": self.remote_model_combo.currentText().strip(),
+                "key": self.api_key_edit.text().strip(),
+            }
+
+    def _client_from_fields(self) -> LLMClient:
+        provider = self.provider_combo.currentData()
+        draft = self._remote_drafts.get(provider, {})
+        env = self.api_keys.env_name(provider)
+        key = draft.get("key") or (os.environ.get(env, "") if env else "")
+        return LLMClient(provider, base_url=draft.get("base_url", ""), model=draft.get("model", ""),
+                         api_key=key, context_size=self.context_size_spin.value())
+
+    def _set_connection_status(self, text, ok):
+        color = "#94a3b8" if ok is None else ("#4ade80" if ok else "#f87171")
+        self.lbl_connection_status.setStyleSheet(f"color: {color}; font-size: 11px;")
+        self.lbl_connection_status.setText(text)
+
+    def test_connection(self):
+        """Checks the fields as typed (not yet saved) in a worker thread; the result comes back via connection_tested."""
+        self._stash_remote_fields()
+        client = self._client_from_fields()
+        if client.is_local:
+            return
+        provider = client.provider
+        self.btn_test_connection.setEnabled(False)
+        self._set_connection_status("연결 확인 중...", None)
+
+        def work():
+            models = client.list_models() if client.protocol == "ollama" else None
+            ok, message = client.test_connection()
+            try:
+                self.connection_tested.emit(ok, message, {"provider": provider, "models": models})
+            except RuntimeError:  # The dialog was closed and deleted meanwhile.
+                pass
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _on_connection_tested(self, ok, message, extra):
+        self.btn_test_connection.setEnabled(True)
+        extra = extra or {}
+        # The engine was switched while the test ran: the result is about another provider.
+        if extra.get("provider") != self.provider_combo.currentData():
+            return
+        models = extra.get("models")
+        if models:
+            current = self.remote_model_combo.currentText()
+            self.remote_model_combo.clear()
+            self.remote_model_combo.addItems(models)
+            self.remote_model_combo.setCurrentText(current)
+        self._set_connection_status(f"{'연결 성공' if ok else '연결 실패'}: {message}", ok)
+
     def _on_tab_widget_changed(self, index):
         if index != self.morphing_tab_bar.active_index:
             self.morphing_tab_bar.switch_tab(index)
@@ -727,6 +958,15 @@ class OrdisPersonaDialog(FramelessDialog):
 
         self.persona_manager.set_motion_enabled(self.cb_motion.isChecked())
         self.persona_manager.set_llm_enabled(self.cb_llm_enabled.isChecked())
+
+        # 3. Save the engine choice and every hosted provider the user looked at
+        self._stash_remote_fields()
+        for provider, draft in self._remote_drafts.items():
+            self.persona_manager.set_llm_base_url(provider, draft["base_url"])
+            self.persona_manager.set_llm_model(provider, draft["model"])
+            if draft["key"] != self.api_keys.saved(provider):
+                self.api_keys.set(provider, draft["key"])
+        self.persona_manager.set_llm_provider(self.provider_combo.currentData())
 
         self.accept()
 

@@ -1,6 +1,6 @@
-import json
 import re
-import requests
+# The HTTP calls live in llm_providers; tests patch requests.post through this module's name.
+import requests  # noqa: F401
 from typing import Dict, Any, Optional
 import os
 import random
@@ -8,6 +8,7 @@ import random
 from scripts.build_store import BuildStore
 from scripts.drop_lookup import DROP_QUESTION, DropIndex
 from scripts.guide_retriever import GuideRetriever
+from scripts.llm_providers import ApiKeyStore, LLMClient, extract_json_object, label_schema, tool_call_schema
 from scripts.path_config import get_path
 from scripts.short_term_memory import ShortTermMemory
 from scripts.persona_manager import PersonaManager
@@ -107,6 +108,11 @@ TODO_EXPLICIT_ADD = re.compile(r'(추가|등록|넣어|적어)\s*(해|줘|하자
 # [Step 1] 1-Token 도메인 분류를 위한 GBNF 문법 제약 (출력 토큰을 3가지 도메인 중 하나로만 강제)
 INTENT_GRAMMAR = 'root ::= "GUIDE" | "SMALLTALK" | "TODO"'
 INTENT_LABELS = ('GUIDE', 'SMALLTALK', 'TODO')
+INTENT_SCHEMA = label_schema(INTENT_LABELS)
+# Without a grammar a hosted model may add a word or wrap the label in JSON, so the label is searched for.
+INTENT_LABEL_IN_TEXT = re.compile(r'(?<![A-Z])(GUIDE|SMALLTALK|TODO)(?![A-Z])')
+# Without a grammar the reply shape has to be spelled out.
+TOOL_JSON_FORMAT_HINT = '설명 없이 {"tool": "도구 이름", "args": {"인자 이름": "값"}} 형식의 JSON 한 줄만 출력하라.'
 # A 2B model can't guess what bare labels mean, so each gets a definition and a few examples.
 INTENT_PROMPT = (
     "사용자 메시지를 아래 셋 중 하나로 분류하고 그 단어만 답하라.\n"
@@ -183,6 +189,50 @@ class LLMOrchestrator:
         self.memory = ShortTermMemory(mode='4k')
         self.persona_manager = PersonaManager()
         self.emotion_parser = EmotionParser()
+        self.api_keys = ApiKeyStore()
+        self._llm_client = None
+
+    @property
+    def llm_client(self) -> LLMClient:
+        """The configured chat backend; rebuilt by reload_llm_settings() after the settings change."""
+        client = getattr(self, '_llm_client', None)
+        if client is None:
+            client = self._llm_client = self._build_llm_client()
+        return client
+
+    def _build_llm_client(self) -> LLMClient:
+        pm = getattr(self, 'persona_manager', None)
+        if pm is None or not hasattr(pm, 'get_llm_provider'):
+            return LLMClient()
+        provider = pm.get_llm_provider()
+        if provider == 'local':
+            return LLMClient()
+        keys = getattr(self, 'api_keys', None) or ApiKeyStore()
+        return LLMClient(provider, base_url=pm.get_llm_base_url(provider), model=pm.get_llm_model(provider),
+                         api_key=keys.get(provider), context_size=pm.get_context_size())
+
+    def reload_llm_settings(self) -> LLMClient:
+        self._llm_client = None
+        return self.llm_client
+
+    def _llm_enabled(self) -> bool:
+        pm = getattr(self, 'persona_manager', None)
+        getter = getattr(pm, 'get_llm_enabled', None)
+        return bool(getter()) if callable(getter) else True
+
+    def _complete(self, system_prompt: str, user_prompt: str, temperature: float, grammar: Optional[str] = None,
+                  json_schema: Optional[Dict[str, Any]] = None, max_tokens: Optional[int] = None,
+                  timeout: float = 35) -> Optional[str]:
+        client = self.llm_client
+        if client.is_local:
+            # The local server's address is read here so llama_server_url stays the one place to change it.
+            return client.complete(system_prompt, user_prompt, temperature=temperature, grammar=grammar,
+                                   max_tokens=max_tokens, timeout=timeout, url=self.llama_server_url)
+        # The local engine is stopped by the switch; a hosted one is only skipped.
+        if not self._llm_enabled():
+            return None
+        return client.complete(system_prompt, user_prompt, temperature=temperature, grammar=grammar,
+                               json_schema=json_schema, max_tokens=max_tokens, timeout=timeout)
 
     @property
     def rag_retriever(self):
@@ -200,6 +250,8 @@ class LLMOrchestrator:
 
     def llm_loading(self) -> bool:
         """True while the runner is still downloading or loading the model."""
+        if not self.llm_client.is_local:
+            return False
         is_starting = getattr(self.runner, "is_starting", None) if self.runner else None
         return callable(is_starting) and is_starting() is True
 
@@ -216,34 +268,15 @@ class LLMOrchestrator:
 
         # No answer at once while the model loads, is switched off or has no binary: waiting here only
         # delays the offline fallback, and callers tell "loading" apart through llm_loading().
-        if self.llm_loading():
-            return None
-        is_healthy = getattr(self.runner, "is_healthy", None) if self.runner else None
-        if callable(is_healthy) and not is_healthy():
-            return None
+        if self.llm_client.is_local:
+            if self.llm_loading():
+                return None
+            is_healthy = getattr(self.runner, "is_healthy", None) if self.runner else None
+            if callable(is_healthy) and not is_healthy():
+                return None
 
-        # 1. Try local portable llama-server (ONLY - no Ollama)
-        try:
-            payload = {
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
-                "temperature": temperature,
-                "stream": False
-            }
-            if grammar:
-                payload["grammar"] = grammar
-            res = requests.post(self.llama_server_url, json=payload, timeout=35)
-            if res.status_code == 200:
-                data = res.json()
-                choices = data.get("choices", [])
-                if choices:
-                    return choices[0].get("message", {}).get("content", "").strip()
-        except Exception:
-            pass
-
-        return None
+        # Hosted backends ignore the grammar; the [MOOD:...] header is still asked for in the system prompt.
+        return self._complete(system_prompt, user_prompt, temperature=temperature, grammar=grammar, timeout=35)
 
     def chat_smalltalk(self, user_text: str) -> str:
             # 0. Plain arithmetic is answered exactly, even with the model offline.
@@ -678,9 +711,11 @@ class LLMOrchestrator:
             return '오퍼레이터님! 잘못된 모드입니다. 2k, 4k, 8k 중 하나를 선택해주세요.'
     
         size = mode_to_size[mode]
-        if self.runner and hasattr(self.runner, 'restart_server'):
+        # Only the bundled engine is restarted; Ollama takes the size per request (num_ctx).
+        if self.llm_client.is_local and self.runner and hasattr(self.runner, 'restart_server'):
             self.runner.restart_server(context_size=size)
-    
+        self.llm_client.context_size = size
+
         self.context_size = size
         self.memory.set_mode(mode)
     
@@ -735,27 +770,16 @@ class LLMOrchestrator:
             return 'SMALLTALK'
 
         # [Step 1] 1-Token 도메인 분류 (초단문 프롬프트 + GBNF 문법 제약으로 1단어 생성 후 즉시 종료)
-        try:
-            payload = {
-                "messages": [
-                    {"role": "system", "content": INTENT_PROMPT},
-                    {"role": "user", "content": f'"{user_query}" ->'},
-                ],
-                "grammar": INTENT_GRAMMAR,
-                "temperature": 0.0,
-                "max_tokens": 4,
-                "stream": False,
-            }
-            res = requests.post(self.llama_server_url, json=payload, timeout=5)
-            if res.status_code == 200:
-                data = res.json()
-                choices = data.get("choices", [])
-                if choices:
-                    content = choices[0].get("message", {}).get("content", "").strip().upper()
-                    if content in INTENT_LABELS:
-                        return content
-        except Exception:
-            pass
+        content = self._complete(INTENT_PROMPT, f'"{user_query}" ->', temperature=0.0, grammar=INTENT_GRAMMAR,
+                                 json_schema=INTENT_SCHEMA, max_tokens=4, timeout=5)
+        label = (content or "").strip().upper()
+        if label in INTENT_LABELS:
+            return label
+        # The grammar makes the local answer exact, so anything else there is noise; a hosted reply may carry extra words.
+        if label and not self.llm_client.supports_grammar:
+            found = INTENT_LABEL_IN_TEXT.search(label)
+            if found:
+                return found.group(1)
 
         return 'GUIDE' if has_answer else 'SMALLTALK'
 
@@ -779,36 +803,22 @@ class LLMOrchestrator:
             recent_kws = self.memory.get_recent_keywords()
             if recent_kws:
                 enriched_query = f"[최근 키워드: {', '.join(recent_kws[:2])}] {user_query}"
-        payload = {
-            "messages": [
-                {
-                    "role": "system",
-                    "content": (
-                        "사용자의 요청을 처리할 도구를 고르고 인자를 JSON으로 답하라. "
-                        "인자에는 대상 이름만 짧게 쓰고 조사나 시간 표현은 빼라.\n"
-                        f"사용 가능 도구:\n{tool_lines}"
-                    ),
-                },
-                {"role": "user", "content": enriched_query},
-            ],
-            "grammar": grammar,
-            "temperature": 0.0,
-            "max_tokens": 64,
-            "stream": False,
-        }
-        try:
-            res = requests.post(self.llama_server_url, json=payload, timeout=5)
-            if res.status_code == 200:
-                choices = res.json().get("choices", [])
-                if choices:
-                    raw = choices[0].get("message", {}).get("content", "").strip()
-                    parsed = json.loads(raw)
-                    tool = parsed.get("tool") if isinstance(parsed, dict) else None
-                    args = parsed.get("args") if tool in tools else None
-                    if isinstance(args, dict) and set(args) == set(tools[tool].get("args", [])):
-                        return parsed
-        except Exception:
-            pass
+        system_prompt = (
+            "사용자의 요청을 처리할 도구를 고르고 인자를 JSON으로 답하라. "
+            "인자에는 대상 이름만 짧게 쓰고 조사나 시간 표현은 빼라.\n"
+            f"사용 가능 도구:\n{tool_lines}"
+        )
+        if not self.llm_client.supports_grammar:
+            system_prompt += f"\n{TOOL_JSON_FORMAT_HINT}"
+        raw = self._complete(system_prompt, enriched_query, temperature=0.0, grammar=grammar,
+                             json_schema=tool_call_schema(tools), max_tokens=64, timeout=5)
+        parsed = extract_json_object(raw)
+        tool = parsed.get("tool") if parsed else None
+        args = parsed.get("args") if isinstance(tool, str) and tool in tools else None
+        # The grammar bounds each argument for the local model; a hosted one is held to the same limit here.
+        if (isinstance(args, dict) and set(args) == set(tools[tool].get("args", []))
+                and all(isinstance(v, str) and v.strip() and len(v) <= TOOL_ARG_MAX_CHARS for v in args.values())):
+            return {"tool": tool, "args": args}
         return None
 
 

@@ -5,6 +5,7 @@ import shutil
 from datetime import datetime
 from typing import Dict, Any, Optional
 from scripts.path_config import get_user_data_path, write_json_atomic
+from scripts.llm_providers import LOCAL_PROVIDER, PROVIDERS, default_base_url, normalize_provider
 
 DEFAULT_MODEL_PATH = "models/google_gemma-4-E2B-it-Q4_K_M.gguf"
 DEFAULT_CONTEXT_SIZE = 4096
@@ -185,6 +186,51 @@ class PersonaManager:
     def set_llm_enabled(self, enabled: bool):
         self.config["llm_enabled"] = bool(enabled)
         self.save_config()
+
+    # Which chat backend answers: the bundled llama.cpp ("local"), Ollama, or a hosted API.
+    # Model and address are kept per provider, so switching back restores the earlier choice.
+    # API keys never go here (git tracks this file); see llm_providers.ApiKeyStore.
+    def get_llm_provider(self) -> str:
+        return normalize_provider(self.config.get("llm_provider", LOCAL_PROVIDER))
+
+    def set_llm_provider(self, provider: str):
+        self.config["llm_provider"] = normalize_provider(provider)
+        self.save_config()
+
+    def _provider_value(self, key: str, provider: str) -> str:
+        values = self.config.get(key)
+        value = values.get(provider) if isinstance(values, dict) else None
+        return value.strip() if isinstance(value, str) else ""
+
+    def _set_provider_value(self, key: str, provider: str, value: str):
+        values = self.config.get(key)
+        values = dict(values) if isinstance(values, dict) else {}
+        value = (value or "").strip()
+        if value:
+            values[provider] = value
+        else:
+            values.pop(provider, None)
+        self.config[key] = values
+        self.save_config()
+
+    def get_llm_model(self, provider: Optional[str] = None) -> str:
+        provider = normalize_provider(provider or self.get_llm_provider())
+        return self._provider_value("llm_models", provider) or PROVIDERS[provider]["model"]
+
+    def set_llm_model(self, provider: str, model: str):
+        provider = normalize_provider(provider)
+        # Like the address: the preset default is not pinned, so a newer default reaches users who never changed it.
+        self._set_provider_value("llm_models", provider, "" if model.strip() == PROVIDERS[provider]["model"] else model)
+
+    def get_llm_base_url(self, provider: Optional[str] = None) -> str:
+        provider = normalize_provider(provider or self.get_llm_provider())
+        return self._provider_value("llm_base_urls", provider) or default_base_url(provider)
+
+    def set_llm_base_url(self, provider: str, url: str):
+        provider = normalize_provider(provider)
+        url = (url or "").strip().rstrip("/")
+        # The default address is not stored, so a later change of the default (or OLLAMA_HOST) still applies.
+        self._set_provider_value("llm_base_urls", provider, "" if url == default_base_url(provider) else url)
 
 
 SettingsManager = PersonaManager

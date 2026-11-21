@@ -592,9 +592,28 @@ class OrdisCompanionApp(QWidget):
         return btn_update
 
     def start_llm_in_background(self, download_binaries=False):
+        client = self.orchestrator.reload_llm_settings()
         if not self.orchestrator.persona_manager.get_llm_enabled():
+            engine = "로컬 LLM이" if client.is_local else f"AI 대화 엔진({client.label})이"
             self.chat_reply_signal.emit(
-                "세팔론 오디스", "ℹ️ 로컬 LLM이 비활성화 상태입니다. 모딩 진단과 수식 계산은 정상 이용하실 수 있습니다.", False, None)
+                "세팔론 오디스", f"ℹ️ {engine} 비활성화 상태입니다. 모딩 진단과 수식 계산은 정상 이용하실 수 있습니다.", False, None)
+            return
+
+        if not client.is_local:
+            # Ollama or a hosted API: nothing to load here, only the address/key/model to check (a free call).
+            def check():
+                ok, message = client.check_ready()
+                if ok:
+                    note = f"\n참고: {message}" if message else ""
+                    self.chat_reply_signal.emit(
+                        "세팔론 오디스", f"✅ 대화 엔진 준비가 끝났습니다, 오퍼레이터님! ({client.label}){note}", False, None)
+                else:
+                    self.chat_reply_signal.emit(
+                        "세팔론 오디스",
+                        f"⚠️ {client.label} 대화 엔진에 연결하지 못했습니다. 모딩 진단은 그대로 쓸 수 있지만 대화와 공략 답변은 제한됩니다.\n사유: {message}",
+                        False, None)
+
+            threading.Thread(target=check, daemon=True).start()
             return
 
         # Can download a 3GB model on first run, so it must never block the UI thread.
@@ -684,7 +703,7 @@ class OrdisCompanionApp(QWidget):
 
             # Settings Button (Persona & Local Model)
             self.settings_btn = settings_btn = HudButton('', icon_name='settings', icon_only=True)
-            settings_btn.setToolTip("설정 (오디스 성격 및 로컬 모델)")
+            settings_btn.setToolTip("설정 (오디스 성격 및 AI 엔진)")
             settings_btn.clicked.connect(self.open_settings_dialog)
             self.persona_btn = settings_btn
             h_layout.addWidget(settings_btn)
@@ -1688,6 +1707,7 @@ class OrdisCompanionApp(QWidget):
         old_gpu = pm.get_gpu_layers()
         old_motion = pm.get_motion_enabled()
         old_llm = pm.get_llm_enabled()
+        old_client = self.orchestrator.reload_llm_settings()
 
         dlg = OrdisPersonaDialog(pm, parent=self)
         self._attach_settings_update_button(dlg)
@@ -1722,9 +1742,16 @@ class OrdisCompanionApp(QWidget):
                 self.llm_runner.n_gpu_layers = new_gpu
 
             new_llm = pm.get_llm_enabled()
-            if old_llm and not new_llm:
+            client = self.orchestrator.reload_llm_settings()
+            if not client.is_local:
+                self._apply_remote_engine_change(old_client, client, old_llm, new_llm)
+            elif old_llm and not new_llm:
                 self.llm_runner.stop_server()
                 self.add_chat_bubble("세팔론 오디스", "🛑 로컬 LLM이 비활성화되었습니다. VRAM이 반환되었습니다.", is_user=False)
+            elif new_llm and not old_client.is_local:
+                # Back from Ollama/API: the bundled engine was stopped (or never fetched), so load it now.
+                self.add_chat_bubble("세팔론 오디스", "⚙️ 내장 로컬 엔진으로 전환합니다. 모델을 메모리에 적재합니다...", is_user=False)
+                self.start_llm_in_background(download_binaries=True)
             elif new_llm and (model_changed or not old_llm):
                 if model_changed:
                     model_name = os.path.basename(new_model)
@@ -1735,6 +1762,25 @@ class OrdisCompanionApp(QWidget):
                     )
                     self.llm_runner.stop_server()
                 self.start_llm_in_background(download_binaries=not old_llm)
+
+    def _apply_remote_engine_change(self, old_client, client, old_llm, new_llm):
+        """Settings saved with Ollama or a hosted API selected."""
+        freed = ""
+        if old_client.is_local:
+            # The bundled server holds gigabytes of (V)RAM that the new engine doesn't need.
+            self.llm_runner.stop_server()
+            freed = " 내장 로컬 엔진은 종료해 VRAM을 반환했습니다." if old_llm else ""
+        if not new_llm:
+            if old_llm:
+                self.add_chat_bubble("세팔론 오디스", f"🛑 AI 대화 엔진({client.label})이 비활성화되었습니다.{freed}", is_user=False)
+            return
+        same_engine = (old_client.provider, old_client.base_url, old_client.model, old_client.api_key) == \
+                      (client.provider, client.base_url, client.model, client.api_key)
+        if old_llm and same_engine:
+            return
+        self.add_chat_bubble("세팔론 오디스", f"⚙️ 대화 엔진을 {client.label}(으)로 전환합니다.{freed}", is_user=False)
+        # Re-checks address, key and model, and reports the result in chat.
+        self.start_llm_in_background()
 
     open_persona_dialog = open_settings_dialog
 
