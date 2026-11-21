@@ -2,8 +2,9 @@
 
 Checks the latest commit on the configured GitHub repository/branch and safely
 applies updates in either installation mode:
-- Git mode (`.git` present and `git` available): refuses dirty working trees,
-  then performs `git fetch` + `git merge --ff-only`.
+- Git mode (`.git` present and `git` available): performs `git fetch` + `git merge --ff-only`,
+  refusing only when uncommitted local changes touch files the update rewrites (other local
+  changes, such as game data refreshed by `/데이터 갱신`, are kept as they are).
 - Archive/Portable mode (no `.git` or `git` unavailable): downloads and validates
   the branch zip archive, preserves all user/runtime files, backs up overwritten
   files for automatic rollback on any error, writes files atomically, and persists
@@ -562,29 +563,59 @@ class AppUpdater:
             dirty.append(path_part or raw_line.strip())
         return True, dirty, None
 
+    def _dirty_files_in_update(self, dirty_files: List[str], target_ref: str) -> List[str]:
+        """The local changes that sit on files the update rewrites; git keeps every other one through a merge.
+
+        `/데이터 갱신` rewrites tracked game data (data/game_catalog.json, data/raw_wfcd/*), which used to
+        block every app update although a code-only update never touches those files.
+        """
+        try:
+            # --no-renames lists a renamed file under its old path too, so a local edit to it still counts.
+            res = self._run_git(["diff", "--name-only", "--no-renames", "HEAD", target_ref], timeout=self.timeout)
+        except (OSError, subprocess.SubprocessError):
+            res = None
+        if res is None or res.returncode != 0:
+            # What the update touches is unknown, so every local change counts, as it always did.
+            return list(dirty_files)
+        # Git quotes non-ASCII paths ("data/\354...") in diff output just as in status, so both drop the quotes.
+        incoming = {_normalize_rel_path(line.strip().strip('"')).lower()
+                    for line in (res.stdout or "").splitlines() if line.strip()}
+        blocking = []
+        for entry in dirty_files:
+            # A rename shows as "old -> new"; an untracked folder as "folder/".
+            for path in (p.strip().strip('"') for p in entry.split(" -> ")):
+                norm = _normalize_rel_path(path).lower()
+                if norm in incoming or (norm.endswith("/") and any(i.startswith(norm) for i in incoming)):
+                    blocking.append(entry)
+                    break
+        return blocking
+
+    def _refuse_local_changes(self, result: Dict[str, Any], blocking: List[str]) -> Dict[str, Any]:
+        preview = ", ".join(blocking[:5])
+        extra = f" 외 {len(blocking) - 5}개" if len(blocking) > 5 else ""
+        msg = (
+            "업데이트가 바꾸는 파일에 커밋되지 않은 로컬 변경 사항이 있어 자동 업데이트를 중단했습니다 "
+            f"({preview}{extra}). 변경 사항을 커밋하거나 보관(git stash)한 뒤 다시 시도해 주세요."
+        )
+        result["conflicting_files"] = blocking
+        result["error_kind"] = "dirty_worktree"
+        result["error"] = msg
+        result["message"] = msg
+        return result
+
     def _apply_git(self, check_info: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         before_sha = self.get_local_sha(mode="git")
         result = self._empty_apply_result("git", before_sha)
 
-        # 1. Refuse dirty working tree before touching anything.
+        # 1. Note local changes before touching anything. Whether they block is decided after the fetch,
+        #    once the files the update rewrites are known (step 4).
         ok, dirty_files, status_err = self._get_dirty_files()
         if not ok:
             result["error_kind"] = "git_error"
             result["error"] = status_err
             result["message"] = status_err or "git 상태 확인 실패"
             return result
-        if dirty_files:
-            preview = ", ".join(dirty_files[:5])
-            extra = f" 외 {len(dirty_files) - 5}개" if len(dirty_files) > 5 else ""
-            msg = (
-                "커밋되지 않은 로컬 변경 사항이 있어 자동 업데이트를 중단했습니다 "
-                f"({preview}{extra}). 변경 사항을 커밋하거나 보관한 뒤 다시 시도해 주세요."
-            )
-            result["dirty_files"] = dirty_files
-            result["error_kind"] = "dirty_worktree"
-            result["error"] = msg
-            result["message"] = msg
-            return result
+        result["dirty_files"] = dirty_files
 
         # 2. Verify active branch matches target branch (avoid unexpected merges on feature branches).
         try:
@@ -629,8 +660,15 @@ class AppUpdater:
             result["message"] = msg
             return result
 
-        # 4. Fast-forward merge only (never rewrites or discards local commits).
         target_ref = f"origin/{self.branch}"
+
+        # 4. Local changes stop the update only where it would overwrite them (fetch changes no working file).
+        if dirty_files:
+            blocking = self._dirty_files_in_update(dirty_files, target_ref)
+            if blocking:
+                return self._refuse_local_changes(result, blocking)
+
+        # 5. Fast-forward merge only (never rewrites or discards local commits or uncommitted changes).
         try:
             merge_res = self._run_git(["merge", "--ff-only", target_ref], timeout=self.timeout)
         except subprocess.TimeoutExpired:
@@ -649,6 +687,10 @@ class AppUpdater:
         if merge_res.returncode != 0:
             err = (merge_res.stderr or merge_res.stdout or "").strip()
             lower_err = err.lower()
+            if "would be overwritten" in lower_err:
+                # Git's own safety net, should a local change slip past step 4; nothing was changed.
+                listed = [line.strip() for line in err.splitlines() if line.startswith(("\t", "    "))]
+                return self._refuse_local_changes(result, listed or dirty_files)
             is_non_ff = (
                 "not possible to fast-forward" in lower_err
                 or "fast-forward" in lower_err
@@ -683,6 +725,7 @@ class AppUpdater:
                 updated_files = []
 
         req_changed = any(p.lower() == "requirements.txt" for p in updated_files)
+        kept_note = f" 로컬 변경 {len(dirty_files)}개는 그대로 유지했습니다." if updated and dirty_files else ""
         result.update(
             {
                 "ok": True,
@@ -693,7 +736,7 @@ class AppUpdater:
                 "restart_recommended": updated,
                 "message": (
                     f"Git Fast-Forward 업데이트 완료 ({_short_sha(before_sha)} → {_short_sha(new_sha)}, "
-                    f"변경 파일 {len(updated_files)}개)."
+                    f"변경 파일 {len(updated_files)}개).{kept_note}"
                     if updated
                     else "이미 최신 버전입니다."
                 ),
