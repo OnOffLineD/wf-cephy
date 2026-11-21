@@ -6,7 +6,7 @@ from collections import defaultdict
 from typing import Any, Dict, List, Optional, Tuple
 
 from scripts.game_catalog import GameCatalog
-from scripts.path_config import get_path
+from scripts.path_config import game_data_file, get_path
 
 DROP_QUESTION = re.compile(r'어디|파밍|드랍|드롭|나와|나오|얻|구해|구하|떨어|떨궈|먹어|벌어')
 BEST_QUESTION = re.compile(r'좋|제일|최고|효율|추천|빨리')
@@ -72,7 +72,8 @@ class DropIndex:
 
     def _read(self, name: str) -> Any:
         try:
-            with open(os.path.join(self.data_dir, name), 'r', encoding='utf-8') as f:
+            # The /데이터 갱신 copy when there is one, else the bundled file.
+            with open(game_data_file(os.path.join(self.data_dir, name)), 'r', encoding='utf-8') as f:
                 return json.load(f)
         except (OSError, ValueError):
             return None

@@ -312,29 +312,29 @@ def test_git_apply_refuses_local_changes_to_files_the_update_rewrites(tmp_path):
     assert not any(c[0] in ("merge", "pull", "checkout", "reset", "stash") for c in git_calls)
 
 
-def test_git_apply_keeps_refreshed_game_data_and_updates_code(tmp_path):
-    """/데이터 갱신 rewrites tracked data files; a code-only update must still go through."""
+def test_git_apply_keeps_unrelated_local_changes_and_updates_code(tmp_path):
+    """A local edit the update doesn't touch must not stop a code update (git keeps it through the merge)."""
     (tmp_path / ".git").mkdir()
     merged = []
-    fake_git, _ = _dirty_git(" M data/game_catalog.json\n M data/raw_wfcd/Melee.json\n",
+    fake_git, _ = _dirty_git(" M data/guide_aliases.json\n M rules/01_damage_formulas.md\n",
                              incoming=["scripts/llm_providers.py", "scripts/persona_dialog.py"], merged=merged)
 
     res = AppUpdater(root_dir=str(tmp_path), git_runner=fake_git).apply()
 
     assert res["ok"] is True and res["updated"] is True
     assert merged == [["merge", "--ff-only", "origin/main"]]
-    assert res["dirty_files"] == ["data/game_catalog.json", "data/raw_wfcd/Melee.json"]
+    assert res["dirty_files"] == ["data/guide_aliases.json", "rules/01_damage_formulas.md"]
     assert "로컬 변경 2개는 그대로 유지" in res["message"]
 
 
 def test_git_apply_with_unknown_incoming_files_stays_conservative(tmp_path):
     (tmp_path / ".git").mkdir()
-    fake_git, git_calls = _dirty_git(" M data/game_catalog.json\n", diff_fails=True)
+    fake_git, git_calls = _dirty_git(" M data/guide_aliases.json\n", diff_fails=True)
 
     res = AppUpdater(root_dir=str(tmp_path), git_runner=fake_git).apply()
 
     assert res["error_kind"] == "dirty_worktree"
-    assert res["conflicting_files"] == ["data/game_catalog.json"]
+    assert res["conflicting_files"] == ["data/guide_aliases.json"]
     assert ["merge", "--ff-only", "origin/main"] not in git_calls
 
 
