@@ -23,7 +23,7 @@ if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
 from scripts.game_catalog import build_catalog
-from scripts.path_config import get_path, get_user_data_path, write_json_atomic
+from scripts.path_config import get_path, get_user_data_path, live_game_data_dir, write_json_atomic
 
 OFFICIAL_INDEX = 'https://origin.warframe.com/PublicExport/index_{lang}.txt.lzma'
 OFFICIAL_MANIFEST = 'https://content.warframe.com/PublicExport/Manifest/{name}'
@@ -86,10 +86,19 @@ def _load_list(path: str) -> list:
 
 class GameDataUpdater:
     def __init__(self, data_dir: Optional[str] = None, fetch: Callable[[str], bytes] = _http_get, state_path: Optional[str] = None):
-        self.data_dir = data_dir or get_path('data')
+        # By default the refresh goes to the git-ignored live folder, never over the bundled baseline in data/.
+        self._live = data_dir is None
+        self.data_dir = data_dir or live_game_data_dir()
         self.raw_dir = os.path.join(self.data_dir, 'raw_wfcd')
         self.fetch = fetch
         self.state_path = state_path or get_user_data_path('game_data_state.json')
+
+    def _current(self, *parts: str) -> str:
+        """The data in use now: the last refresh, or before the first one the bundled baseline."""
+        path = os.path.join(self.data_dir, *parts)
+        if self._live and not os.path.exists(path):
+            return get_path('data', *parts)
+        return path
 
     def _state(self) -> Dict[str, Any]:
         try:
@@ -140,7 +149,7 @@ class GameDataUpdater:
 
     def _fetch_engine_file(self, name: str) -> list:
         items = json.loads(self.fetch(WFCD_FILE.format(name=name)))
-        current = _load_list(os.path.join(self.raw_dir, name))
+        current = _load_list(self._current('raw_wfcd', name))
         if not isinstance(items, list) or not items or len(items) < len(current) * MIN_KEPT_RATIO or not all(i.get('name') for i in items):
             raise DataValidationError(f"{name}: 비정상 데이터 (현재 {len(current)}개, 받은 데이터 {len(items) if isinstance(items, list) else '목록 아님'})")
         return items
@@ -150,7 +159,7 @@ class GameDataUpdater:
         if not isinstance(drops, dict) or not drops.get('missionRewards') or not drops.get('relics'):
             raise DataValidationError("드롭 표: 필수 항목 없음")
         try:
-            with open(os.path.join(self.raw_dir, 'drops_all.json'), 'r', encoding='utf-8') as f:
+            with open(self._current('raw_wfcd', 'drops_all.json'), 'r', encoding='utf-8') as f:
                 current = len(json.load(f).get('relics', []))
         except (OSError, ValueError):
             current = 0
@@ -161,7 +170,7 @@ class GameDataUpdater:
     def _build_ko(self, exports: Dict[str, Any]) -> Dict[str, Any]:
         """Keeps older entries the export dropped, such as past weekly challenges, and refreshes the rest."""
         try:
-            with open(os.path.join(self.raw_dir, 'ko.json'), 'r', encoding='utf-8') as f:
+            with open(self._current('raw_wfcd', 'ko.json'), 'r', encoding='utf-8') as f:
                 merged = json.load(f)
         except (OSError, ValueError):
             merged = {}
@@ -233,7 +242,7 @@ class GameDataUpdater:
         catalog = build_catalog(exports_ko, exports_en)
         versions = {'official': index_ko, 'drops': json.loads(self.fetch(DROP_TABLE_INFO)).get('hash', '')}
 
-        changes = {name: self._changes(_load_list(os.path.join(self.raw_dir, name)), items) for name, items in engine.items()}
+        changes = {name: self._changes(_load_list(self._current('raw_wfcd', name)), items) for name, items in engine.items()}
         files = {os.path.join(self.raw_dir, name): items for name, items in engine.items()}
         files[os.path.join(self.raw_dir, 'drops_all.json')] = drops
         files[os.path.join(self.raw_dir, 'ko.json')] = self._build_ko(exports_ko)

@@ -7,7 +7,7 @@ from collections import Counter, defaultdict
 from typing import Any, Dict, List, Tuple
 
 from scripts.game_catalog import KIND_LABELS, GameCatalog
-from scripts.path_config import get_path
+from scripts.path_config import game_data_file, get_path
 from scripts.wf_data_indexer import WFDataIndexer
 
 BM25_K1 = 1.2
@@ -124,7 +124,7 @@ class GuideRetriever:
 
     def _sortie_chunk(self) -> List[Dict[str, Any]]:
         try:
-            with open(os.path.join(self.data_dir, 'drops_all.json'), 'r', encoding='utf-8') as f:
+            with open(game_data_file(os.path.join(self.data_dir, 'drops_all.json')), 'r', encoding='utf-8') as f:
                 sortie = json.load(f).get('sortieRewards', [])
         except (OSError, ValueError):
             return []

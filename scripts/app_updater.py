@@ -4,7 +4,8 @@ Checks the latest commit on the configured GitHub repository/branch and safely
 applies updates in either installation mode:
 - Git mode (`.git` present and `git` available): performs `git fetch` + `git merge --ff-only`,
   refusing only when uncommitted local changes touch files the update rewrites (other local
-  changes, such as game data refreshed by `/데이터 갱신`, are kept as they are).
+  changes are kept as they are). Game data an older version refreshed in place is first moved
+  to data/game_data_live/, where `/데이터 갱신` writes now.
 - Archive/Portable mode (no `.git` or `git` unavailable): downloads and validates
   the branch zip archive, preserves all user/runtime files, backs up overwritten
   files for automatic rollback on any error, writes files atomically, and persists
@@ -34,7 +35,14 @@ ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
-from scripts.path_config import get_path, get_user_data_path, write_json_atomic
+from scripts.path_config import (
+    GAME_DATA_LIVE_DIRNAME,
+    REFRESHED_GAME_DATA_FILES,
+    get_path,
+    get_user_data_path,
+    live_game_data_dir,
+    write_json_atomic,
+)
 
 DEFAULT_OWNER = "OnOffLineD"
 DEFAULT_REPO = "wf-cephy"
@@ -61,6 +69,7 @@ PROTECTED_DIR_PREFIXES = (
     "data/chroma_db",
     "data/wiki_cache",
     "data/raw_wfcd",
+    "data/game_data_live",
     "data/logs",
     "python_embed",
     "models",
@@ -590,6 +599,37 @@ class AppUpdater:
                     break
         return blocking
 
+    def _live_game_data_dir(self) -> str:
+        # Another checkout (tests) keeps its own folder; the running app follows WF_USER_DATA_DIR.
+        if self._explicit_root:
+            return os.path.join(self.root_dir, "data", GAME_DATA_LIVE_DIRNAME)
+        return live_game_data_dir()
+
+    def _move_refreshed_game_data(self, dirty_files: List[str]) -> List[str]:
+        """Moves game data an older version refreshed in place out of the tracked baseline files.
+
+        Before data/game_data_live/ existed, `/데이터 갱신` overwrote data/game_catalog.json and data/raw_wfcd/*.
+        Those copies go to the live folder (unless a newer refresh is already there) and git restores the
+        baseline, so nothing is lost and the files stop showing up as local changes. Returns what it restored.
+        """
+        # The list is relative to data/; git reports paths from the repository root.
+        stale = [f for f in dirty_files if _normalize_rel_path(f.strip('"')) in {f"data/{p}" for p in REFRESHED_GAME_DATA_FILES}]
+        if not stale:
+            return []
+        live_dir = self._live_game_data_dir()
+        try:
+            for rel in stale:
+                src = os.path.join(self.root_dir, *rel.split("/"))
+                dst = os.path.join(live_dir, *rel.split("/")[1:])
+                if os.path.isfile(src) and not os.path.exists(dst):
+                    os.makedirs(os.path.dirname(dst), exist_ok=True)
+                    shutil.copy2(src, dst)
+            res = self._run_git(["checkout", "--", *stale], timeout=self.timeout)
+        except (OSError, subprocess.SubprocessError):
+            # Copied files are harmless extras; the tracked files stay as they were and step 5 decides.
+            return []
+        return stale if res.returncode == 0 else []
+
     def _refuse_local_changes(self, result: Dict[str, Any], blocking: List[str]) -> Dict[str, Any]:
         preview = ", ".join(blocking[:5])
         extra = f" 외 {len(blocking) - 5}개" if len(blocking) > 5 else ""
@@ -662,13 +702,19 @@ class AppUpdater:
 
         target_ref = f"origin/{self.branch}"
 
-        # 4. Local changes stop the update only where it would overwrite them (fetch changes no working file).
+        # 4. Game data refreshed in place by an older version moves to the live folder first; it is no local edit.
+        moved_data = self._move_refreshed_game_data(dirty_files)
+        if moved_data:
+            dirty_files = [f for f in dirty_files if f not in moved_data]
+            result["moved_game_data"] = moved_data
+
+        # 5. Local changes stop the update only where it would overwrite them (fetch changes no working file).
         if dirty_files:
             blocking = self._dirty_files_in_update(dirty_files, target_ref)
             if blocking:
                 return self._refuse_local_changes(result, blocking)
 
-        # 5. Fast-forward merge only (never rewrites or discards local commits or uncommitted changes).
+        # 6. Fast-forward merge only (never rewrites or discards local commits or uncommitted changes).
         try:
             merge_res = self._run_git(["merge", "--ff-only", target_ref], timeout=self.timeout)
         except subprocess.TimeoutExpired:
@@ -688,7 +734,7 @@ class AppUpdater:
             err = (merge_res.stderr or merge_res.stdout or "").strip()
             lower_err = err.lower()
             if "would be overwritten" in lower_err:
-                # Git's own safety net, should a local change slip past step 4; nothing was changed.
+                # Git's own safety net, should a local change slip past step 5; nothing was changed.
                 listed = [line.strip() for line in err.splitlines() if line.startswith(("\t", "    "))]
                 return self._refuse_local_changes(result, listed or dirty_files)
             is_non_ff = (
@@ -726,6 +772,8 @@ class AppUpdater:
 
         req_changed = any(p.lower() == "requirements.txt" for p in updated_files)
         kept_note = f" 로컬 변경 {len(dirty_files)}개는 그대로 유지했습니다." if updated and dirty_files else ""
+        if moved_data:
+            kept_note += f" 이전에 갱신한 게임 데이터 {len(moved_data)}개는 갱신 데이터 폴더로 옮겼습니다."
         result.update(
             {
                 "ok": True,

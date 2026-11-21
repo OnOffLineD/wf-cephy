@@ -40,6 +40,8 @@ data/user_builds.json*
 data/user_checklist.json.meta.json
 # AI engine API keys (DPAPI-encrypted, still never committed)
 data/api_keys.json
+# Game data downloaded by /데이터 갱신 (data/game_catalog.json and data/raw_wfcd/ stay as the bundled baseline)
+data/game_data_live/
 *.meta.json
 *.tmp
 

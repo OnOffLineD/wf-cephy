@@ -2,7 +2,7 @@ import os
 import json
 from typing import Dict, Any, Optional, List, Tuple
 import re
-from scripts.path_config import get_path
+from scripts.path_config import game_data_file, get_path
 from scripts.innate_traits import get_incarnon_data
 
 WEAPON_TYPE_OVERRIDES: Dict[str, str] = {
@@ -144,7 +144,8 @@ class WFDataIndexer:
         self.weapons_index[name.replace('-', ' ')] = metadata
 
     def load_data(self):
-            ko_path = os.path.join(self.data_dir, 'ko.json')
+            # game_data_file: the /데이터 갱신 copy when there is one, else the bundled file.
+            ko_path = game_data_file(os.path.join(self.data_dir, 'ko.json'))
             self.ko_dict = {}
             if os.path.exists(ko_path):
                 try:
@@ -159,7 +160,7 @@ class WFDataIndexer:
             catalog_candidates = [os.path.join(os.path.dirname(self.data_dir), 'game_catalog.json')]
             if os.path.normcase(os.path.abspath(self.data_dir)) == os.path.normcase(os.path.abspath(default_raw_dir)):
                 catalog_candidates.append(get_path('data', 'game_catalog.json'))
-            for cat_path in catalog_candidates:
+            for cat_path in map(game_data_file, catalog_candidates):
                 if os.path.exists(cat_path):
                     try:
                         with open(cat_path, 'r', encoding='utf-8') as f:
@@ -176,7 +177,7 @@ class WFDataIndexer:
 
             files = ['Primary.json', 'Secondary.json', 'Melee.json', 'Arch-Gun.json', 'Arch-Melee.json', 'Warframes.json', 'Mods.json']
             for file in files:
-                file_path = os.path.join(self.data_dir, file)
+                file_path = game_data_file(os.path.join(self.data_dir, file))
                 if os.path.exists(file_path):
                     with open(file_path, 'r', encoding='utf-8') as f:
                         data = json.load(f)

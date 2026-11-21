@@ -4,7 +4,7 @@ import os
 import re
 from typing import Any, Dict, List, Optional
 
-from scripts.path_config import get_path
+from scripts.path_config import game_data_file, get_path
 
 CATALOG_PATH = 'data/game_catalog.json'
 # Order of the damagePerShot array in the official export, checked against Hek and Torid.
@@ -108,7 +108,8 @@ def build_catalog(ko: Dict[str, Any], en: Dict[str, Any]) -> List[Dict[str, Any]
 
 class GameCatalog:
     def __init__(self, path: str = CATALOG_PATH):
-        self.path = get_path(path) if not os.path.isabs(path) else path
+        # The /데이터 갱신 copy when there is one, else the bundled catalog.
+        self.path = game_data_file(get_path(path) if not os.path.isabs(path) else path)
         self.by_name: Dict[str, Dict[str, Any]] = {}
         self.entries: List[Dict[str, Any]] = []
         self._load()
