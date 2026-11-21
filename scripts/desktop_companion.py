@@ -51,6 +51,22 @@ from scripts.hud_widgets import HudButton, HUD_CYAN, HUD_TEXT, load_icon_pixmap,
 from scripts.persona_dialog import OrdisPersonaDialog, EdgeMorpher, draw_capsule
 from scripts.layered_pet_renderer import LayeredPetRenderer
 from scripts.game_input_listener import GameInputListener
+from scripts import window_positions
+
+
+def restorable_position(key, size):
+    """Saved top-left for `key` if that window would still land on a connected screen.
+
+    None after a monitor was unplugged or the resolution shrank, so the caller falls back to its default spot.
+    """
+    saved = window_positions.load_position(key)
+    if saved is None:
+        return None
+    x, y = saved
+    center = QPoint(x + size.width() // 2, y + size.height() // 2)
+    if any(screen.geometry().contains(center) for screen in QApplication.screens()):
+        return QPoint(x, y)
+    return None
 
 
 def handle_uncaught_exception(exc_type, exc, tb, panel=None, log_path=None):
@@ -151,11 +167,14 @@ class DesktopPet(QWidget):
     clicked = pyqtSignal()
     open_persona_requested = pyqtSignal()
     open_settings_requested = open_persona_requested
+    # "위치 초기화" from the menu: the chat popup goes back above the pet too.
+    position_reset = pyqtSignal()
 
     def __init__(self, asset_dir=None):
         super().__init__()
         self.asset_dir = asset_dir or get_path("assets", "character")
         self.drag_pos = QPoint()
+        self._dragged = False
         self.init_ui()
 
     def init_ui(self):
@@ -185,13 +204,22 @@ class DesktopPet(QWidget):
         if motion_enabled:
             self.input_listener.start()
 
-        # Initial bottom-right placement
-        self.move_to_home()
+        # Where the user last left it, else the bottom-right corner
+        saved = restorable_position(window_positions.PET, self.avatar.size())
+        if saved is not None:
+            self.move(saved)
+        else:
+            self.move_to_home()
 
     def move_to_home(self):
         # Keep the old on-screen anchor (right edge -40, bottom -80) for the larger 160x180 canvas
         screen = QApplication.primaryScreen().geometry()
         self.move(screen.width() - 40 - self.avatar.width(), screen.height() - 80 - self.avatar.height())
+
+    def reset_position(self):
+        self.move_to_home()
+        window_positions.forget_positions(window_positions.PET)
+        self.position_reset.emit()
 
     def set_motion_enabled(self, enabled: bool):
         self.input_listener.set_enabled(enabled)
@@ -213,12 +241,21 @@ class DesktopPet(QWidget):
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
             self.drag_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+            self._dragged = False
         elif event.button() == Qt.MouseButton.RightButton:
             self.show_menu(event.globalPosition().toPoint())
 
     def mouseMoveEvent(self, event):
         if event.buttons() == Qt.MouseButton.LeftButton:
             self.move(event.globalPosition().toPoint() - self.drag_pos)
+            self._dragged = True
+
+    def mouseReleaseEvent(self, event):
+        # Saved once per drag, on drop, not on every mouse move.
+        if event.button() == Qt.MouseButton.LeftButton and self._dragged:
+            self._dragged = False
+            window_positions.save_position(window_positions.PET, self.x(), self.y())
+        super().mouseReleaseEvent(event)
 
     def mouseDoubleClickEvent(self, event):
         self.clicked.emit()
@@ -236,9 +273,7 @@ class DesktopPet(QWidget):
         elif act == persona_act:
             self.open_persona_requested.emit()
         elif act == reset_act:
-            self.move_to_home()
-            if hasattr(self, 'parent_app') and self.parent_app:
-                self.parent_app._user_moved = False
+            self.reset_position()
         elif act == exit_act:
             QApplication.quit()
 
@@ -486,6 +521,7 @@ class OrdisCompanionApp(QWidget):
         )
         self.orchestrator.runner = self.llm_runner
         self._drag_pos = QPoint()
+        self._drag_moved = False
         self._user_moved = False
         self.diagnoser = ScreenModAnalyzer()
         self.tracker = WorldStateTracker(name_translator=self._translate_game_name)
@@ -493,6 +529,7 @@ class OrdisCompanionApp(QWidget):
         self.orchestrator.todo_tracker = self.tracker
         self.auto_todo_enabled = True
         self.init_ui()
+        self._restore_saved_position()
         self.chat_reply_signal.connect(self.add_chat_bubble)
         self.checklist_changed_signal.connect(self.refresh_checklist_ui)
         self.world_events_signal.connect(self.lbl_events.setText)
@@ -651,13 +688,31 @@ class OrdisCompanionApp(QWidget):
         if event.buttons() == Qt.MouseButton.LeftButton and hasattr(self, '_drag_pos') and not self._drag_pos.isNull():
             self.move(event.globalPosition().toPoint() - self._drag_pos)
             self._user_moved = True
+            self._drag_moved = True
             event.accept()
         else:
             super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):
+        if self._drag_moved:
+            window_positions.save_position(window_positions.PANEL, self.x(), self.y())
         self._drag_pos = QPoint()
+        self._drag_moved = False
         super().mouseReleaseEvent(event)
+
+    def _restore_saved_position(self):
+        saved = restorable_position(window_positions.PANEL, self.size())
+        if saved is not None:
+            self.move(saved)
+            # A remembered spot wins over "open above the pet".
+            self._user_moved = True
+
+    def reset_position(self, pet_rect=None):
+        """Pet menu "위치 초기화": open above the pet again and forget the saved popup spot."""
+        self._user_moved = False
+        window_positions.forget_positions(window_positions.PANEL)
+        if pet_rect is not None and self.isVisible():
+            self.reposition_above_pet(pet_rect)
 
     def init_ui(self):
             self.setWindowTitle("WF-Companion: Cephalon Ordis Messenger")
