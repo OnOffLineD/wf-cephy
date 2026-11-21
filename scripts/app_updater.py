@@ -72,6 +72,7 @@ PROTECTED_FILE_PATTERNS = (
     "data/user_*.json",
     "data/user_*.json.*",
     "data/persona_config.json",
+    "data/api_keys.json",
     "data/wf_database.sqlite",
     "data/wf_database.sqlite-*",
     "data/app_update_state.json",

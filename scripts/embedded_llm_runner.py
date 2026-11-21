@@ -376,11 +376,25 @@ class EmbeddedLLMRunner:
         return self.start_server(wait_ready=True)
 
 
+def configured_remote_engine() -> Optional[str]:
+    """The Ollama/API engine chosen in settings, or None when the bundled llama.cpp engine is in use."""
+    from scripts.persona_manager import PersonaManager
+    pm = PersonaManager()
+    provider = pm.get_llm_provider()
+    return None if provider == 'local' else f"{provider} ({pm.get_llm_model(provider)})"
+
+
 def main():
     runner = EmbeddedLLMRunner()
     # --download stays model-only for backward compatibility; pass both flags to fetch everything.
     want_bin = '--download-bin' in sys.argv
     want_model = '--download' in sys.argv or '--download-model' in sys.argv
+    if (want_bin or want_model) and '--skip-if-remote' in sys.argv:
+        # start_companion.bat: with Ollama or an API selected, the 3GB local model is not needed.
+        remote = configured_remote_engine()
+        if remote:
+            print(f"[OK] External AI engine selected: {remote}. Skipping local model download.")
+            sys.exit(0)
     if want_bin or want_model:
         ok = True
         if want_bin:

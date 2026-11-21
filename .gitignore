@@ -38,6 +38,8 @@ data/game_data_state.json
 data/*.corrupt-*
 data/user_builds.json*
 data/user_checklist.json.meta.json
+# AI engine API keys (DPAPI-encrypted, still never committed)
+data/api_keys.json
 *.meta.json
 *.tmp
 

@@ -300,7 +300,7 @@ def test_settings_tabs_use_hud_icons_and_banner_logo_centered(qapp):
         tabs = dlg.tab_widget
         assert tabs.count() == 2
         assert tabs.tabText(0) == "성격 및 페르소나"
-        assert tabs.tabText(1) == "로컬 모델 & 엔진"
+        assert tabs.tabText(1) == "AI 엔진 & 모델"
         for i in range(tabs.count()):
             assert not tabs.tabIcon(i).isNull()
             assert "🎭" not in tabs.tabText(i)

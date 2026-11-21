@@ -55,11 +55,12 @@ echo [OK] Standalone GUI runtime verified (%PY_EXE%).
 echo.
 rem Default Y: a bare Enter keeps this value, as set /p leaves the variable untouched on empty input.
 set "USE_LLM=Y"
-set /p USE_LLM="로컬 LLM(Cephalon Ordis AI 대화 엔진)을 사용하시겠습니까? (Y/N) [기본값: Y]: "
+set /p USE_LLM="AI 대화 엔진(로컬 LLM 또는 설정의 Ollama/API)을 사용하시겠습니까? (Y/N) [기본값: Y]: "
 set "LLM_FLAG=--enable-llm"
 if /i "%USE_LLM%"=="N" goto skip_llm_download
-rem The runner skips whatever is already present (llama-server.exe, model over 1GB).
-%PY_EXE% scripts\embedded_llm_runner.py --download-bin --download-model
+rem The runner skips whatever is already present (llama-server.exe, model over 1GB),
+rem and everything when settings pick Ollama or an API instead of the bundled engine.
+%PY_EXE% scripts\embedded_llm_runner.py --download-bin --download-model --skip-if-remote
 if errorlevel 1 (
     echo [ERROR] llama.cpp or model download failed. Check your internet connection and try again.
     pause
