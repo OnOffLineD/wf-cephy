@@ -262,27 +262,115 @@ def test_git_apply_clean_fast_forward_and_requirements_changed(tmp_path):
     assert "requirements.txt" in summary and "재시작" in summary
 
 
-def test_git_apply_refuses_dirty_working_tree(tmp_path):
-    (tmp_path / ".git").mkdir()
-    git_calls = []
+INCOMING_DIFF = ["diff", "--name-only", "--no-renames", "HEAD", "origin/main"]
+
+
+def _dirty_git(status_out, incoming=None, merged=None, diff_fails=False):
+    """Fake git for a dirty tree: `incoming` is what the update rewrites, `merged` collects merge calls."""
+    calls = []
+    head = {"sha": SHA_OLD}
 
     def fake_git(args, cwd, timeout):
-        git_calls.append(args)
+        calls.append(args)
         if args == ["rev-parse", "HEAD"]:
-            return _cp(0, stdout=SHA_OLD + "\n")
+            return _cp(0, stdout=head["sha"] + "\n")
         if args == ["status", "--porcelain"]:
-            return _cp(0, stdout=" M scripts/desktop_companion.py\n?? temp_notes.txt\n")
-        raise AssertionError(f"Must not run {args} on dirty tree!")
+            return _cp(0, stdout=status_out)
+        if args == ["rev-parse", "--abbrev-ref", "HEAD"]:
+            return _cp(0, stdout="main\n")
+        if args == ["fetch", "origin", "main"]:
+            return _cp(0)
+        if args == INCOMING_DIFF:
+            return _cp(128, stderr="fatal: bad revision") if diff_fails else _cp(0, stdout="\n".join(incoming or []) + "\n")
+        if args == ["merge", "--ff-only", "origin/main"] and merged is not None:
+            merged.append(args)
+            head["sha"] = SHA_NEW
+            return _cp(0, stdout="Fast-forward\n")
+        if args == ["diff", "--name-only", SHA_OLD, SHA_NEW]:
+            return _cp(0, stdout="\n".join(incoming or []) + "\n")
+        raise AssertionError(f"Must not run {args} here!")
 
-    updater = AppUpdater(root_dir=str(tmp_path), git_runner=fake_git)
-    res = updater.apply()
+    return fake_git, calls
+
+
+def test_git_apply_refuses_local_changes_to_files_the_update_rewrites(tmp_path):
+    (tmp_path / ".git").mkdir()
+    fake_git, git_calls = _dirty_git(" M scripts/desktop_companion.py\n?? temp_notes.txt\n",
+                                     incoming=["scripts/desktop_companion.py", "README.md"])
+
+    res = AppUpdater(root_dir=str(tmp_path), git_runner=fake_git).apply()
 
     assert res["ok"] is False
     assert res["updated"] is False
     assert res["error_kind"] == "dirty_worktree"
     assert "scripts/desktop_companion.py" in res["dirty_files"]
     assert "temp_notes.txt" in res["dirty_files"]
-    assert not any(c[0] in ("fetch", "merge", "pull", "checkout", "reset") for c in git_calls)
+    # Only the overlapping file is named as the reason.
+    assert res["conflicting_files"] == ["scripts/desktop_companion.py"]
+    assert "scripts/desktop_companion.py" in res["error"] and "temp_notes.txt" not in res["error"]
+    # Fetch only updates origin/main; nothing that changes the working tree ran.
+    assert not any(c[0] in ("merge", "pull", "checkout", "reset", "stash") for c in git_calls)
+
+
+def test_git_apply_keeps_refreshed_game_data_and_updates_code(tmp_path):
+    """/데이터 갱신 rewrites tracked data files; a code-only update must still go through."""
+    (tmp_path / ".git").mkdir()
+    merged = []
+    fake_git, _ = _dirty_git(" M data/game_catalog.json\n M data/raw_wfcd/Melee.json\n",
+                             incoming=["scripts/llm_providers.py", "scripts/persona_dialog.py"], merged=merged)
+
+    res = AppUpdater(root_dir=str(tmp_path), git_runner=fake_git).apply()
+
+    assert res["ok"] is True and res["updated"] is True
+    assert merged == [["merge", "--ff-only", "origin/main"]]
+    assert res["dirty_files"] == ["data/game_catalog.json", "data/raw_wfcd/Melee.json"]
+    assert "로컬 변경 2개는 그대로 유지" in res["message"]
+
+
+def test_git_apply_with_unknown_incoming_files_stays_conservative(tmp_path):
+    (tmp_path / ".git").mkdir()
+    fake_git, git_calls = _dirty_git(" M data/game_catalog.json\n", diff_fails=True)
+
+    res = AppUpdater(root_dir=str(tmp_path), git_runner=fake_git).apply()
+
+    assert res["error_kind"] == "dirty_worktree"
+    assert res["conflicting_files"] == ["data/game_catalog.json"]
+    assert ["merge", "--ff-only", "origin/main"] not in git_calls
+
+
+@pytest.mark.parametrize("status_out, incoming", [
+    ("R  old_name.py -> new_name.py\n", ["old_name.py"]),  # local rename of a file the update edits
+    ("?? assets/new_icons/\n", ["assets/new_icons/send.png"]),  # untracked folder the update adds files into
+    (' M "data/\\354\\235\\264\\353\\246\\204.json"\n', ['"data/\\354\\235\\264\\353\\246\\204.json"']),
+])
+def test_git_apply_overlap_covers_renames_folders_and_quoted_paths(tmp_path, status_out, incoming):
+    (tmp_path / ".git").mkdir()
+    fake_git, _ = _dirty_git(status_out, incoming=incoming)
+    res = AppUpdater(root_dir=str(tmp_path), git_runner=fake_git).apply()
+    assert res["error_kind"] == "dirty_worktree" and res["conflicting_files"]
+
+
+def test_git_merge_refusing_to_overwrite_is_reported_as_local_changes(tmp_path):
+    (tmp_path / ".git").mkdir()
+
+    def fake_git(args, cwd, timeout):
+        if args == ["rev-parse", "HEAD"]:
+            return _cp(0, stdout=SHA_OLD + "\n")
+        if args == ["status", "--porcelain"]:
+            return _cp(0, stdout="")
+        if args == ["rev-parse", "--abbrev-ref", "HEAD"]:
+            return _cp(0, stdout="main\n")
+        if args == ["fetch", "origin", "main"]:
+            return _cp(0)
+        if args == ["merge", "--ff-only", "origin/main"]:
+            return _cp(1, stderr="error: Your local changes to the following files would be overwritten by merge:\n"
+                                 "\tapp.py\nPlease commit your changes or stash them before you merge.\nAborting\n")
+        raise AssertionError(f"Unexpected args: {args}")
+
+    res = AppUpdater(root_dir=str(tmp_path), git_runner=fake_git).apply()
+    assert res["ok"] is False
+    assert res["error_kind"] == "dirty_worktree"
+    assert res["conflicting_files"] == ["app.py"]
 
 
 def test_git_apply_ignores_own_untracked_state_file(tmp_path):
@@ -372,6 +460,7 @@ def test_git_apply_end_to_end_in_isolated_temp_repo(tmp_path):
     run(["checkout", "-b", "main"], seed)
     (seed / "app.py").write_text("VERSION = 1\n", encoding="utf-8")
     (seed / "requirements.txt").write_text("requests>=2.31.0\n", encoding="utf-8")
+    (seed / "game_catalog.json").write_text('{"v": 1}\n', encoding="utf-8")
     run(["add", "."], seed)
     run(["commit", "-m", "initial"], seed)
     run(["push", "-u", "origin", "main"], seed)
@@ -397,8 +486,9 @@ def test_git_apply_end_to_end_in_isolated_temp_repo(tmp_path):
     assert dirty_res["error_kind"] == "dirty_worktree"
     assert (client / "app.py").read_text(encoding="utf-8") == "LOCAL_DIRTY\n"
 
-    # 2. Clean working tree -> fast-forwards cleanly.
+    # 2. Only a file the update doesn't touch is changed (like /데이터 갱신 output) -> fast-forwards and keeps it.
     (client / "app.py").write_text("VERSION = 1\n", encoding="utf-8")
+    (client / "game_catalog.json").write_text('{"v": "refreshed"}\n', encoding="utf-8")
     ok_res = updater.apply()
     assert ok_res["ok"] is True
     assert ok_res["updated"] is True
@@ -406,6 +496,7 @@ def test_git_apply_end_to_end_in_isolated_temp_repo(tmp_path):
     assert ok_res["updated_files"] == ["app.py"]
     assert ok_res["requirements_changed"] is False
     assert (client / "app.py").read_text(encoding="utf-8") == "VERSION = 2\n"
+    assert (client / "game_catalog.json").read_text(encoding="utf-8") == '{"v": "refreshed"}\n'
 
 
 # ----------------------------------------------------------------------
