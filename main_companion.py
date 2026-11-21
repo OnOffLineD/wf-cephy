@@ -41,6 +41,7 @@ def main():
 
     pet.clicked.connect(toggle_panel)
     pet.open_persona_requested.connect(lambda: (panel.show(), panel.open_persona_dialog()))
+    pet.position_reset.connect(lambda: panel.reset_position(pet.geometry()))
     pet.show()
 
     sys.exit(app.exec())
